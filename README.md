@@ -1,49 +1,71 @@
 # MOSAICO
 
-Independent full-stack app for private online Spanish lessons.
+Full-stack platform for private online Spanish lessons.
 
-- Frontend: React, CRACO, Tailwind, shadcn-style components
-- Backend: FastAPI
+Production:
+
+```text
+Frontend: https://mosaico-web.onrender.com
+Backend:  https://mosaico-api.onrender.com
+```
+
+## Stack
+
+- Frontend: React, CRACO, Tailwind CSS, Radix/shadcn-style components
+- Backend: FastAPI, Uvicorn, asyncpg
 - Database/Auth/Storage: Supabase
 - Payments: Stripe Checkout
-- Deployment target: Render
+- Deployment: Render
+
+## Documentation
+
+Start here:
+
+- [Product Documentation](docs/PRODUCT_DOCUMENTATION.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Environment Variables](docs/ENVIRONMENT_VARIABLES.md)
+- [Deployment Guide](docs/DEPLOYMENT_GUIDE.md)
+- [Operations Runbook](docs/OPERATIONS_RUNBOOK.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [API Reference](docs/API_REFERENCE.md)
+- [Database Schema](docs/DATABASE_SCHEMA.md)
 
 ## Local Setup
 
-Copy the env examples:
+Copy environment examples:
 
 ```powershell
 Copy-Item backend/.env.example backend/.env
 Copy-Item frontend/.env.example frontend/.env
 ```
 
-Fill in Supabase and Stripe values. Then run:
+Install and run backend:
 
 ```powershell
 cd backend
 py -3 -m pip install -r requirements.txt
-py -3 -m uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+py -3 -m uvicorn server:app --host 127.0.0.1 --port 8002 --reload
 ```
 
-In another terminal:
+Install and run frontend:
 
 ```powershell
 cd frontend
 npm install
-npm start
+$env:PORT="3001"
+npm.cmd start
 ```
 
-## Supabase
-
-Enable Google OAuth in Supabase Auth and add these redirect URLs:
+Local URLs:
 
 ```text
-http://localhost:3000/auth/callback
-https://your-render-frontend.onrender.com/auth/callback
+Frontend: http://localhost:3001
+Backend:  http://localhost:8002/api/
+Admin:    http://localhost:3001/admin
 ```
 
-The backend applies `backend/schema.sql` on startup and seeds default public content when tables are empty.
+## Deployment
 
-## Render
+Use `render.yaml` as the Render Blueprint. Set real secret values in Render environment variables, never in Git.
 
-Use `render.yaml` as the deployment blueprint. Set all secret env vars in Render, not in Git.
+See [Deployment Guide](docs/DEPLOYMENT_GUIDE.md).
