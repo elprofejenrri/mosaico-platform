@@ -1,0 +1,1462 @@
+"""Lily Spanish — Backend API."""
+import os
+import uuid
+import logging
+import mimetypes
+import json
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import List, Optional
+from zoneinfo import ZoneInfo
+
+import httpx
+import jwt
+import stripe
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Header, Depends, UploadFile, File
+from fastapi.responses import Response
+from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+from database import get_database, close_pool, Database
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / ".env")
+
+db: Optional[Database] = None
+
+STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+SUPABASE_STORAGE_BUCKET = os.environ.get("SUPABASE_STORAGE_BUCKET", "mosaico")
+ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+
+APP_NAME = "mosaico"
+_ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+_MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+def _has_real_supabase_storage_config() -> bool:
+    placeholder_tokens = ("PROJECT_REF", "your-supabase", "placeholder")
+    values = (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    return all(values) and not any(
+        token.lower() in value.lower()
+        for value in values
+        for token in placeholder_tokens
+    )
+
+
+def _is_placeholder(value: str) -> bool:
+    return any(token in (value or "").lower() for token in ("project_ref", "your-supabase", "placeholder"))
+
+
+def _dev_auth_enabled() -> bool:
+    return os.environ.get("DEV_AUTH", "").lower() in ("1", "true", "yes") or _is_placeholder(SUPABASE_JWT_SECRET)
+
+
+def _require_supabase_storage() -> None:
+    if not _has_real_supabase_storage_config():
+        raise HTTPException(500, "Supabase storage is not configured")
+
+
+def _storage_headers(content_type: Optional[str] = None) -> dict:
+    headers = {
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+    }
+    if content_type:
+        headers["Content-Type"] = content_type
+    return headers
+
+
+async def _ensure_storage_bucket() -> None:
+    if not _has_real_supabase_storage_config():
+        logger.info("Supabase storage not configured; uploads disabled")
+        return
+    async with httpx.AsyncClient(timeout=20.0) as hc:
+        r = await hc.post(
+            f"{SUPABASE_URL}/storage/v1/bucket",
+            headers=_storage_headers("application/json"),
+            json={"id": SUPABASE_STORAGE_BUCKET, "name": SUPABASE_STORAGE_BUCKET, "public": True},
+        )
+    if r.status_code not in (200, 201, 409) and "already exists" not in r.text.lower() and "duplicate" not in r.text.lower():
+        logger.warning(f"Supabase storage bucket init failed: {r.status_code} {r.text[:200]}")
+
+
+async def _put_object(path: str, data: bytes, content_type: str) -> dict:
+    _require_supabase_storage()
+    async with httpx.AsyncClient(timeout=120.0) as hc:
+        r = await hc.post(
+            f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{path}",
+            headers={**_storage_headers(content_type), "x-upsert": "false"},
+            content=data,
+        )
+    if r.status_code not in (200, 201):
+        raise HTTPException(502, f"Supabase storage upload failed: {r.text[:200]}")
+    return {
+        "path": path,
+        "public_url": f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/{path}",
+        "size": len(data),
+    }
+
+
+async def _get_object(path: str):
+    _require_supabase_storage()
+    async with httpx.AsyncClient(timeout=60.0) as hc:
+        r = await hc.get(
+            f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{path}",
+            headers=_storage_headers(),
+        )
+    if r.status_code != 200:
+        raise HTTPException(404, "File not found")
+    return r.content, r.headers.get("Content-Type", mimetypes.guess_type(path)[0] or "application/octet-stream")
+
+
+app = FastAPI(title="Lily Spanish API")
+api = APIRouter(prefix="/api")
+logger = logging.getLogger("lily")
+logging.basicConfig(level=logging.INFO)
+
+# ---------- Models ----------
+class User(BaseModel):
+    user_id: str
+    email: str
+    name: str
+    picture: Optional[str] = None
+    role: str = "alumno"
+    google_id: Optional[str] = None
+    active: bool = True
+    updated_at: Optional[str] = None
+    last_login_at: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class Product(BaseModel):
+    id: str
+    slug: str
+    name_en: str
+    name_es: str
+    description_en: str
+    description_es: str
+    duration_min: int  # 0 for packages/subscriptions
+    sessions_included: int = 1
+    price_usd: float
+    type: str  # single | package | subscription | trial
+    popular: bool = False
+    currency: str = "USD"
+    teacher_id: Optional[str] = None
+    capacity: int = 1
+    active: bool = True
+    image: str = ""
+    language: str = "es"
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+class Availability(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    date: str           # YYYY-MM-DD (in teacher's TZ - America/Mexico_City assumed)
+    start_time: str     # HH:MM (24h, teacher TZ)
+    available: bool = True
+
+class Booking(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    user_email: str
+    user_name: str
+    product_id: str
+    product_name: str
+    duration_min: int
+    scheduled_date: str
+    scheduled_time: str
+    timezone: str
+    status: str = "confirmed"   # confirmed | completed | cancelled
+    meeting_link: Optional[str] = None
+    notes: Optional[str] = None
+    payment_session_id: Optional[str] = None
+    teacher_id: Optional[str] = None
+    teacher_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class BlogPost(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    slug: str
+    title_en: str
+    title_es: str
+    excerpt_en: str
+    excerpt_es: str
+    body_en: str
+    body_es: str
+    cover_image: str
+    published: bool = True
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+ROLE_ALIASES = {
+    "admin": "administrador_sitio",
+    "student": "alumno",
+}
+ADMIN_ROLES = {"administrador_sitio", "administrador_profesor"}
+ROLE_PERMISSIONS = {
+    "administrador_sitio": {"*"},
+    "administrador_profesor": {"dashboard:view", "users:manage", "teachers:manage", "students:manage", "products:manage", "bookings:manage"},
+    "profesor": {"dashboard:view", "teachers:own", "students:view", "bookings:assigned"},
+    "editor_cms": {"dashboard:view", "cms:manage", "media:manage"},
+    "alumno": {"student:self"},
+}
+ROLE_LABELS = {
+    "administrador_sitio": "Administrador sitio",
+    "administrador_profesor": "Administrador profesor",
+    "profesor": "Profesor",
+    "editor_cms": "Editor CMS",
+    "alumno": "Alumno",
+}
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _normalize_role(role: Optional[str]) -> str:
+    return ROLE_ALIASES.get((role or "alumno").strip(), (role or "alumno").strip())
+
+
+def _has_permission(user: User, permission: str) -> bool:
+    role = _normalize_role(user.role)
+    perms = ROLE_PERMISSIONS.get(role, set())
+    return "*" in perms or permission in perms
+
+# ---------- Auth helpers ----------
+async def _sync_user_role(user_id: str, role: str) -> None:
+    role = _normalize_role(role)
+    if not await db.user_roles.find_one({"user_id": user_id, "role_name": role}, {"_id": 0}):
+        await db.user_roles.insert_one({"id": str(uuid.uuid4()), "user_id": user_id, "role_name": role, "created_at": _now_iso()})
+
+
+async def _get_or_create_user_from_supabase(payload: dict, request: Optional[Request] = None) -> User:
+    user_id = payload.get("sub")
+    email = (payload.get("email") or "").lower()
+    metadata = payload.get("user_metadata") or {}
+    name = metadata.get("full_name") or metadata.get("name") or email.split("@")[0]
+    picture = metadata.get("avatar_url") or metadata.get("picture")
+
+    if not user_id or not email:
+        raise HTTPException(status_code=401, detail="Invalid auth token")
+
+    existing = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    role = "administrador_sitio" if email in ADMIN_EMAILS else "alumno"
+    now = _now_iso()
+
+    if existing:
+        current_role = _normalize_role(existing.get("role"))
+        updates = {"email": email, "name": name, "picture": picture, "google_id": user_id, "updated_at": now, "last_login_at": now}
+        if current_role != existing.get("role"):
+            updates["role"] = current_role
+        if email in ADMIN_EMAILS and current_role != "administrador_sitio":
+            updates["role"] = "administrador_sitio"
+        await db.users.update_one({"user_id": user_id}, {"$set": updates})
+    else:
+        await db.users.insert_one({
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "picture": picture,
+            "role": role,
+            "google_id": user_id,
+            "active": True,
+            "created_at": now,
+            "updated_at": now,
+            "last_login_at": now,
+        })
+
+    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    await _sync_user_role(user_id, user_doc.get("role", role))
+    await db.login_history.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "email": email,
+        "provider": "google",
+        "ip_address": request.client.host if request and request.client else None,
+        "user_agent": request.headers.get("user-agent") if request else None,
+        "created_at": now,
+    })
+    if user_doc.get("active") is False:
+        raise HTTPException(status_code=403, detail="User is inactive")
+    return User(**user_doc)
+
+
+def _decode_supabase_token(token: str) -> dict:
+    if not SUPABASE_JWT_SECRET:
+        raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET is not configured")
+    try:
+        return jwt.decode(
+            token,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            audience="authenticated",
+            options={"require": ["exp", "sub"]},
+        )
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid auth token")
+
+
+async def _get_supabase_user_payload(token: str) -> dict:
+    if not SUPABASE_URL:
+        return _decode_supabase_token(token)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "apikey": SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY,
+    }
+    async with httpx.AsyncClient(timeout=20.0) as hc:
+        r = await hc.get(f"{SUPABASE_URL}/auth/v1/user", headers=headers)
+    if r.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid auth token")
+    data = r.json()
+    metadata = data.get("user_metadata") or data.get("raw_user_meta_data") or {}
+    return {
+        "sub": data.get("id"),
+        "email": data.get("email"),
+        "user_metadata": metadata,
+    }
+
+
+async def get_current_user(
+    request: Request,
+    authorization: Optional[str] = Header(default=None),
+) -> User:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    token = authorization.split(" ", 1)[1].strip()
+    if _dev_auth_enabled() and token == "dev-admin":
+        now = _now_iso()
+        user_id = "dev-admin"
+        existing = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        if not existing:
+            await db.users.insert_one({
+                "user_id": user_id,
+                "google_id": user_id,
+                "email": "admin@mosaico.local",
+                "name": "Admin Local",
+                "picture": "",
+                "role": "administrador_sitio",
+                "active": True,
+                "created_at": now,
+                "updated_at": now,
+                "last_login_at": now,
+            })
+            await _sync_user_role(user_id, "administrador_sitio")
+        else:
+            await db.users.update_one({"user_id": user_id}, {"$set": {"last_login_at": now, "active": True, "role": "administrador_sitio"}})
+        doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        return User(**doc)
+
+    payload = await _get_supabase_user_payload(token)
+    return await _get_or_create_user_from_supabase(payload, request)
+
+async def require_admin(user: User = Depends(get_current_user)) -> User:
+    if _normalize_role(user.role) not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user
+
+
+def require_permission(permission: str):
+    async def checker(user: User = Depends(get_current_user)) -> User:
+        if not _has_permission(user, permission):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return user
+    return checker
+
+# ---------- Seed data ----------
+DEFAULT_PRODUCTS = [
+    {"id": "trial", "slug": "trial-class", "name_en": "Trial Class", "name_es": "Clase de Prueba",
+     "description_en": "A relaxed 30-minute conversation to meet, plan, and try a lesson.",
+     "description_es": "Una conversación relajada de 30 minutos para conocernos y probar una clase.",
+     "duration_min": 30, "sessions_included": 1, "price_usd": 9.00, "type": "trial", "popular": False},
+    {"id": "single-30", "slug": "single-30", "name_en": "30-min Private Lesson", "name_es": "Clase Privada 30 min",
+     "description_en": "Focused micro-session, perfect for busy weeks.",
+     "description_es": "Microclase enfocada, ideal para semanas ocupadas.",
+     "duration_min": 30, "sessions_included": 1, "price_usd": 18.00, "type": "single", "popular": False},
+    {"id": "single-45", "slug": "single-45", "name_en": "45-min Private Lesson", "name_es": "Clase Privada 45 min",
+     "description_en": "Balanced flow of conversation, grammar, and listening.",
+     "description_es": "Flujo equilibrado de conversación, gramática y escucha.",
+     "duration_min": 45, "sessions_included": 1, "price_usd": 26.00, "type": "single", "popular": True},
+    {"id": "single-60", "slug": "single-60", "name_en": "60-min Private Lesson", "name_es": "Clase Privada 60 min",
+     "description_en": "Deep dive into themes you choose with personalized homework.",
+     "description_es": "Inmersión profunda en los temas que elijas con tareas personalizadas.",
+     "duration_min": 60, "sessions_included": 1, "price_usd": 34.00, "type": "single", "popular": False},
+    {"id": "pack-5", "slug": "pack-5", "name_en": "5-Lesson Pack (60 min)", "name_es": "Pack de 5 Clases (60 min)",
+     "description_en": "Save 10%. Five 60-minute lessons, used at your pace.",
+     "description_es": "Ahorra 10%. Cinco clases de 60 minutos, a tu ritmo.",
+     "duration_min": 60, "sessions_included": 5, "price_usd": 153.00, "type": "package", "popular": False},
+    {"id": "pack-10", "slug": "pack-10", "name_en": "10-Lesson Pack (60 min)", "name_es": "Pack de 10 Clases (60 min)",
+     "description_en": "Save 15%. Ten 60-minute lessons. Best for steady progress.",
+     "description_es": "Ahorra 15%. Diez clases de 60 minutos. Ideal para progreso constante.",
+     "duration_min": 60, "sessions_included": 10, "price_usd": 289.00, "type": "package", "popular": True},
+    {"id": "monthly", "slug": "monthly-plan", "name_en": "Monthly Plan — 8 lessons", "name_es": "Plan Mensual — 8 clases",
+     "description_en": "Eight 60-minute lessons per month. Reschedule anytime.",
+     "description_es": "Ocho clases de 60 minutos al mes. Reagenda cuando quieras.",
+     "duration_min": 60, "sessions_included": 8, "price_usd": 240.00, "type": "subscription", "popular": False},
+]
+
+DEFAULT_POSTS = [
+    {"slug": "ser-vs-estar", "title_en": "Ser vs Estar: a kind, practical map",
+     "title_es": "Ser vs Estar: un mapa amable y práctico",
+     "excerpt_en": "Stop guessing. Here's the simple frame I teach in week one.",
+     "excerpt_es": "Deja de adivinar. Aquí está el marco simple que enseño en la semana uno.",
+     "body_en": "Most students panic about ser vs estar. The truth is, you only need two questions...\n\n1) Is it a quality that lives inside the thing? Use ser.\n2) Is it a temporary state, a location, or a feeling? Use estar.\n\nWe'll practice with your real-life sentences in your first class.",
+     "body_es": "La mayoría entra en pánico con ser vs estar. La verdad es que solo necesitas dos preguntas...\n\n1) ¿Es una cualidad que vive dentro de la cosa? Usa ser.\n2) ¿Es un estado temporal, una ubicación o un sentimiento? Usa estar.\n\nPracticaremos con tus oraciones reales en tu primera clase.",
+     "cover_image": "https://images.unsplash.com/photo-1573611030146-ff6916c398fa?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxzcGFuaXNoJTIwY3VsdHVyZSUyMGFyY2hpdGVjdHVyZXxlbnwwfHx8fDE3ODEzNzE0MTR8MA&ixlib=rb-4.1.0&q=85"},
+    {"slug": "five-phrases", "title_en": "Five phrases that make you sound fluent",
+     "title_es": "Cinco frases que te hacen sonar fluido",
+     "excerpt_en": "Tiny shifts that move you from textbook to local in one week.",
+     "excerpt_es": "Pequeños cambios que te llevan del libro al local en una semana.",
+     "body_en": "Try these in your next conversation:\n\n- '¿Qué onda?' (casual: what's up)\n- 'O sea...' (I mean...)\n- 'Vale, va.' (okay, let's go)\n- 'Está padrísimo.' (it's awesome — Mexico)\n- 'No manches.' (no way)\n\nWe practice slang depending on the country you care about most.",
+     "body_es": "Prueba estas en tu próxima conversación:\n\n- '¿Qué onda?'\n- 'O sea...'\n- 'Vale, va.'\n- 'Está padrísimo.'\n- 'No manches.'\n\nPracticamos la jerga del país que más te interese.",
+     "cover_image": "https://images.unsplash.com/photo-1505275350441-83dcda8eeef5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwzfHxwZW9wbGUlMjBsZWFybmluZyUyMHN0dWR5aW5nJTIwY29mZmVlJTIwc2hvcHxlbnwwfHx8fDE3ODEzNzE0MTR8MA&ixlib=rb-4.1.0&q=85"},
+    {"slug": "consistency", "title_en": "The 20-minute habit that beats cramming",
+     "title_es": "El hábito de 20 minutos que vence el atracón",
+     "excerpt_en": "Why short, frequent sessions outperform marathon studying.",
+     "excerpt_es": "Por qué las sesiones cortas y frecuentes superan a estudiar maratón.",
+     "body_en": "Twenty focused minutes a day builds the neural pattern your brain needs to retrieve Spanish quickly. We design your weekly cadence in your first class — no guilt, no overwhelm.",
+     "body_es": "Veinte minutos enfocados al día construyen el patrón neuronal que tu cerebro necesita para recuperar el español con rapidez. Diseñamos tu ritmo semanal en tu primera clase — sin culpa, sin agobio.",
+     "cover_image": "https://images.unsplash.com/photo-1780672823934-1f6b7ebae149?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDJ8MHwxfHNlYXJjaHwyfHxjb21mb3J0YWJsZSUyMG1vZGVybiUyMGxpdmluZyUyMHJvb20lMjB3aXRoJTIwYm9va3N8ZW58MHx8fHwxNzgxMzcxNDIyfDA&ixlib=rb-4.1.0&q=85"},
+]
+
+@app.on_event("startup")
+async def startup_database():
+    global db
+    db = await get_database()
+
+
+@app.on_event("startup")
+async def init_storage():
+    await _ensure_storage_bucket()
+
+
+@app.on_event("startup")
+async def seed_data():
+    now = _now_iso()
+    if await db.roles.count_documents({}) == 0:
+        await db.roles.insert_many([
+            {"id": name, "name": name, "description": ROLE_LABELS[name], "created_at": now}
+            for name in ROLE_LABELS
+        ])
+        perms = sorted({p for values in ROLE_PERMISSIONS.values() for p in values if p != "*"} | {"*"})
+        await db.permissions.insert_many([
+            {"id": p, "name": p, "description": p, "created_at": now}
+            for p in perms
+        ])
+        rp = []
+        for role, permissions in ROLE_PERMISSIONS.items():
+            for perm in permissions:
+                rp.append({"id": str(uuid.uuid4()), "role_name": role, "permission": perm, "created_at": now})
+        await db.role_permissions.insert_many(rp)
+        logger.info("Seeded RBAC roles")
+    if await db.users.count_documents({}) == 0:
+        sample_users = [
+            ("seed-admin", "admin@mosaico.studio", "Admin MOSAICO", "administrador_sitio"),
+            ("seed-editor", "editor@mosaico.studio", "Editor CMS", "editor_cms"),
+            ("seed-teacher-1", "lily@mosaico.studio", "Lily Vargas", "profesor"),
+            ("seed-teacher-2", "sofia@mosaico.studio", "Sofia Reyes", "profesor"),
+            ("seed-student-1", "ana@example.com", "Ana Gomez", "alumno"),
+            ("seed-student-2", "mark@example.com", "Mark Wilson", "alumno"),
+            ("seed-student-3", "jules@example.com", "Jules Martin", "alumno"),
+        ]
+        for user_id, email, name, role in sample_users:
+            await db.users.insert_one({
+                "user_id": user_id, "google_id": user_id, "email": email, "name": name,
+                "picture": "", "role": role, "active": True, "created_at": now, "updated_at": now,
+            })
+            await _sync_user_role(user_id, role)
+        logger.info("Seeded sample users")
+    if await db.products.count_documents({}) == 0:
+        await db.products.insert_many([dict(p) for p in DEFAULT_PRODUCTS])
+        logger.info("Seeded products")
+    if await db.blog_posts.count_documents({}) == 0:
+        for p in DEFAULT_POSTS:
+            doc = BlogPost(**p).model_dump()
+            doc["created_at"] = doc["created_at"].isoformat()
+            await db.blog_posts.insert_one(doc)
+        logger.info("Seeded blog posts")
+    if await db.availability.count_documents({}) == 0:
+        today = datetime.now(timezone.utc).date()
+        slots = []
+        for d_off in range(0, 21):
+            day = today + timedelta(days=d_off)
+            if day.weekday() == 6:  # closed Sunday
+                continue
+            for hour in [9, 10, 11, 14, 15, 16, 17, 18, 19]:
+                slots.append({
+                    "id": str(uuid.uuid4()),
+                    "date": day.isoformat(),
+                    "start_time": f"{hour:02d}:00",
+                    "available": True,
+                    "teacher_id": None,
+                })
+        await db.availability.insert_many(slots)
+        logger.info("Seeded availability slots")
+    if await db.teachers.count_documents({}) == 0:
+        seed_t = Teacher(
+            name="Lily Vargas",
+            email="lily@mosaico.studio",
+            bio_en="Founder & lead teacher. Seven years guiding students from first words to fluent conversations.",
+            bio_es="Fundadora y profesora principal. Siete años guiando a estudiantes desde las primeras palabras hasta conversaciones fluidas.",
+            picture="https://images.unsplash.com/photo-1590650213165-c1fef80648c4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwxfHxmcmllbmRseSUyMGhpc3BhbmljJTIwd29tYW4lMjB0ZWFjaGVyJTIwcG9ydHJhaXR8ZW58MHx8fHwxNzgxMzcxNDE0fDA&ixlib=rb-4.1.0&q=85",
+        )
+        doc = seed_t.model_dump()
+        doc["created_at"] = doc["created_at"].isoformat()
+        await db.teachers.insert_one(dict(doc))
+        logger.info("Seeded default teacher")
+    if await db.student_profiles.count_documents({}) == 0:
+        for user_id in ["seed-student-1", "seed-student-2", "seed-student-3"]:
+            await db.student_profiles.insert_one({
+                "id": f"sp_{user_id}", "user_id": user_id, "phone": "", "enrolled_products": [],
+                "notes": "", "status": "activo", "created_at": now, "updated_at": now,
+            })
+        logger.info("Seeded student profiles")
+    if await db.pages.count_documents({}) == 0:
+        for title, slug in [("Inicio", "home"), ("Precios", "pricing"), ("Preguntas frecuentes", "faq"), ("Acerca de", "about")]:
+            await db.pages.insert_one({
+                "id": f"page_{slug}", "title": title, "slug": slug, "language": "es", "status": "published",
+                "meta_title": f"{title} | MOSAICO", "meta_description": "Contenido público de MOSAICO",
+                "content_blocks": [{"type": "text", "body": title}], "hero_image": "",
+                "created_by": "seed-admin", "updated_by": "seed-admin", "published_date": now,
+                "created_at": now, "updated_at": now,
+            })
+        logger.info("Seeded CMS pages")
+    if await db.media_assets.count_documents({}) == 0:
+        await db.media_assets.insert_one({
+            "id": "media_hero", "file_name": "mosaico-hero.jpg",
+            "url": "https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&w=1200&q=80",
+            "type": "image", "alt_text": "Clase de espanol online", "uploaded_by": "seed-admin",
+            "created_at": now, "updated_at": now,
+        })
+        logger.info("Seeded media library")
+    if await db.bookings.count_documents({}) == 0:
+        products = await db.products.find({}, {"_id": 0}).to_list(4)
+        teacher = await db.teachers.find_one({}, {"_id": 0})
+        for idx, student in enumerate(["seed-student-1", "seed-student-2", "seed-student-3"]):
+            u = await db.users.find_one({"user_id": student}, {"_id": 0})
+            p = products[idx % len(products)]
+            await db.bookings.insert_one({
+                "id": str(uuid.uuid4()), "user_id": student, "user_email": u["email"], "user_name": u["name"],
+                "product_id": p["id"], "product_name": p["name_en"], "duration_min": p["duration_min"],
+                "scheduled_date": (datetime.now(timezone.utc).date() + timedelta(days=idx + 1)).isoformat(),
+                "scheduled_time": f"{10 + idx:02d}:00", "end_time": f"{11 + idx:02d}:00", "timezone": "America/Cancun",
+                "status": ["scheduled", "completed", "cancelled"][idx], "meeting_link": "", "notes": "",
+                "teacher_id": teacher.get("id") if teacher else None, "teacher_name": teacher.get("name") if teacher else None,
+                "created_at": now, "updated_at": now,
+            })
+        logger.info("Seeded bookings")
+
+# ---------- Routes ----------
+@api.get("/")
+async def root():
+    return {"app": "Lily Spanish", "ok": True}
+
+@api.get("/auth/me")
+async def auth_me(user: User = Depends(get_current_user)):
+    return user
+
+@api.post("/auth/logout")
+async def auth_logout():
+    return {"ok": True}
+
+# ---- Products
+@api.get("/products")
+async def list_products():
+    docs = await db.products.find({}, {"_id": 0}).to_list(100)
+    order = {"trial": 0, "single": 1, "package": 2, "subscription": 3}
+    docs.sort(key=lambda p: (order.get(p["type"], 9), p["price_usd"]))
+    return docs
+
+@api.get("/products/{product_id}")
+async def get_product(product_id: str):
+    p = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not p:
+        raise HTTPException(404, "Product not found")
+    return p
+
+# ---- Availability
+@api.get("/availability")
+async def get_availability(date: Optional[str] = None, teacher_id: Optional[str] = None):
+    q: dict = {"available": True}
+    if date:
+        q["date"] = date
+    if teacher_id:
+        # show slots assigned to this teacher OR unassigned (open) slots
+        q["$or"] = [{"teacher_id": teacher_id}, {"teacher_id": {"$exists": False}}, {"teacher_id": None}]
+    slots = await db.availability.find(q, {"_id": 0}).to_list(1000)
+    slots.sort(key=lambda s: (s["date"], s["start_time"]))
+    return slots
+
+@api.post("/admin/availability")
+async def add_availability(payload: dict, _: User = Depends(require_permission("bookings:manage"))):
+    slot = {
+        "id": str(uuid.uuid4()),
+        "date": payload["date"],
+        "start_time": payload["start_time"],
+        "available": True,
+        "teacher_id": payload.get("teacher_id") or None,
+    }
+    await db.availability.insert_one(dict(slot))
+    return slot
+
+@api.delete("/admin/availability/{slot_id}")
+async def delete_slot(slot_id: str, _: User = Depends(require_permission("bookings:manage"))):
+    await db.availability.delete_one({"id": slot_id})
+    return {"ok": True}
+
+# ---- Payments
+@api.post("/payments/checkout")
+async def create_checkout(request: Request, payload: dict, user: User = Depends(get_current_user)):
+    product_id = payload.get("product_id")
+    origin = payload.get("origin_url")
+    date = payload.get("date")
+    time = payload.get("time")
+    tz = payload.get("timezone", "UTC")
+    teacher_id = payload.get("teacher_id") or None
+    if not product_id or not origin:
+        raise HTTPException(400, "product_id and origin_url required")
+    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(404, "Invalid product")
+
+    teacher_name = None
+    if teacher_id:
+        teacher = await db.teachers.find_one({"id": teacher_id, "active": True}, {"_id": 0})
+        if not teacher:
+            raise HTTPException(400, "Invalid teacher")
+        teacher_name = teacher["name"]
+
+    stripe_key = await _get_stripe_key()
+    if not stripe_key:
+        raise HTTPException(500, "Stripe is not configured")
+    stripe.api_key = stripe_key
+
+    success_url = f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin}/book/{product_id}"
+
+    metadata = {
+        "user_id": user.user_id,
+        "user_email": user.email,
+        "product_id": product_id,
+        "date": date or "",
+        "time": time or "",
+        "timezone": tz,
+        "teacher_id": teacher_id or "",
+        "teacher_name": teacher_name or "",
+    }
+    session = stripe.checkout.Session.create(
+        mode="payment",
+        line_items=[{
+            "price_data": {
+                "currency": "usd",
+                "unit_amount": int(round(float(product["price_usd"]) * 100)),
+                "product_data": {"name": product["name_en"]},
+            },
+            "quantity": 1,
+        }],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata=metadata,
+    )
+
+    await db.payment_transactions.insert_one({
+        "session_id": session.id,
+        "user_id": user.user_id,
+        "user_email": user.email,
+        "product_id": product_id,
+        "amount": float(product["price_usd"]),
+        "currency": "usd",
+        "payment_status": "initiated",
+        "status": "open",
+        "metadata": metadata,
+        "booking_created": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"url": session.url, "session_id": session.id}
+
+@api.get("/payments/status/{session_id}")
+async def payment_status(session_id: str, request: Request):
+    txn = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not txn:
+        raise HTTPException(404, "Transaction not found")
+
+    stripe_key = await _get_stripe_key()
+    if not stripe_key:
+        raise HTTPException(500, "Stripe is not configured")
+    stripe.api_key = stripe_key
+    session = stripe.checkout.Session.retrieve(session_id)
+    payment_state = session.payment_status or "unpaid"
+    checkout_state = session.status or "open"
+
+    await db.payment_transactions.update_one(
+        {"session_id": session_id},
+        {"$set": {"payment_status": payment_state, "status": checkout_state}},
+    )
+
+    if payment_state == "paid" and not txn.get("booking_created"):
+        meta = txn["metadata"]
+        product = await db.products.find_one({"id": meta["product_id"]}, {"_id": 0})
+        user = await db.users.find_one({"user_id": meta["user_id"]}, {"_id": 0})
+        if product and user:
+            booking = Booking(
+                user_id=user["user_id"],
+                user_email=user["email"],
+                user_name=user.get("name", ""),
+                product_id=product["id"],
+                product_name=product["name_en"],
+                duration_min=product["duration_min"],
+                scheduled_date=meta.get("date", ""),
+                scheduled_time=meta.get("time", ""),
+                timezone=meta.get("timezone", "UTC"),
+                teacher_id=meta.get("teacher_id") or None,
+                teacher_name=meta.get("teacher_name") or None,
+                payment_session_id=session_id,
+            )
+            doc = booking.model_dump()
+            doc["created_at"] = doc["created_at"].isoformat()
+            await db.bookings.insert_one(doc)
+
+            # Google Calendar: create event + send invite email
+            try:
+                gcal = await _create_gcal_event(doc, product)
+                if gcal.get("meet_link"):
+                    await db.bookings.update_one(
+                        {"id": doc["id"]},
+                        {"$set": {"meeting_link": gcal["meet_link"]}},
+                    )
+                    logger.info(f"gcal event created for booking {doc['id']}")
+            except Exception as e:
+                logger.warning(f"gcal event create error: {e}")
+            # mark slot taken (prefer teacher-specific slot if available)
+            if meta.get("date") and meta.get("time"):
+                tslot = {"date": meta["date"], "start_time": meta["time"]}
+                if meta.get("teacher_id"):
+                    res = await db.availability.update_one(
+                        {**tslot, "teacher_id": meta["teacher_id"]}, {"$set": {"available": False}}
+                    )
+                    if res.matched_count == 0:
+                        await db.availability.update_one(
+                            {**tslot, "$or": [{"teacher_id": None}, {"teacher_id": {"$exists": False}}]},
+                            {"$set": {"available": False, "teacher_id": meta["teacher_id"]}},
+                        )
+                else:
+                    await db.availability.update_one(tslot, {"$set": {"available": False}})
+            await db.payment_transactions.update_one(
+                {"session_id": session_id}, {"$set": {"booking_created": True}}
+            )
+
+    return {"payment_status": payment_state, "status": checkout_state,
+            "amount_total": session.amount_total, "currency": session.currency}
+
+@api.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    body = await request.body()
+    sig = request.headers.get("Stripe-Signature", "")
+    try:
+        stripe.api_key = await _get_stripe_key()
+        if STRIPE_WEBHOOK_SECRET:
+            event = stripe.Webhook.construct_event(body, sig, STRIPE_WEBHOOK_SECRET)
+        else:
+            event = stripe.Event.construct_from(json.loads(body), stripe.api_key)
+        data = event.get("data", {}).get("object", {})
+        await db.payment_transactions.update_one(
+            {"session_id": data.get("id", "")},
+            {"$set": {"payment_status": data.get("payment_status", "unpaid")}},
+        )
+    except Exception as e:
+        logger.warning(f"webhook err: {e}")
+    return {"received": True}
+
+# ---- Bookings
+@api.get("/bookings/me")
+async def my_bookings(user: User = Depends(get_current_user)):
+    docs = await db.bookings.find({"user_id": user.user_id}, {"_id": 0}).to_list(200)
+    docs.sort(key=lambda b: (b.get("scheduled_date", ""), b.get("scheduled_time", "")), reverse=True)
+    return docs
+
+@api.get("/admin/bookings")
+async def all_bookings(_: User = Depends(require_permission("bookings:manage"))):
+    docs = await db.bookings.find({}, {"_id": 0}).to_list(500)
+    docs.sort(key=lambda b: (b.get("scheduled_date", ""), b.get("scheduled_time", "")), reverse=True)
+    return docs
+
+@api.patch("/admin/bookings/{booking_id}")
+async def update_booking(booking_id: str, payload: dict, _: User = Depends(require_permission("bookings:manage"))):
+    allowed = {k: v for k, v in payload.items() if k in ("status", "meeting_link", "notes")}
+    await db.bookings.update_one({"id": booking_id}, {"$set": allowed})
+    return await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+
+@api.get("/admin/students")
+async def all_students(_: User = Depends(require_permission("students:manage"))):
+    docs = await db.users.find({}, {"_id": 0}).to_list(500)
+    for d in docs:
+        d["booking_count"] = await db.bookings.count_documents({"user_id": d["user_id"]})
+    return docs
+
+@api.get("/admin/stats")
+async def stats(_: User = Depends(require_admin)):
+    total_users = await db.users.count_documents({})
+    active_students = await db.users.count_documents({"role": "alumno", "active": True})
+    active_teachers = await db.teachers.count_documents({"active": True})
+    total_products = await db.products.count_documents({})
+    total_bookings = await db.bookings.count_documents({})
+    upcoming = await db.bookings.count_documents({"status": "scheduled"})
+    if upcoming == 0:
+        upcoming = await db.bookings.count_documents({"status": "confirmed"})
+    cms_pages = await db.pages.count_documents({"status": "published"})
+    revenue_cursor = db.payment_transactions.find({"payment_status": "paid"}, {"_id": 0, "amount": 1})
+    revenue = 0.0
+    async for t in revenue_cursor:
+        revenue += float(t.get("amount", 0))
+    recent = await db.bookings.find({}, {"_id": 0}).to_list(5)
+    recent.sort(key=lambda b: b.get("created_at", ""), reverse=True)
+    return {
+        "users": total_users,
+        "students": active_students,
+        "teachers": active_teachers,
+        "products": total_products,
+        "bookings": total_bookings,
+        "upcoming": upcoming,
+        "cms_pages": cms_pages,
+        "revenue_usd": revenue,
+        "recent_bookings": recent,
+    }
+
+# ---- Blog
+@api.get("/blog")
+async def list_blog():
+    docs = await db.blog_posts.find({"published": True}, {"_id": 0, "body_en": 0, "body_es": 0}).to_list(100)
+    docs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return docs
+
+@api.get("/blog/{slug}")
+async def get_blog(slug: str):
+    doc = await db.blog_posts.find_one({"slug": slug}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Not found")
+    return doc
+
+# ---- Teachers
+class Teacher(BaseModel):
+    id: str = Field(default_factory=lambda: f"t_{uuid.uuid4().hex[:10]}")
+    name: str
+    email: str
+    bio_en: str = ""
+    bio_es: str = ""
+    picture: str = ""
+    languages: List[str] = Field(default_factory=lambda: ["es", "en"])
+    specialties: List[str] = Field(default_factory=list)
+    availability: List[dict] = Field(default_factory=list)
+    user_id: Optional[str] = None
+    active: bool = True
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[str] = None
+
+
+@api.get("/teachers")
+async def list_teachers_public():
+    docs = await db.teachers.find({"active": True}, {"_id": 0}).to_list(100)
+    return docs
+
+
+@api.get("/admin/teachers")
+async def admin_list_teachers(_: User = Depends(require_permission("teachers:manage"))):
+    docs = await db.teachers.find({}, {"_id": 0}).to_list(100)
+    return docs
+
+
+@api.post("/admin/teachers")
+async def admin_create_teacher(payload: dict, _: User = Depends(require_permission("teachers:manage"))):
+    if not payload.get("name") or not payload.get("email"):
+        raise HTTPException(400, "name and email required")
+    teacher = Teacher(**{k: v for k, v in payload.items() if k in {"name", "email", "bio_en", "bio_es", "picture", "languages", "specialties", "availability", "user_id", "active"}})
+    doc = teacher.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    doc["updated_at"] = _now_iso()
+    await db.teachers.insert_one(dict(doc))
+    return doc
+
+
+@api.patch("/admin/teachers/{teacher_id}")
+async def admin_update_teacher(teacher_id: str, payload: dict, _: User = Depends(require_permission("teachers:manage"))):
+    allowed = {k: v for k, v in payload.items() if k in ("name", "email", "bio_en", "bio_es", "picture", "languages", "specialties", "availability", "user_id", "active")}
+    allowed["updated_at"] = _now_iso()
+    await db.teachers.update_one({"id": teacher_id}, {"$set": allowed})
+    return await db.teachers.find_one({"id": teacher_id}, {"_id": 0})
+
+
+@api.delete("/admin/teachers/{teacher_id}")
+async def admin_delete_teacher(teacher_id: str, _: User = Depends(require_permission("teachers:manage"))):
+    await db.teachers.delete_one({"id": teacher_id})
+    return {"ok": True}
+
+
+# ---- Products CMS
+_PRODUCT_FIELDS = {"id", "slug", "name_en", "name_es", "description_en", "description_es",
+                   "duration_min", "sessions_included", "price_usd", "type", "popular",
+                   "currency", "teacher_id", "capacity", "active", "image", "language"}
+
+
+@api.post("/admin/products")
+async def admin_create_product(payload: dict, _: User = Depends(require_permission("products:manage"))):
+    for k in ("id", "slug", "name_en", "name_es", "duration_min", "price_usd", "type"):
+        if payload.get(k) in (None, ""):
+            raise HTTPException(400, f"{k} required")
+    if await db.products.find_one({"id": payload["id"]}):
+        raise HTTPException(400, "id exists")
+    doc = {k: v for k, v in payload.items() if k in _PRODUCT_FIELDS}
+    doc.setdefault("description_en", "")
+    doc.setdefault("description_es", "")
+    doc.setdefault("sessions_included", 1)
+    doc.setdefault("popular", False)
+    doc.setdefault("currency", "USD")
+    doc.setdefault("capacity", 1)
+    doc.setdefault("active", True)
+    doc.setdefault("image", "")
+    doc.setdefault("language", "es")
+    doc["created_at"] = _now_iso()
+    doc["updated_at"] = doc["created_at"]
+    await db.products.insert_one(dict(doc))
+    return await db.products.find_one({"id": doc["id"]}, {"_id": 0})
+
+
+@api.patch("/admin/products/{product_id}")
+async def admin_update_product(product_id: str, payload: dict, _: User = Depends(require_permission("products:manage"))):
+    allowed = {k: v for k, v in payload.items() if k in _PRODUCT_FIELDS and k != "id"}
+    allowed["updated_at"] = _now_iso()
+    await db.products.update_one({"id": product_id}, {"$set": allowed})
+    return await db.products.find_one({"id": product_id}, {"_id": 0})
+
+
+@api.delete("/admin/products/{product_id}")
+async def admin_delete_product(product_id: str, _: User = Depends(require_permission("products:manage"))):
+    await db.products.delete_one({"id": product_id})
+    return {"ok": True}
+
+
+# ---- Blog CMS
+_BLOG_FIELDS = {"slug", "title_en", "title_es", "excerpt_en", "excerpt_es",
+                "body_en", "body_es", "cover_image", "published"}
+
+
+@api.get("/admin/blog")
+async def admin_list_blog(_: User = Depends(require_permission("cms:manage"))):
+    docs = await db.blog_posts.find({}, {"_id": 0}).to_list(500)
+    docs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return docs
+
+
+@api.post("/admin/blog")
+async def admin_create_blog(payload: dict, _: User = Depends(require_permission("cms:manage"))):
+    for k in ("slug", "title_en", "title_es"):
+        if payload.get(k) in (None, ""):
+            raise HTTPException(400, f"{k} required")
+    if await db.blog_posts.find_one({"slug": payload["slug"]}):
+        raise HTTPException(400, "slug exists")
+    post = BlogPost(
+        slug=payload["slug"], title_en=payload["title_en"], title_es=payload["title_es"],
+        excerpt_en=payload.get("excerpt_en", ""), excerpt_es=payload.get("excerpt_es", ""),
+        body_en=payload.get("body_en", ""), body_es=payload.get("body_es", ""),
+        cover_image=payload.get("cover_image", ""), published=bool(payload.get("published", True)),
+    )
+    doc = post.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.blog_posts.insert_one(dict(doc))
+    return doc
+
+
+@api.patch("/admin/blog/{slug}")
+async def admin_update_blog(slug: str, payload: dict, _: User = Depends(require_permission("cms:manage"))):
+    allowed = {k: v for k, v in payload.items() if k in _BLOG_FIELDS and k != "slug"}
+    await db.blog_posts.update_one({"slug": slug}, {"$set": allowed})
+    return await db.blog_posts.find_one({"slug": slug}, {"_id": 0})
+
+
+@api.delete("/admin/blog/{slug}")
+async def admin_delete_blog(slug: str, _: User = Depends(require_permission("cms:manage"))):
+    await db.blog_posts.delete_one({"slug": slug})
+    return {"ok": True}
+
+
+# ---- Uploads (admin) and public file serving
+@api.post("/admin/upload")
+async def admin_upload(file: UploadFile = File(...), user: User = Depends(require_permission("media:manage"))):
+    data = await file.read()
+    if len(data) == 0:
+        raise HTTPException(400, "Empty file")
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(400, f"File too large (max {_MAX_UPLOAD_BYTES // 1024 // 1024} MB)")
+    ct = (file.content_type or "").lower()
+    if ct not in _ALLOWED_MIME:
+        raise HTTPException(400, f"Unsupported content type: {ct}")
+    ext = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else (ct.split("/")[-1] or "bin")
+    path = f"{APP_NAME}/uploads/{user.user_id}/{uuid.uuid4().hex}.{ext}"
+    try:
+        result = await _put_object(path, data, ct)
+    except Exception as e:
+        logger.exception("upload failed")
+        raise HTTPException(502, f"Storage error: {e}")
+    file_id = str(uuid.uuid4())
+    await db.files.insert_one({
+        "id": file_id,
+        "storage_path": result["path"],
+        "original_filename": file.filename,
+        "content_type": ct,
+        "size": result.get("size", len(data)),
+        "uploaded_by": user.user_id,
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {
+        "id": file_id,
+        "path": result["path"],
+        "url": result["public_url"],
+        "size": result.get("size", len(data)),
+        "content_type": ct,
+    }
+
+
+@api.get("/files/{path:path}")
+async def serve_file(path: str):
+    record = await db.files.find_one({"storage_path": path, "is_deleted": False}, {"_id": 0})
+    if not record:
+        raise HTTPException(404, "File not found")
+    try:
+        data, ct = await _get_object(path)
+    except Exception as e:
+        logger.warning(f"file fetch err: {e}")
+        raise HTTPException(404, "File not found")
+    headers = {"Cache-Control": "public, max-age=86400"}
+    return Response(content=data, media_type=record.get("content_type") or ct, headers=headers)
+
+
+
+# ---- Users management
+@api.get("/admin/users")
+async def admin_list_users(_: User = Depends(require_admin)):
+    docs = await db.users.find({}, {"_id": 0}).to_list(500)
+    for d in docs:
+        d["booking_count"] = await db.bookings.count_documents({"user_id": d["user_id"]})
+        d["role"] = _normalize_role(d.get("role"))
+    docs.sort(key=lambda u: str(u.get("created_at", "")), reverse=True)
+    return docs
+
+
+@api.patch("/admin/users/{user_id}")
+async def admin_update_user(user_id: str, payload: dict, _: User = Depends(require_admin)):
+    allowed = {k: v for k, v in payload.items() if k in ("name", "role", "picture", "active")}
+    if "role" in allowed:
+        allowed["role"] = _normalize_role(allowed["role"])
+    if "role" in allowed and allowed["role"] not in ROLE_LABELS:
+        raise HTTPException(400, "invalid role")
+    allowed["updated_at"] = _now_iso()
+    await db.users.update_one({"user_id": user_id}, {"$set": allowed})
+    if "role" in allowed:
+        await _sync_user_role(user_id, allowed["role"])
+    return await db.users.find_one({"user_id": user_id}, {"_id": 0})
+
+
+@api.delete("/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, current: User = Depends(require_admin)):
+    if user_id == current.user_id:
+        raise HTTPException(400, "Cannot delete yourself")
+    await db.users.delete_one({"user_id": user_id})
+    return {"ok": True}
+
+
+# ---- RBAC catalogue
+@api.get("/admin/roles")
+async def admin_roles(_: User = Depends(require_admin)):
+    roles = await db.roles.find({}, {"_id": 0}).to_list(100)
+    for role in roles:
+        role["permissions"] = [rp["permission"] for rp in await db.role_permissions.find({"role_name": role["name"]}, {"_id": 0}).to_list(100)]
+    roles.sort(key=lambda r: list(ROLE_LABELS).index(r["name"]) if r["name"] in ROLE_LABELS else 99)
+    return roles
+
+
+@api.get("/admin/users/{user_id}/login-history")
+async def admin_user_login_history(user_id: str, _: User = Depends(require_admin)):
+    docs = await db.login_history.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    docs.sort(key=lambda d: d.get("created_at", ""), reverse=True)
+    return docs
+
+
+# ---- Student profiles
+@api.get("/admin/student-profiles")
+async def admin_student_profiles(_: User = Depends(require_permission("students:manage"))):
+    docs = await db.student_profiles.find({}, {"_id": 0}).to_list(500)
+    for d in docs:
+        d["user"] = await db.users.find_one({"user_id": d["user_id"]}, {"_id": 0})
+    return docs
+
+
+@api.post("/admin/student-profiles")
+async def admin_create_student_profile(payload: dict, user: User = Depends(require_permission("students:manage"))):
+    if not payload.get("user_id"):
+        raise HTTPException(400, "user_id required")
+    now = _now_iso()
+    doc = {
+        "id": payload.get("id") or f"sp_{uuid.uuid4().hex[:10]}",
+        "user_id": payload["user_id"],
+        "phone": payload.get("phone", ""),
+        "enrolled_products": payload.get("enrolled_products", []),
+        "notes": payload.get("notes", ""),
+        "status": payload.get("status", "activo"),
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.student_profiles.insert_one(doc)
+    return doc
+
+
+@api.patch("/admin/student-profiles/{profile_id}")
+async def admin_update_student_profile(profile_id: str, payload: dict, _: User = Depends(require_permission("students:manage"))):
+    allowed = {k: v for k, v in payload.items() if k in ("phone", "enrolled_products", "notes", "status")}
+    allowed["updated_at"] = _now_iso()
+    await db.student_profiles.update_one({"id": profile_id}, {"$set": allowed})
+    return await db.student_profiles.find_one({"id": profile_id}, {"_id": 0})
+
+
+# ---- CMS Pages
+_PAGE_FIELDS = {"title", "slug", "language", "status", "meta_title", "meta_description", "content_blocks", "hero_image", "published_date"}
+
+
+@api.get("/admin/pages")
+async def admin_list_pages(language: Optional[str] = None, status: Optional[str] = None, _: User = Depends(require_permission("cms:manage"))):
+    q = {}
+    if language:
+        q["language"] = language
+    if status:
+        q["status"] = status
+    docs = await db.pages.find(q, {"_id": 0}).to_list(500)
+    docs.sort(key=lambda d: d.get("updated_at", ""), reverse=True)
+    return docs
+
+
+@api.post("/admin/pages")
+async def admin_create_page(payload: dict, user: User = Depends(require_permission("cms:manage"))):
+    for k in ("title", "slug"):
+        if not payload.get(k):
+            raise HTTPException(400, f"{k} required")
+    now = _now_iso()
+    status = payload.get("status", "draft")
+    doc = {k: payload.get(k) for k in _PAGE_FIELDS if k in payload}
+    doc.update({
+        "id": payload.get("id") or f"page_{uuid.uuid4().hex[:10]}",
+        "language": payload.get("language", "es"),
+        "status": status,
+        "meta_title": payload.get("meta_title", ""),
+        "meta_description": payload.get("meta_description", ""),
+        "content_blocks": payload.get("content_blocks", []),
+        "hero_image": payload.get("hero_image", ""),
+        "created_by": user.user_id,
+        "updated_by": user.user_id,
+        "published_date": payload.get("published_date") or (now if status == "published" else None),
+        "created_at": now,
+        "updated_at": now,
+    })
+    await db.pages.insert_one(doc)
+    return doc
+
+
+@api.patch("/admin/pages/{page_id}")
+async def admin_update_page(page_id: str, payload: dict, user: User = Depends(require_permission("cms:manage"))):
+    allowed = {k: v for k, v in payload.items() if k in _PAGE_FIELDS}
+    if allowed.get("status") == "published" and not allowed.get("published_date"):
+        allowed["published_date"] = _now_iso()
+    allowed["updated_by"] = user.user_id
+    allowed["updated_at"] = _now_iso()
+    await db.pages.update_one({"id": page_id}, {"$set": allowed})
+    return await db.pages.find_one({"id": page_id}, {"_id": 0})
+
+
+@api.post("/admin/pages/{page_id}/duplicate")
+async def admin_duplicate_page(page_id: str, user: User = Depends(require_permission("cms:manage"))):
+    page = await db.pages.find_one({"id": page_id}, {"_id": 0})
+    if not page:
+        raise HTTPException(404, "Page not found")
+    now = _now_iso()
+    page["id"] = f"page_{uuid.uuid4().hex[:10]}"
+    page["title"] = f"{page['title']} copia"
+    page["slug"] = f"{page['slug']}-copia-{uuid.uuid4().hex[:4]}"
+    page["status"] = "draft"
+    page["created_by"] = user.user_id
+    page["updated_by"] = user.user_id
+    page["published_date"] = None
+    page["created_at"] = now
+    page["updated_at"] = now
+    await db.pages.insert_one(page)
+    return page
+
+
+@api.delete("/admin/pages/{page_id}")
+async def admin_archive_page(page_id: str, user: User = Depends(require_permission("cms:manage"))):
+    await db.pages.update_one({"id": page_id}, {"$set": {"status": "archived", "updated_by": user.user_id, "updated_at": _now_iso()}})
+    return {"ok": True}
+
+
+# ---- Media library
+@api.get("/admin/media")
+async def admin_list_media(_: User = Depends(require_permission("media:manage"))):
+    docs = await db.media_assets.find({}, {"_id": 0}).to_list(500)
+    docs.sort(key=lambda d: d.get("created_at", ""), reverse=True)
+    return docs
+
+
+@api.post("/admin/media")
+async def admin_create_media(payload: dict, user: User = Depends(require_permission("media:manage"))):
+    if not payload.get("url"):
+        raise HTTPException(400, "url required")
+    now = _now_iso()
+    doc = {
+        "id": payload.get("id") or f"media_{uuid.uuid4().hex[:10]}",
+        "file_name": payload.get("file_name") or payload["url"].split("/")[-1],
+        "url": payload["url"],
+        "type": payload.get("type", "image"),
+        "alt_text": payload.get("alt_text", ""),
+        "uploaded_by": user.user_id,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.media_assets.insert_one(doc)
+    return doc
+
+
+@api.patch("/admin/media/{media_id}")
+async def admin_update_media(media_id: str, payload: dict, _: User = Depends(require_permission("media:manage"))):
+    allowed = {k: v for k, v in payload.items() if k in ("file_name", "url", "type", "alt_text")}
+    allowed["updated_at"] = _now_iso()
+    await db.media_assets.update_one({"id": media_id}, {"$set": allowed})
+    return await db.media_assets.find_one({"id": media_id}, {"_id": 0})
+
+
+@api.delete("/admin/media/{media_id}")
+async def admin_delete_media(media_id: str, _: User = Depends(require_permission("media:manage"))):
+    await db.media_assets.delete_one({"id": media_id})
+    return {"ok": True}
+
+
+# ---- Site Settings (CMS)
+DEFAULT_SETTINGS = {
+    "id": "main",
+    "brand_name": "MOSAICO",
+    "tagline_en": "Learn Spanish through real conversations.",
+    "tagline_es": "Aprende español con conversaciones reales.",
+    "logo_url": "",
+    "favicon_url": "",
+    "hero_image_url": "",
+    "contact_email": "",
+    "social_instagram": "",
+    "social_twitter": "",
+    "stripe": {
+        "enabled": True,
+        "test_mode": True,
+        "publishable_key": "",
+        "secret_key": "",
+    },
+    "google_calendar": {
+        "enabled": False,
+        "client_id": "",
+        "client_secret": "",
+        "refresh_token": "",
+        "calendar_id": "primary",
+        "auto_create_meet": True,
+    },
+    "content": {
+        "hero": {
+            "tag_en": "", "tag_es": "",
+            "subtitle_en": "", "subtitle_es": "",
+            "bubble_en": "", "bubble_es": "",
+            "cta_primary_en": "", "cta_primary_es": "",
+            "cta_secondary_en": "", "cta_secondary_es": "",
+        },
+        "audiences": [],
+        "testimonials": [],
+        "faq": [],
+        "about": {
+            "eyebrow_en": "", "eyebrow_es": "",
+            "title_en": "", "title_es": "",
+            "body_en": "", "body_es": "",
+            "stats": [],
+        },
+        "footer": {"chips_en": "", "chips_es": ""},
+    },
+}
+PUBLIC_SETTINGS_FIELDS = {"brand_name", "tagline_en", "tagline_es", "logo_url",
+                          "favicon_url", "hero_image_url", "contact_email",
+                          "social_instagram", "social_twitter", "content"}
+
+
+async def _get_settings() -> dict:
+    doc = await db.site_settings.find_one({"id": "main"}, {"_id": 0})
+    if not doc:
+        await db.site_settings.insert_one(dict(DEFAULT_SETTINGS))
+        return dict(DEFAULT_SETTINGS)
+    # Ensure all expected keys exist (forward compat)
+    for k, v in DEFAULT_SETTINGS.items():
+        if k not in doc:
+            doc[k] = v
+    return doc
+
+
+async def _get_stripe_key() -> str:
+    s = await _get_settings()
+    sk = (s.get("stripe") or {}).get("secret_key") or ""
+    return sk.strip() or STRIPE_API_KEY
+
+
+# ---- Google Calendar (real)
+async def _get_gcal_access_token(s: dict) -> Optional[str]:
+    cfg = s.get("google_calendar") or {}
+    if not (cfg.get("enabled") and cfg.get("client_id") and cfg.get("client_secret") and cfg.get("refresh_token")):
+        return None
+    async with httpx.AsyncClient(timeout=20.0) as hc:
+        r = await hc.post("https://oauth2.googleapis.com/token", data={
+            "client_id": cfg["client_id"],
+            "client_secret": cfg["client_secret"],
+            "refresh_token": cfg["refresh_token"],
+            "grant_type": "refresh_token",
+        })
+    if r.status_code != 200:
+        logger.warning(f"gcal token refresh failed: {r.status_code} {r.text[:200]}")
+        return None
+    return r.json().get("access_token")
+
+
+async def _create_gcal_event(booking: dict, product: dict) -> dict:
+    """Creates a Google Calendar event with Meet link and sends invite email to attendee.
+    Returns {'meet_link': str|None, 'event_link': str|None} or {} on failure."""
+    s = await _get_settings()
+    cfg = s.get("google_calendar") or {}
+    token = await _get_gcal_access_token(s)
+    if not token:
+        return {}
+    cal_id = cfg.get("calendar_id") or "primary"
+    auto_meet = bool(cfg.get("auto_create_meet", True))
+    try:
+        tz = ZoneInfo(booking.get("timezone") or "UTC")
+    except Exception:
+        tz = timezone.utc
+    try:
+        start_dt = datetime.fromisoformat(f"{booking['scheduled_date']}T{booking['scheduled_time']}:00").replace(tzinfo=tz)
+    except Exception as e:
+        logger.warning(f"gcal date parse fail: {e}")
+        return {}
+    end_dt = start_dt + timedelta(minutes=product.get("duration_min") or 60)
+
+    body = {
+        "summary": f"MOSAICO · {product['name_en']} · {booking['user_name']}",
+        "description": (
+            f"Spanish class with {booking.get('teacher_name') or 'your teacher'}.\n"
+            f"Booked via MOSAICO."
+        ),
+        "start": {"dateTime": start_dt.isoformat(), "timeZone": str(tz)},
+        "end": {"dateTime": end_dt.isoformat(), "timeZone": str(tz)},
+        "attendees": [{"email": booking["user_email"]}],
+        "reminders": {"useDefault": True},
+    }
+    params = {"sendUpdates": "all"}
+    if auto_meet:
+        body["conferenceData"] = {
+            "createRequest": {
+                "requestId": booking["id"],
+                "conferenceSolutionKey": {"type": "hangoutsMeet"},
+            }
+        }
+        params["conferenceDataVersion"] = 1
+
+    async with httpx.AsyncClient(timeout=30.0) as hc:
+        r = await hc.post(
+            f"https://www.googleapis.com/calendar/v3/calendars/{cal_id}/events",
+            headers={"Authorization": f"Bearer {token}"},
+            params=params, json=body,
+        )
+    if r.status_code not in (200, 201):
+        logger.warning(f"gcal create failed: {r.status_code} {r.text[:300]}")
+        return {}
+    data = r.json()
+    meet = None
+    for ep in (data.get("conferenceData") or {}).get("entryPoints", []):
+        if ep.get("entryPointType") == "video":
+            meet = ep.get("uri")
+            break
+    return {"meet_link": meet or data.get("hangoutLink"), "event_link": data.get("htmlLink")}
+
+
+@api.get("/settings/public")
+async def get_public_settings():
+    s = await _get_settings()
+    return {k: s.get(k, "") for k in PUBLIC_SETTINGS_FIELDS}
+
+
+@api.get("/admin/settings")
+async def admin_get_settings(_: User = Depends(require_admin)):
+    return await _get_settings()
+
+
+@api.patch("/admin/settings")
+async def admin_update_settings(payload: dict, _: User = Depends(require_admin)):
+    payload.pop("_id", None)
+    payload.pop("id", None)
+    # Deep-merge known nested sub-objects so partial PATCH preserves siblings
+    existing = await _get_settings()
+    if "stripe" in payload and isinstance(payload["stripe"], dict):
+        payload["stripe"] = {**existing.get("stripe", {}), **payload["stripe"]}
+    if "google_calendar" in payload and isinstance(payload["google_calendar"], dict):
+        payload["google_calendar"] = {**existing.get("google_calendar", {}), **payload["google_calendar"]}
+    if "content" in payload and isinstance(payload["content"], dict):
+        merged_content = dict(existing.get("content", {}))
+        for k, v in payload["content"].items():
+            if isinstance(v, dict) and isinstance(merged_content.get(k), dict):
+                merged_content[k] = {**merged_content[k], **v}
+            else:
+                merged_content[k] = v
+        payload["content"] = merged_content
+    await db.site_settings.update_one({"id": "main"}, {"$set": payload}, upsert=True)
+    return await _get_settings()
+
+
+@api.post("/admin/settings/test-gcal")
+async def admin_test_gcal(user: User = Depends(require_admin)):
+    """Sends a real test Google Calendar invite (+ Meet link) to the admin's email."""
+    s = await _get_settings()
+    token = await _get_gcal_access_token(s)
+    if not token:
+        raise HTTPException(400, "Calendar not configured (enable + client_id + client_secret + refresh_token)")
+    now = datetime.now(timezone.utc) + timedelta(minutes=5)
+    fake_booking = {
+        "id": f"test-{uuid.uuid4().hex[:8]}",
+        "user_email": user.email,
+        "user_name": user.name,
+        "teacher_name": "Test",
+        "scheduled_date": now.date().isoformat(),
+        "scheduled_time": now.strftime("%H:%M"),
+        "timezone": "UTC",
+    }
+    fake_product = {"name_en": "Calendar Connection Test", "duration_min": 15}
+    out = await _create_gcal_event(fake_booking, fake_product)
+    if not out:
+        raise HTTPException(502, "Calendar API call failed — check backend logs")
+    return {"ok": True, **out, "message": f"Test invite sent to {user.email}"}
+
+
+
+
+# ---- Mount
+app.include_router(api)
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.on_event("shutdown")
+async def shutdown():
+    await close_pool()

@@ -1,0 +1,100 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,500;0,700;0,900;1,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: 'Plus Jakarta Sans', 'Outfit', system-ui, -apple-system, sans-serif;
+    background-color: #FBF7EE;
+    color: #1F3B6E;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, .font-display {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+.font-script {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-style: italic;
+    letter-spacing: -0.01em;
+}
+
+/* Underline doodle accent (yellow) */
+.accent-underline {
+    position: relative;
+    display: inline-block;
+}
+.accent-underline::after {
+    content: "";
+    position: absolute;
+    left: -4%;
+    right: -4%;
+    bottom: 0.05em;
+    height: 0.32em;
+    background: #F4C13D;
+    border-radius: 999px;
+    z-index: -1;
+    transform: skewX(-6deg);
+}
+
+.dot-grid {
+    background-image: radial-gradient(rgba(31, 59, 110, 0.12) 1.4px, transparent 1.4px);
+    background-size: 18px 18px;
+}
+
+@layer base {
+    :root {
+        --background: 40 60% 96%;            /* #FBF7EE cream */
+        --foreground: 218 55% 27%;           /* #1F3B6E navy */
+        --card: 0 0% 100%;
+        --card-foreground: 218 55% 27%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 218 55% 27%;
+        --primary: 14 79% 60%;               /* #E8704C coral */
+        --primary-foreground: 40 60% 96%;
+        --secondary: 28 100% 95%;            /* #FFF0E6 peach */
+        --secondary-foreground: 218 55% 27%;
+        --muted: 28 100% 95%;
+        --muted-foreground: 218 18% 43%;
+        --accent: 46 88% 60%;                /* #F4C13D yellow */
+        --accent-foreground: 218 55% 27%;
+        --destructive: 0 70% 50%;
+        --destructive-foreground: 40 60% 96%;
+        --border: 34 50% 88%;                /* #EFE4D0 */
+        --input: 34 50% 88%;
+        --ring: 14 79% 60%;
+        --radius: 1rem;
+    }
+}
+
+@layer base {
+    * { @apply border-border; }
+    body { @apply bg-background text-foreground; }
+}
+
+::selection { background: #E8704C; color: #FBF7EE; }
+
+.fade-up { animation: fadeUp 0.7s ease both; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+@layer base {
+    [data-debug-wrapper="true"] { display: contents !important; }
+}
+
+/* MOSAICO multi-color wordmark helper */
+.mosaico-letters > span:nth-child(1) { color: #E8704C; } /* M */
+.mosaico-letters > span:nth-child(2) { color: #1F3B6E; } /* O */
+.mosaico-letters > span:nth-child(3) { color: #2DA89F; } /* S */
+.mosaico-letters > span:nth-child(4) { color: #1F3B6E; } /* A */
+.mosaico-letters > span:nth-child(5) { color: #8B5BB8; } /* I */
+.mosaico-letters > span:nth-child(6) { color: #4FA85F; } /* C */
+.mosaico-letters > span:nth-child(7) { color: #4A90D9; } /* O */

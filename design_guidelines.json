@@ -1,0 +1,98 @@
+{
+  "theme": "LIGHT",
+  "archetype": "1_Organic_Earthy",
+  "description": "A premium online Spanish studio with an Organic & Earthy archetype. Tone is human, simple, conversation-first. Design is warm, premium, minimalistic, trustworthy. References: Airbnb, Apple, Notion.",
+  "typography": {
+    "headings": {
+      "font_family": "Cormorant Garamond, serif",
+      "import_url": "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap",
+      "rules": "Use for all headings (H1-H4). Never center by default. Use tracking-tight or tracking-tighter for sizes > 32px to create an editorial feel."
+    },
+    "body": {
+      "font_family": "Outfit, sans-serif",
+      "import_url": "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap",
+      "rules": "Use for body text, navigation, and small labels. Left-align dense content for better readability."
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl",
+      "h3": "text-xl sm:text-2xl",
+      "h4": "text-lg sm:text-xl",
+      "body": "text-base",
+      "labels": "text-sm uppercase tracking-[0.2em]"
+    }
+  },
+  "colors": {
+    "background": {
+      "primary": "#F9F6F0",
+      "secondary": "#FFFFFF",
+      "tertiary": "#F0EBE1"
+    },
+    "text": {
+      "primary": "#1C1A17",
+      "secondary": "#5C564D",
+      "inverse": "#F9F6F0"
+    },
+    "accent": {
+      "primary": "#C65D47",
+      "primary_hover": "#A84B38",
+      "secondary": "#2E473B"
+    },
+    "border": "#E5E0D8",
+    "rules": "Never use pure #000000. Tint neutral greys with warmth. Ensure normal text meets 4.5:1 contrast."
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous Spacing Philosophy: Use 2-3x more spacing (p-8, p-12, p-16). Containers with borders MUST have generous internal padding to avoid collision.",
+    "grid": {
+      "marketing": "Mode A 'Tetris' Grid (Asymmetry, Visual Tension). Mix col-span-full, col-span-4, and col-span-2 to leave breathing room.",
+      "dashboard": "Mode B 'Control Room' Grid (Density, Scanability). Use tighter gaps (gap-4 or gap-6). Utilize full height for children."
+    },
+    "alignment": "Optical alignment over geometrical. Mobile-first design.",
+    "media": "Images MUST NOT exceed max-h-[80vh] on mobile devices."
+  },
+  "surfaces_and_components": {
+    "cards_and_widgets": "Use pure HTML + Tailwind for marketing layouts (bento boxes with border-[#E5E0D8] and #FFFFFF backgrounds). For dashboards, use subtle roundness (max 8px) or sharp edges.",
+    "header": "Crystal Glassmorphism: backdrop-blur-xl bg-[#F9F6F0]/70 or bg-white/70. Add 1px delicate inner stroke border-b border-[#E5E0D8]/40. Must be sticky/fixed z-50.",
+    "hero_overlay": "Max overlay opacity bg-black/30 or bg-white/40. If image is dark, use gradient overlay for text legibility. DO NOT use blanket overlay.",
+    "buttons_and_ctas": "Primary CTA uses accent terracotta (#C65D47). ALWAYS explicitly set text color on hover (e.g., hover:bg-[#A84B38] hover:text-[#F9F6F0]).",
+    "forms": "Use Shadcn components heavily customized. Strip the default 'Vercel-look'. Left align labels.",
+    "booking_flow": "Fast and minimalistic. Calendar picker (Shadcn customized) placed organically in a grid. Timezone selector clearly visible.",
+    "tables": "Go cardless for admin/student dashboard data. Density and clarity are priority."
+  },
+  "motion_and_interactions": {
+    "animations": "Subtle and premium. Use hover states (scale-105 for images). Use specific transitions: transition-transform 0.3s ease, opacity 0.3s ease. DO NOT use transition-all.",
+    "accessibility": "Respect prefers-reduced-motion. Add aria-hidden='true' to decorative elements."
+  },
+  "icons_and_assets": {
+    "icon_library": "lucide-react (default) or @phosphor-icons/react (duotone for premium warmth).",
+    "images": [
+      {
+        "category": "hero_background",
+        "url": "https://images.pexels.com/photos/25037026/pexels-photo-25037026.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Vibrant warm orange abstract canvas for hero section background (use with white/40 overlay for text contrast)."
+      },
+      {
+        "category": "teacher_portrait",
+        "url": "https://images.unsplash.com/photo-1590650213165-c1fef80648c4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwxfHxmcmllbmRseSUyMGhpc3BhbmljJTIwd29tYW4lMjB0ZWFjaGVyJTIwcG9ydHJhaXR8ZW58MHx8fHwxNzgxMzcxNDE0fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Friendly Hispanic woman teacher for 'About Lily' section."
+      },
+      {
+        "category": "culture_architecture",
+        "url": "https://images.unsplash.com/photo-1573611030146-ff6916c398fa?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxzcGFuaXNoJTIwY3VsdHVyZSUyMGFyY2hpdGVjdHVyZXxlbnwwfHx8fDE3ODEzNzE0MTR8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Spanish architecture (Plaza de España) for culture or blog section."
+      },
+      {
+        "category": "learning_environment",
+        "url": "https://images.unsplash.com/photo-1505275350441-83dcda8eeef5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwzfHxwZW9wbGUlMjBsZWFybmluZyUyMHN0dWR5aW5nJTIwY29mZmVlJTIwc2hvcHxlbnwwfHx8fDE3ODEzNzE0MTR8MA&ixlib=rb-4.1.0&q=85",
+        "description": "People studying in coffee shop for community/student area."
+      },
+      {
+        "category": "relaxing_study_room",
+        "url": "https://images.unsplash.com/photo-1780672823934-1f6b7ebae149?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDJ8MHwxfHNlYXJjaHwyfHxjb21mb3J0YWJsZSUyMG1vZGVybiUyMGxpdmluZyUyMHJvb20lMjB3aXRoJTIwYm9va3N8ZW58MHx8fHwxNzgxMzcxNDIyfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Comfortable living room with books for 'Learn from home' section."
+      }
+    ]
+  },
+  "testing": "All interactive and key informational elements MUST include a `data-testid` attribute (e.g., data-testid='booking-submit-button').",
+  "instructions_to_main_agent": "Use the media URLs provided EXACTLY as they are. DO NOT use placeholder services like via.placeholder.com. Apply the generous spacing and typography constraints strictly. For bilingual support, implement a clean EN/ES toggle in the navigation header. Use Shadcn extensively for the booking flow and dashboard, but style it to fit the organic/earthy theme."
+}
