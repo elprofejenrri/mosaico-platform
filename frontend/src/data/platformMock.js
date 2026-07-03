@@ -98,6 +98,157 @@ export const courses = [
   },
 ];
 
+export const academicLevels = [
+  { id: "a1", name: "A1 Foundations", cefr: "A1", status: "current", description: "Build survival Spanish for greetings, family, food, and daily routines." },
+  { id: "a2", name: "A2 Everyday Spanish", cefr: "A2", status: "next", description: "Handle travel, plans, stories, and everyday conversations with confidence." },
+  { id: "b1", name: "B1 Real Conversations", cefr: "B1", status: "locked", description: "Speak across real-life situations with opinions, stories, and follow-up questions." },
+  { id: "b2", name: "B2 Confident Speaker", cefr: "B2", status: "locked", description: "Discuss complex topics with nuance, rhythm, and stronger accuracy." },
+];
+
+export const academicCourses = [
+  {
+    id: "a1-real-start",
+    levelId: "a1",
+    title: "Spanish Real Start",
+    subtitle: "Your first usable conversations",
+    status: "In progress",
+    progress: 64,
+    skillFocus: ["Speaking", "Vocabulary", "Listening"],
+    units: [
+      {
+        id: "u1",
+        title: "Meet People",
+        outcome: "Introduce yourself and ask simple questions.",
+        lessons: [
+          {
+            id: "lesson-greetings",
+            title: "Greetings that sound natural",
+            type: "Speaking",
+            duration: "12 min",
+            status: "Completed",
+            xp: 40,
+            activities: [
+              { type: "Watch", title: "Friendly greetings in context", status: "Completed" },
+              { type: "Practice", title: "Record 5 introductions", status: "Completed" },
+              { type: "Quiz", title: "Choose the right greeting", status: "Completed" },
+            ],
+          },
+          {
+            id: "lesson-questions",
+            title: "Ask where someone is from",
+            type: "Grammar",
+            duration: "15 min",
+            status: "In progress",
+            xp: 50,
+            activities: [
+              { type: "Learn", title: "De donde eres vs donde vives", status: "Completed" },
+              { type: "Practice", title: "Build 8 questions", status: "In progress" },
+              { type: "Quiz", title: "Question word check", status: "Not started" },
+            ],
+          },
+        ],
+      },
+      {
+        id: "u2",
+        title: "Food and Cafe",
+        outcome: "Order politely and understand common menu words.",
+        lessons: [
+          {
+            id: "lesson-ordering-food",
+            title: "Ordering food with confidence",
+            type: "Roleplay",
+            duration: "18 min",
+            status: "Recommended",
+            xp: 60,
+            activities: [
+              { type: "Listen", title: "Cafe conversation", status: "Not started" },
+              { type: "Flashcards", title: "20 menu words", status: "Not started" },
+              { type: "Roleplay", title: "Order and ask for the bill", status: "Not started" },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "a2-travel-sprint",
+    levelId: "a2",
+    title: "Travel Spanish Sprint",
+    subtitle: "Hotels, transport, emergencies, and plans",
+    status: "Recommended",
+    progress: 22,
+    skillFocus: ["Speaking", "Listening", "Reading"],
+    units: [
+      {
+        id: "u3",
+        title: "Arrival and Hotel",
+        outcome: "Check in, ask for help, and solve simple travel problems.",
+        lessons: [
+          {
+            id: "lesson-hotel-checkin",
+            title: "Hotel check-in roleplay",
+            type: "Roleplay",
+            duration: "16 min",
+            status: "Not started",
+            xp: 55,
+            activities: [
+              { type: "Watch", title: "Hotel desk phrases", status: "Not started" },
+              { type: "Practice", title: "Polite requests", status: "Not started" },
+              { type: "Quiz", title: "Travel phrase check", status: "Not started" },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "a2-grammar-builder",
+    levelId: "a2",
+    title: "Grammar Builder",
+    subtitle: "Patterns that unlock clearer speech",
+    status: "New",
+    progress: 8,
+    skillFocus: ["Grammar", "Writing", "Speaking"],
+    units: [
+      {
+        id: "u4",
+        title: "Past Tense Stories",
+        outcome: "Tell simple stories about what happened.",
+        lessons: [
+          {
+            id: "lesson-preterite-imperfect",
+            title: "Preterite vs imperfect",
+            type: "Grammar",
+            duration: "20 min",
+            status: "Not started",
+            xp: 65,
+            activities: [
+              { type: "Learn", title: "Event vs background", status: "Not started" },
+              { type: "Write", title: "Weekend story builder", status: "Not started" },
+              { type: "Quiz", title: "Past tense choice", status: "Not started" },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+];
+
+export const academicProgress = [
+  { skill: "Speaking", current: 74, target: 82, evidence: "14 live classes, 6 roleplays" },
+  { skill: "Listening", current: 62, target: 75, evidence: "18 audio drills" },
+  { skill: "Reading", current: 71, target: 78, evidence: "9 short readings" },
+  { skill: "Writing", current: 48, target: 65, evidence: "4 teacher-reviewed tasks" },
+  { skill: "Grammar", current: 57, target: 72, evidence: "12 quizzes completed" },
+  { skill: "Vocabulary", current: 82, target: 88, evidence: "486 active words" },
+];
+
+export const academicAssessments = [
+  { id: "assess-a1", name: "A1 Foundations Checkpoint", status: "Available soon", readiness: 78, skills: ["Speaking", "Vocabulary", "Grammar"] },
+  { id: "assess-speaking", name: "Cafe Speaking Rubric", status: "Recommended", readiness: 84, skills: ["Speaking", "Listening"] },
+  { id: "assess-writing", name: "Short Writing Review", status: "Needs more practice", readiness: 52, skills: ["Writing", "Grammar"] },
+];
+
 export const lessons = [
   { title: "Airport arrival", type: "Roleplay", time: "12 min", skill: "Speaking" },
   { title: "Ser vs estar in real life", type: "Grammar", time: "16 min", skill: "Grammar" },

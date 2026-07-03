@@ -56,6 +56,10 @@ import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
 import {
   analytics,
+  academicAssessments,
+  academicCourses,
+  academicLevels,
+  academicProgress,
   bookings,
   communityPosts,
   courses,
@@ -510,35 +514,165 @@ function StudentDashboard() {
         </Card>
       </div>
       <div className="grid gap-5 lg:grid-cols-3">
-        {courses.map((course) => <CourseMini key={course.id} course={course} />)}
+        {academicCourses.map((course) => (
+          <Card key={course.id}>
+            <p className="text-xs uppercase tracking-[0.16em] text-[#5C6680]">{course.status}</p>
+            <h3 className="mt-2 font-display text-xl">{course.title}</h3>
+            <p className="mt-2 text-sm text-[#5C6680]">{course.subtitle}</p>
+            <Progress value={course.progress} className="mt-4 h-2" />
+            <Link to="/student/learn" className="mt-4 inline-block text-sm font-semibold text-[#E8704C]">Open course →</Link>
+          </Card>
+        ))}
       </div>
     </div>
   );
 }
 
 function LearningHub() {
-  const modules = ["Courses", "Lessons", "Videos", "Audio", "Reading", "Writing", "Speaking", "Grammar", "Vocabulary", "Flashcards", "Quizzes"];
+  const [selectedCourseId, setSelectedCourseId] = useState(academicCourses[0].id);
+  const [selectedLessonId, setSelectedLessonId] = useState(academicCourses[0].units[0].lessons[1].id);
+  const selectedCourse = academicCourses.find((course) => course.id === selectedCourseId) || academicCourses[0];
+  const allLessons = selectedCourse.units.flatMap((unit) => unit.lessons.map((lesson) => ({ ...lesson, unitTitle: unit.title, outcome: unit.outcome })));
+  const selectedLesson = allLessons.find((lesson) => lesson.id === selectedLessonId) || allLessons[0];
+
   return (
     <div className="grid gap-5">
-      <SectionHeader eyebrow="Learning hub" title="Choose a mode and keep momentum." />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {modules.map((item, idx) => (
-          <Card key={item}>
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg p-2 text-white" style={{ backgroundColor: colors[idx % colors.length] }}><BookOpen size={18} /></div>
-              <p className="font-semibold">{item}</p>
-            </div>
-            <p className="mt-3 text-sm text-[#5C6680]">{idx % 2 ? "New practice set available." : "Continue your guided path."}</p>
+      <SectionHeader eyebrow="Academic model" title="Courses, units, lessons, activities, and checkpoints" />
+      <div className="grid gap-3 md:grid-cols-4">
+        {academicLevels.map((level) => (
+          <Card key={level.id} className={level.status === "current" ? "ring-2 ring-[#E8704C]" : ""}>
+            <p className="text-xs uppercase tracking-[0.16em] text-[#5C6680]">{level.cefr}</p>
+            <h3 className="mt-2 font-display text-xl">{level.name}</h3>
+            <p className="mt-2 text-sm text-[#5C6680]">{level.description}</p>
+            <span className={`mt-4 inline-block rounded-md px-2 py-1 text-xs ${level.status === "locked" ? "bg-[#F3EEE3] text-[#5C6680]" : "bg-[#FFF0E6] text-[#E8704C]"}`}>
+              {level.status}
+            </span>
           </Card>
         ))}
       </div>
+
+      <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
+        <Card>
+          <SectionHeader eyebrow="Courses" title="Learning paths" />
+          <div className="mt-5 grid gap-3">
+            {academicCourses.map((course) => (
+              <button
+                key={course.id}
+                onClick={() => {
+                  setSelectedCourseId(course.id);
+                  setSelectedLessonId(course.units[0].lessons[0].id);
+                  toast.success(`${course.title} selected.`);
+                }}
+                className={`rounded-lg border p-4 text-left transition-colors ${
+                  selectedCourseId === course.id ? "border-[#E8704C] bg-[#FFF0E6]" : "border-[#EFE4D0] bg-white hover:bg-[#FBF7EE]"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-display text-xl">{course.title}</p>
+                    <p className="text-sm text-[#5C6680]">{course.subtitle}</p>
+                  </div>
+                  <span className="rounded-md bg-white px-2 py-1 text-xs text-[#E8704C]">{course.status}</span>
+                </div>
+                <Progress value={course.progress} className="mt-4 h-2" />
+                <p className="mt-3 text-xs text-[#5C6680]">Focus: {course.skillFocus.join(", ")}</p>
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <SectionHeader
+            eyebrow="Selected course"
+            title={selectedCourse.title}
+            action={<ActionButton doneText="Course resumed." className="bg-[#E8704C] text-white hover:bg-[#C95630]">Continue course</ActionButton>}
+          />
+          <p className="mt-2 text-sm text-[#5C6680]">{selectedCourse.subtitle}</p>
+          <div className="mt-5 grid gap-4">
+            {selectedCourse.units.map((unit) => (
+              <div key={unit.id} className="rounded-lg border border-[#EFE4D0] p-4">
+                <p className="text-xs uppercase tracking-[0.16em] text-[#5C6680]">{unit.outcome}</p>
+                <h3 className="mt-1 font-display text-xl">{unit.title}</h3>
+                <div className="mt-4 grid gap-2">
+                  {unit.lessons.map((lesson) => (
+                    <button
+                      key={lesson.id}
+                      onClick={() => {
+                        setSelectedLessonId(lesson.id);
+                        toast.success(`${lesson.title} opened.`);
+                      }}
+                      className={`flex flex-col justify-between gap-2 rounded-md border p-3 text-left md:flex-row md:items-center ${
+                        selectedLessonId === lesson.id ? "border-[#1F3B6E] bg-[#FBF7EE]" : "border-[#EFE4D0]"
+                      }`}
+                    >
+                      <span>
+                        <span className="font-semibold">{lesson.title}</span>
+                        <span className="block text-sm text-[#5C6680]">{lesson.type} · {lesson.duration} · {lesson.xp} XP</span>
+                      </span>
+                      <span className="rounded-md bg-[#FFF0E6] px-2 py-1 text-xs text-[#E8704C]">{lesson.status}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+        <Card>
+          <SectionHeader eyebrow="Lesson detail" title={selectedLesson.title} />
+          <p className="mt-2 text-sm text-[#5C6680]">
+            Unit: {selectedLesson.unitTitle} · Outcome: {selectedLesson.outcome}
+          </p>
+          <div className="mt-5 grid gap-3">
+            {selectedLesson.activities.map((activity, index) => (
+              <div key={`${activity.type}-${activity.title}`} className="flex flex-col justify-between gap-3 rounded-lg border border-[#EFE4D0] p-4 md:flex-row md:items-center">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-md text-white" style={{ backgroundColor: colors[index % colors.length] }}>
+                    {index + 1}
+                  </div>
+                  <div>
+                    <p className="font-semibold">{activity.type}: {activity.title}</p>
+                    <p className="text-sm text-[#5C6680]">{activity.status}</p>
+                  </div>
+                </div>
+                <ActionButton doneText={`${activity.title} marked complete.`} variant="outline">
+                  {activity.status === "Completed" ? "Review" : "Start"}
+                </ActionButton>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <SectionHeader eyebrow="Checkpoint readiness" title="Assessment path" />
+          <div className="mt-5 grid gap-3">
+            {academicAssessments.map((assessment) => (
+              <div key={assessment.id} className="rounded-lg bg-[#FBF7EE] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-semibold">{assessment.name}</p>
+                  <span className="text-sm font-semibold text-[#E8704C]">{assessment.readiness}%</span>
+                </div>
+                <Progress value={assessment.readiness} className="mt-3 h-2" />
+                <p className="mt-2 text-sm text-[#5C6680]">{assessment.status} · {assessment.skills.join(", ")}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
       <Card>
-        <h3 className="font-display text-xl">Recommended lessons</h3>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {lessons.map((lesson) => (
-            <div key={lesson.title} className="rounded-lg border border-[#EFE4D0] p-4">
-              <p className="font-semibold">{lesson.title}</p>
-              <p className="mt-1 text-sm text-[#5C6680]">{lesson.type} - {lesson.time} - {lesson.skill}</p>
+        <SectionHeader eyebrow="Skill evidence" title="How progress is calculated" />
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          {academicProgress.map((skill) => (
+            <div key={skill.skill} className="rounded-lg border border-[#EFE4D0] p-4">
+              <div className="flex justify-between gap-3 text-sm font-semibold">
+                <span>{skill.skill}</span>
+                <span>{skill.current}% / target {skill.target}%</span>
+              </div>
+              <Progress value={skill.current} className="mt-3 h-2" />
+              <p className="mt-2 text-sm text-[#5C6680]">{skill.evidence}</p>
             </div>
           ))}
         </div>
@@ -693,10 +827,11 @@ function ProgressPage() {
       <Card>
         <h3 className="font-display text-xl">Skills breakdown</h3>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {skillProgress.map((skill) => (
+          {academicProgress.map((skill) => (
             <div key={skill.skill}>
-              <div className="flex justify-between text-sm font-semibold"><span>{skill.skill}</span><span>{skill.value}%</span></div>
-              <Progress value={skill.value} className="mt-2 h-2" />
+              <div className="flex justify-between text-sm font-semibold"><span>{skill.skill}</span><span>{skill.current}%</span></div>
+              <Progress value={skill.current} className="mt-2 h-2" />
+              <p className="mt-1 text-xs text-[#5C6680]">{skill.evidence}</p>
             </div>
           ))}
         </div>
