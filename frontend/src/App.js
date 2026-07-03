@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider } from "./context/AppContext";
 import { Navbar } from "./components/Navbar";
 import { Footer } from "./components/Footer";
-import Home from "./pages/Home";
+import { PlatformLanding, StudentPortal, TeacherPortal, AdminPortal } from "./pages/Platform";
 import Pricing from "./pages/Pricing";
 import Faq from "./pages/Faq";
 import Blog from "./pages/Blog";
@@ -26,15 +26,38 @@ function AppRouter() {
       <Navbar />
       <main className="flex-1 pt-16">
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<PlatformLanding />} />
+          <Route path="/student" element={<StudentPortal />} />
+          <Route path="/student/learn" element={<StudentPortal module="learn" />} />
+          <Route path="/student/classes" element={<StudentPortal module="classes" />} />
+          <Route path="/student/ai-tutor" element={<StudentPortal module="ai-tutor" />} />
+          <Route path="/student/community" element={<StudentPortal module="community" />} />
+          <Route path="/student/progress" element={<StudentPortal module="progress" />} />
+          <Route path="/teacher" element={<TeacherPortal />} />
+          <Route path="/teacher/calendar" element={<TeacherPortal module="calendar" />} />
+          <Route path="/teacher/students" element={<TeacherPortal module="students" />} />
+          <Route path="/teacher/classes" element={<TeacherPortal module="classes" />} />
+          <Route path="/teacher/materials" element={<TeacherPortal module="materials" />} />
+          <Route path="/teacher/evaluations" element={<TeacherPortal module="evaluations" />} />
+          <Route path="/teacher/earnings" element={<TeacherPortal module="earnings" />} />
+          <Route path="/admin" element={<AdminPortal />} />
+          <Route path="/admin/users" element={<AdminPortal module="users" />} />
+          <Route path="/admin/teachers" element={<AdminPortal module="teachers" />} />
+          <Route path="/admin/courses" element={<AdminPortal module="courses" />} />
+          <Route path="/admin/bookings" element={<AdminPortal module="bookings" />} />
+          <Route path="/admin/payments" element={<AdminPortal module="payments" />} />
+          <Route path="/admin/community" element={<AdminPortal module="community" />} />
+          <Route path="/admin/analytics" element={<AdminPortal module="analytics" />} />
+          <Route path="/admin/settings" element={<AdminPortal module="settings" />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/faq" element={<Faq />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/book" element={<Book />} />
           <Route path="/book/:productId" element={<Book />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route path="/dashboard" element={<StudentPortal />} />
+          <Route path="/legacy-dashboard" element={<Dashboard />} />
+          <Route path="/legacy-admin" element={<Admin />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/payment/success" element={<PaymentSuccess />} />
         </Routes>

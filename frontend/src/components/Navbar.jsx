@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Menu, X, Globe } from "lucide-react";
-import { useApp, startGoogleAuth } from "../context/AppContext";
+import { Menu, X, Globe, GraduationCap, ShieldCheck, UserRound } from "lucide-react";
+import { useApp } from "../context/AppContext";
 import { Button } from "./ui/button";
 import { MosaicoLogo } from "./MosaicoLogo";
 
@@ -32,10 +32,10 @@ export const Navbar = () => {
         <MosaicoLogo size="text-2xl" />
 
         <nav className="hidden md:flex items-center gap-8">
-          {navLink("/", t.nav.home, "nav-home")}
-          {navLink("/pricing", t.nav.pricing, "nav-pricing")}
-          {navLink("/blog", t.nav.blog, "nav-blog")}
-          {navLink("/faq", t.nav.faq, "nav-faq")}
+          {navLink("/", "Platform", "nav-home")}
+          {navLink("/student", "Student", "nav-student")}
+          {navLink("/teacher", "Teacher", "nav-teacher")}
+          {navLink("/admin", "Admin", "nav-admin")}
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
@@ -69,11 +69,11 @@ export const Navbar = () => {
             </>
           ) : (
             <Button
-              onClick={startGoogleAuth}
+              onClick={() => navigate("/student")}
               data-testid="nav-signin-btn"
               className="bg-[#E8704C] text-[#FBF7EE] hover:bg-[#C95630] hover:text-[#FBF7EE] rounded-full px-5"
             >
-              {t.nav.signIn}
+              Start demo
             </Button>
           )}
         </div>
@@ -90,10 +90,10 @@ export const Navbar = () => {
 
       {open && (
         <div className="md:hidden border-t border-[#EFE4D0] bg-[#FBF7EE] px-6 py-6 flex flex-col gap-4">
-          {navLink("/", t.nav.home, "nav-home-m")}
-          {navLink("/pricing", t.nav.pricing, "nav-pricing-m")}
-          {navLink("/blog", t.nav.blog, "nav-blog-m")}
-          {navLink("/faq", t.nav.faq, "nav-faq-m")}
+          {navLink("/", "Platform", "nav-home-m")}
+          <Link to="/student" onClick={() => setOpen(false)} className="flex items-center gap-2"><UserRound size={16} />Student</Link>
+          <Link to="/teacher" onClick={() => setOpen(false)} className="flex items-center gap-2"><GraduationCap size={16} />Teacher</Link>
+          <Link to="/admin" onClick={() => setOpen(false)} className="flex items-center gap-2"><ShieldCheck size={16} />Admin</Link>
           <button onClick={toggleLang} data-testid="lang-toggle-m" className="text-left text-xs uppercase tracking-[0.2em] text-[#5C6680]">
             {lang === "en" ? "EN · ES" : "ES · EN"}
           </button>
@@ -106,8 +106,8 @@ export const Navbar = () => {
               </Button>
             </>
           ) : (
-            <Button onClick={startGoogleAuth} data-testid="nav-signin-btn-m" className="bg-[#E8704C] text-[#FBF7EE] hover:bg-[#C95630]">
-              {t.nav.signIn}
+            <Button onClick={() => { setOpen(false); navigate("/student"); }} data-testid="nav-signin-btn-m" className="bg-[#E8704C] text-[#FBF7EE] hover:bg-[#C95630]">
+              Start demo
             </Button>
           )}
         </div>

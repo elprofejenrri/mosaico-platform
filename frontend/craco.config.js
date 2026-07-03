@@ -49,6 +49,8 @@ const webpackConfig = {
 };
 
 webpackConfig.devServer = (devServerConfig) => {
+  devServerConfig.historyApiFallback = true;
+
   if (enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
     const originalSetupMiddlewares = devServerConfig.setupMiddlewares;
     devServerConfig.setupMiddlewares = (middlewares, devServer) => {
