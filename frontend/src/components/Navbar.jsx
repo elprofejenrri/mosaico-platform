@@ -36,7 +36,7 @@ export const Navbar = () => {
           {navLink("/student", "Student", "nav-student")}
           {navLink("/tutor", "Tutor", "nav-tutor")}
           {navLink("/teacher", "Teacher", "nav-teacher")}
-          {navLink("/admin", "Admin", "nav-admin")}
+          {navLink("/admin", "Administrative", "nav-admin")}
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
@@ -95,7 +95,7 @@ export const Navbar = () => {
           <Link to="/student" onClick={() => setOpen(false)} className="flex items-center gap-2"><UserRound size={16} />Student</Link>
           <Link to="/tutor" onClick={() => setOpen(false)} className="flex items-center gap-2"><Users size={16} />Tutor</Link>
           <Link to="/teacher" onClick={() => setOpen(false)} className="flex items-center gap-2"><GraduationCap size={16} />Teacher</Link>
-          <Link to="/admin" onClick={() => setOpen(false)} className="flex items-center gap-2"><ShieldCheck size={16} />Admin</Link>
+          <Link to="/admin" onClick={() => setOpen(false)} className="flex items-center gap-2"><ShieldCheck size={16} />Administrative</Link>
           <button onClick={toggleLang} data-testid="lang-toggle-m" className="text-left text-xs uppercase tracking-[0.2em] text-[#5C6680]">
             {lang === "en" ? "EN · ES" : "ES · EN"}
           </button>

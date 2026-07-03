@@ -29,6 +29,7 @@ import {
   Coins,
   Clock,
   CreditCard,
+  FilePlus2,
   FileText,
   GraduationCap,
   LayoutDashboard,
@@ -41,10 +42,12 @@ import {
   Settings,
   Share2,
   ShieldCheck,
+  School,
   Sparkles,
   Star,
   Target,
   Trophy,
+  UserCheck,
   Users,
   Video,
   WalletCards,
@@ -62,9 +65,15 @@ import {
   lessons,
   learningAccount,
   learningRoadmap,
+  familyAccounts,
+  lessonDrafts,
   payments,
   pillars,
   platformStats,
+  schoolAdminMetrics,
+  schoolAdminProfile,
+  schoolCreditGrants,
+  schoolReports,
   skillProgress,
   students,
   teacherAvailability,
@@ -79,6 +88,7 @@ import {
   tutorProfile,
   tutorProgressByStudent,
   tutorStudents,
+  userApprovalQueue,
 } from "../data/platformMock";
 
 const colors = ["#E8704C", "#2DA89F", "#4A90D9", "#8B5BB8", "#4FA85F", "#F4C13D"];
@@ -116,15 +126,16 @@ const roleNav = {
     ["earnings", "Earnings", CircleDollarSign],
   ],
   admin: [
-    ["", "Dashboard", LayoutDashboard],
-    ["users", "Users", Users],
+    ["", "Overview", School],
+    ["approvals", "Approvals", UserCheck],
+    ["users", "People", Users],
+    ["credits", "Credits", Coins],
+    ["lessons", "Lessons", FilePlus2],
     ["teachers", "Teachers", GraduationCap],
-    ["courses", "Courses", Library],
     ["bookings", "Bookings", CalendarDays],
-    ["payments", "Payments", CreditCard],
-    ["community", "Community", ShieldCheck],
-    ["analytics", "Analytics", LineChart],
-    ["settings", "Settings", Settings],
+    ["families", "Families", ShieldCheck],
+    ["reports", "Reports", LineChart],
+    ["settings", "School Setup", Settings],
   ],
 };
 
@@ -148,10 +159,10 @@ const roleMeta = {
     subtitle: "Classes, students, feedback, materials, and earnings for a modern teaching workflow.",
   },
   admin: {
-    label: "Admin",
+    label: "Administrative",
     base: "/admin",
-    title: "How is the platform performing?",
-    subtitle: "A control room for users, content, bookings, payments, moderation, and growth metrics.",
+    title: "How is the school running today?",
+    subtitle: "A principal-style view for approvals, credits, lessons, teachers, family accounts, and learner support.",
   },
 };
 
@@ -1420,13 +1431,15 @@ export function AdminPortal({ module = "dashboard" }) {
   return (
     <PlatformShell role="admin">
       {module === "dashboard" && <AdminDashboard />}
+      {module === "approvals" && <AdminApprovals />}
       {module === "users" && <AdminUsers />}
+      {module === "credits" && <AdminCredits />}
+      {module === "lessons" && <AdminLessons />}
       {module === "teachers" && <AdminTeachers />}
-      {module === "courses" && <AdminCourses />}
+      {module === "courses" && <AdminLessons />}
       {module === "bookings" && <AdminBookings />}
-      {module === "payments" && <AdminPayments />}
-      {module === "community" && <AdminCommunity />}
-      {module === "analytics" && <AdminAnalytics />}
+      {module === "families" && <AdminFamilies />}
+      {module === "reports" && <AdminReports />}
       {module === "settings" && <AdminSettings />}
     </PlatformShell>
   );
@@ -1436,31 +1449,146 @@ function AdminDashboard() {
   return (
     <div className="grid gap-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Total students" value="12,840" detail="1,840 active today" icon={Users} />
-        <MetricCard label="Teachers" value="126" detail="8 pending approval" icon={GraduationCap} color="#2DA89F" />
-        <MetricCard label="Bookings" value="3,214" detail="This month" icon={CalendarDays} color="#8B5BB8" />
-        <MetricCard label="Revenue / MRR" value="$84.2k" detail="Dummy metric" icon={CircleDollarSign} color="#4A90D9" />
+        {schoolAdminMetrics.map((metric, index) => (
+          <MetricCard
+            key={metric.label}
+            label={metric.label}
+            value={metric.value}
+            detail={metric.detail}
+            icon={[Users, UserCheck, Coins, FilePlus2][index]}
+            color={colors[index % colors.length]}
+          />
+        ))}
       </div>
       <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-        <AdminAnalytics compact />
         <Card>
-          <h3 className="font-display text-xl">Top courses and teachers</h3>
+          <SectionHeader eyebrow="Administrative focus" title={`${schoolAdminProfile.name}, ${schoolAdminProfile.title}`} />
+          <p className="mt-3 text-sm text-[#5C6680]">{schoolAdminProfile.focus}.</p>
+          <div className="mt-5 grid gap-3">
+            {userApprovalQueue.slice(0, 3).map((item) => (
+              <div key={item.id} className="rounded-lg bg-[#FBF7EE] p-4">
+                <p className="font-semibold">{item.name}</p>
+                <p className="text-sm text-[#5C6680]">{item.type} · {item.request} · {item.status}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card>
+          <h3 className="font-display text-xl">School actions</h3>
           <div className="mt-4 grid gap-3">
-            {courses.map((course) => <CourseMini key={course.id} course={course} />)}
-            {teachers.slice(0, 2).map((teacher) => <TeacherMini key={teacher.id} teacher={teacher} />)}
+            <ActionButton doneText="Approval queue opened." className="bg-[#E8704C] text-white hover:bg-[#C95630]">Review approvals</ActionButton>
+            <ActionButton doneText="Credit grant form opened." variant="outline">Give credits</ActionButton>
+            <ActionButton doneText="New lesson draft started." variant="outline">Create lesson</ActionButton>
           </div>
         </Card>
       </div>
+      <AdminReports compact />
     </div>
+  );
+}
+
+function AdminApprovals() {
+  return (
+    <Card>
+      <SectionHeader eyebrow="Approvals" title="Approve people before they enter the school" />
+      <div className="mt-5 grid gap-3">
+        {userApprovalQueue.map((item) => (
+          <div key={item.id} className="rounded-lg border border-[#EFE4D0] p-4">
+            <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+              <div>
+                <p className="font-semibold">{item.name}</p>
+                <p className="text-sm text-[#5C6680]">{item.type} · {item.request} · Risk: {item.risk}</p>
+              </div>
+              <span className="rounded-md bg-[#FFF0E6] px-3 py-1 text-sm text-[#E8704C]">{item.status}</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <ActionButton doneText={`${item.name} approved.`} className="bg-[#2DA89F] text-white hover:bg-[#23877f]">Approve</ActionButton>
+              <ActionButton doneText={`More information requested from ${item.name}.`} variant="outline">Request info</ActionButton>
+              <ActionButton doneText={`${item.name} scheduled for review.`} variant="outline">Schedule review</ActionButton>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
 function AdminUsers() {
   return (
     <Card>
-      <SectionHeader eyebrow="Users" title="Students, teachers, admins, roles, and status" />
-      <StudentTable admin />
+      <SectionHeader eyebrow="People" title="Students, tutors, teachers, and school staff" />
+      <div className="mt-5 grid gap-3">
+        {[...tutorStudents.map((student) => ({
+          name: student.name,
+          type: "Student",
+          detail: `${student.currentLevel} to ${student.targetLevel}`,
+          status: student.risk,
+        })), ...teachers.map((teacher) => ({
+          name: teacher.name,
+          type: "Teacher",
+          detail: teacher.specialty,
+          status: `${teacher.rating} rating`,
+        })), { name: "Camila Torres", type: "Tutor / Guardian", detail: "Torres Family Learning Account", status: "Active" }].map((person) => (
+          <div key={`${person.type}-${person.name}`} className="flex flex-col justify-between gap-3 rounded-lg border border-[#EFE4D0] p-4 md:flex-row md:items-center">
+            <div>
+              <p className="font-semibold">{person.name}</p>
+              <p className="text-sm text-[#5C6680]">{person.type} · {person.detail}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-md bg-[#E0F2F0] px-3 py-1 text-sm text-[#2DA89F]">{person.status}</span>
+              <ActionButton doneText={`${person.name} profile opened.`} variant="outline">View</ActionButton>
+            </div>
+          </div>
+        ))}
+      </div>
     </Card>
+  );
+}
+
+function AdminCredits() {
+  const [schoolPool, setSchoolPool] = useState(1840);
+  const [grantAmount, setGrantAmount] = useState(4);
+  const [selectedAccount, setSelectedAccount] = useState(familyAccounts[0].name);
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard label="School credit pool" value={schoolPool} detail="Credits available to grant" icon={Coins} />
+        <MetricCard label="Low-credit families" value="3" detail="Need follow-up this week" icon={Bell} color="#E8704C" />
+        <MetricCard label="Courtesy credits" value="42" detail="Granted this month" icon={WalletCards} color="#2DA89F" />
+      </div>
+      <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
+        <Card>
+          <SectionHeader eyebrow="Give credits" title="Grant credits to a family or learner" />
+          <label className="mt-4 block text-sm font-semibold">Account</label>
+          <select value={selectedAccount} onChange={(event) => setSelectedAccount(event.target.value)} className="mt-2 w-full rounded-md border border-[#EFE4D0] px-3 py-2 outline-none focus:ring-2 focus:ring-[#E8704C]">
+            {familyAccounts.map((account) => <option key={account.id}>{account.name}</option>)}
+          </select>
+          <label className="mt-4 block text-sm font-semibold">Credits</label>
+          <input type="number" min="1" value={grantAmount} onChange={(event) => setGrantAmount(Number(event.target.value))} className="mt-2 w-full rounded-md border border-[#EFE4D0] px-3 py-2 outline-none focus:ring-2 focus:ring-[#E8704C]" />
+          <Button
+            disabled={grantAmount <= 0 || grantAmount > schoolPool}
+            onClick={() => {
+              setSchoolPool((pool) => pool - grantAmount);
+              toast.success(`${grantAmount} credits granted to ${selectedAccount}.`);
+            }}
+            className="mt-4 w-full bg-[#E8704C] text-white hover:bg-[#C95630]"
+          >
+            Give credits
+          </Button>
+        </Card>
+        <Card>
+          <h3 className="font-display text-xl">Recent credit grants</h3>
+          <div className="mt-4 grid gap-3">
+            {schoolCreditGrants.map((grant) => (
+              <div key={grant.id} className="rounded-lg bg-[#FBF7EE] p-4">
+                <p className="font-semibold">{grant.account}</p>
+                <p className="text-sm text-[#5C6680]">{grant.student} · {grant.credits} credits · {grant.reason} · {grant.date}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
   );
 }
 
@@ -1470,27 +1598,35 @@ function AdminTeachers() {
       {teachers.map((teacher) => (
         <Card key={teacher.id}>
           <TeacherMini teacher={teacher} />
-          <p className="mt-4 text-sm text-[#5C6680]">Specialties: {teacher.specialty}. Calendar status: synced. Revenue: ${(teacher.price * 42).toLocaleString()}.</p>
-          <ActionButton doneText="Teacher approved." className="mt-4 bg-[#2DA89F] text-white hover:bg-[#23877f]">Approve profile</ActionButton>
+          <p className="mt-4 text-sm text-[#5C6680]">Specialties: {teacher.specialty}. Style: {teacher.teachingStyle}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <ActionButton doneText="Teacher approved for classes." className="bg-[#2DA89F] text-white hover:bg-[#23877f]">Approve teacher</ActionButton>
+            <ActionButton doneText="Teacher feedback reviewed." variant="outline">Review feedback</ActionButton>
+          </div>
         </Card>
       ))}
     </div>
   );
 }
 
-function AdminCourses() {
+function AdminLessons() {
   return (
     <Card>
-      <SectionHeader eyebrow="Courses and content" title="Course list, lessons, categories, draft and published status" action={<ActionButton doneText="Draft course created." className="bg-[#E8704C] text-white hover:bg-[#C95630]">Create course</ActionButton>} />
+      <SectionHeader eyebrow="Lessons" title="Create, review, and publish learning materials" action={<ActionButton doneText="New lesson draft created." className="bg-[#E8704C] text-white hover:bg-[#C95630]">Create lesson</ActionButton>} />
       <div className="mt-5 grid gap-3">
-        {courses.map((course) => (
-          <div key={course.id} className="rounded-lg border border-[#EFE4D0] p-4">
+        {lessonDrafts.map((lesson) => (
+          <div key={lesson.id} className="rounded-lg border border-[#EFE4D0] p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="font-semibold">{course.title}</p>
-                <p className="text-sm text-[#5C6680]">{course.lessons} lessons - {course.category}</p>
+                <p className="font-semibold">{lesson.title}</p>
+                <p className="text-sm text-[#5C6680]">{lesson.course} · {lesson.level} · {lesson.skill} · Author: {lesson.author}</p>
               </div>
-              <span className="rounded-md bg-[#E0F2F0] px-3 py-1 text-sm text-[#2DA89F]">{course.status}</span>
+              <span className="rounded-md bg-[#FFF0E6] px-3 py-1 text-sm text-[#E8704C]">{lesson.status}</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <ActionButton doneText={`${lesson.title} approved.`} variant="outline">Approve lesson</ActionButton>
+              <ActionButton doneText={`${lesson.title} opened for editing.`} variant="outline">Edit lesson</ActionButton>
+              <ActionButton doneText={`Notes sent to ${lesson.author}.`} variant="outline">Request changes</ActionButton>
             </div>
           </div>
         ))}
@@ -1502,45 +1638,30 @@ function AdminCourses() {
 function AdminBookings() {
   return (
     <Card>
-      <SectionHeader eyebrow="Bookings" title="Upcoming, cancelled, completed, and refund placeholders" />
+      <SectionHeader eyebrow="Bookings" title="Classes that need administrative attention" />
       <BookingList showFeedback />
     </Card>
   );
 }
 
-function AdminPayments() {
-  return (
-    <div className="grid gap-5">
-      <div className="grid gap-4 md:grid-cols-3">
-        {payments.map((payment) => (
-          <Card key={payment.plan}>
-            <p className="text-xs uppercase tracking-[0.16em] text-[#5C6680]">{payment.status}</p>
-            <h3 className="mt-2 font-display text-2xl">{payment.plan}</h3>
-            <p className="mt-2 text-3xl font-display">{payment.price}</p>
-            <p className="mt-2 text-sm text-[#5C6680]">{payment.users.toLocaleString()} subscribers</p>
-            <ActionButton doneText="Payment plan updated." variant="outline" className="mt-4">Edit plan</ActionButton>
-          </Card>
-        ))}
-      </div>
-      <Card>
-        <h3 className="font-display text-xl">Coupons, invoices, subscriptions, and packages are dummy flows.</h3>
-      </Card>
-    </div>
-  );
-}
-
-function AdminCommunity() {
+function AdminFamilies() {
   return (
     <Card>
-      <SectionHeader eyebrow="Moderation" title="Reported posts, flagged comments, and event approvals" />
+      <SectionHeader eyebrow="Families and learning accounts" title="Support families, guardians, and school groups" />
       <div className="mt-5 grid gap-3">
-        {communityPosts.map((post) => (
-          <div key={post.id} className="rounded-lg border border-[#EFE4D0] p-4">
-            <p className="font-semibold">{post.group}: {post.body}</p>
-            <p className="text-sm text-[#5C6680]">Reported comments placeholder - {post.comments} comments</p>
+        {familyAccounts.map((account) => (
+          <div key={account.id} className="rounded-lg border border-[#EFE4D0] p-4">
+            <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+              <div>
+                <p className="font-semibold">{account.name}</p>
+                <p className="text-sm text-[#5C6680]">Tutor: {account.tutor} · Students: {account.students} · Credits: {account.credits}</p>
+                <p className="mt-1 text-sm text-[#5C6680]">Admin note: {account.alert}</p>
+              </div>
+              <span className="rounded-md bg-[#E0F2F0] px-3 py-1 text-sm text-[#2DA89F]">{account.status}</span>
+            </div>
             <div className="mt-3 flex gap-2">
-              <ActionButton doneText="Post approved." className="bg-[#2DA89F] text-white hover:bg-[#23877f]">Approve</ActionButton>
-              <ActionButton doneText="Post hidden." variant="outline">Hide</ActionButton>
+              <ActionButton doneText={`Opened ${account.name}.`} variant="outline">View account</ActionButton>
+              <ActionButton doneText={`Follow-up scheduled for ${account.name}.`} variant="outline">Schedule follow-up</ActionButton>
             </div>
           </div>
         ))}
@@ -1549,17 +1670,17 @@ function AdminCommunity() {
   );
 }
 
-function AdminAnalytics({ compact = false }) {
-  const chartData = useMemo(() => analytics.map((a) => ({ ...a, chartValue: a.value > 1000 ? a.value / 100 : a.value })), []);
+function AdminReports({ compact = false }) {
+  const chartData = useMemo(() => schoolReports.map((item) => ({ ...item, chartValue: item.value })), []);
   return (
     <Card>
-      <SectionHeader eyebrow="Analytics" title={compact ? "Performance snapshot" : "Retention, revenue, completion, and engagement"} />
+      <SectionHeader eyebrow="School reports" title={compact ? "Academic health snapshot" : "Attendance, lessons, feedback, and credits"} />
       <div className="mt-5 grid gap-3 md:grid-cols-3">
-        {analytics.map((item) => (
+        {schoolReports.map((item) => (
           <div key={item.label} className="rounded-lg bg-[#FBF7EE] p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-[#5C6680]">{item.label}</p>
-            <p className="mt-2 font-display text-2xl">{item.label === "MRR" ? `$${(item.value / 1000).toFixed(1)}k` : item.value}</p>
-            <p className="text-sm text-[#2DA89F]">{item.change}</p>
+            <p className="mt-2 font-display text-2xl">{item.value}%</p>
+            <p className="text-sm text-[#5C6680]">{item.note}</p>
           </div>
         ))}
       </div>
@@ -1581,15 +1702,15 @@ function AdminAnalytics({ compact = false }) {
 }
 
 function AdminSettings() {
-  const settings = ["Platform name", "Languages", "Pricing", "Stripe", "Google Calendar", "Google Meet", "Zoom", "Email", "WhatsApp"];
+  const settings = ["School name", "Academic levels", "Credit policy", "Approval rules", "Lesson review flow", "Teacher standards", "Family communication", "Class cancellation policy", "Certificate wording"];
   return (
     <Card>
-      <SectionHeader eyebrow="Settings" title="Platform configuration and integration placeholders" action={<ActionButton doneText="Settings saved." className="bg-[#E8704C] text-white hover:bg-[#C95630]">Save settings</ActionButton>} />
+      <SectionHeader eyebrow="School setup" title="Administrative rules, not technical integrations" action={<ActionButton doneText="School setup saved." className="bg-[#E8704C] text-white hover:bg-[#C95630]">Save setup</ActionButton>} />
       <div className="mt-5 grid gap-3 md:grid-cols-3">
         {settings.map((setting) => (
           <label key={setting} className="rounded-lg border border-[#EFE4D0] p-4">
             <span className="font-semibold">{setting}</span>
-            <input className="mt-3 w-full rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" placeholder={setting.includes("Google") || setting === "Stripe" ? "Placeholder integration" : "MOSAICO"} />
+            <input className="mt-3 w-full rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" placeholder="Administrative placeholder" />
           </label>
         ))}
       </div>

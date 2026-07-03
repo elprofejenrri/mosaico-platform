@@ -53,13 +53,18 @@ function AppRouter() {
           <Route path="/teacher/evaluations" element={<TeacherPortal module="evaluations" />} />
           <Route path="/teacher/earnings" element={<TeacherPortal module="earnings" />} />
           <Route path="/admin" element={<AdminPortal />} />
+          <Route path="/admin/approvals" element={<AdminPortal module="approvals" />} />
           <Route path="/admin/users" element={<AdminPortal module="users" />} />
+          <Route path="/admin/credits" element={<AdminPortal module="credits" />} />
+          <Route path="/admin/lessons" element={<AdminPortal module="lessons" />} />
           <Route path="/admin/teachers" element={<AdminPortal module="teachers" />} />
           <Route path="/admin/courses" element={<AdminPortal module="courses" />} />
           <Route path="/admin/bookings" element={<AdminPortal module="bookings" />} />
-          <Route path="/admin/payments" element={<AdminPortal module="payments" />} />
-          <Route path="/admin/community" element={<AdminPortal module="community" />} />
-          <Route path="/admin/analytics" element={<AdminPortal module="analytics" />} />
+          <Route path="/admin/families" element={<AdminPortal module="families" />} />
+          <Route path="/admin/reports" element={<AdminPortal module="reports" />} />
+          <Route path="/admin/payments" element={<AdminPortal module="credits" />} />
+          <Route path="/admin/community" element={<AdminPortal module="families" />} />
+          <Route path="/admin/analytics" element={<AdminPortal module="reports" />} />
           <Route path="/admin/settings" element={<AdminPortal module="settings" />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/faq" element={<Faq />} />

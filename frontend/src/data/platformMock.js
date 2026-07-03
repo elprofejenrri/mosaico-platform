@@ -331,3 +331,50 @@ export const tutorPayments = [
   { id: "pay-2", date: "Jun 10", item: "Starter Pack", amount: "$49", status: "Paid" },
   { id: "pay-3", date: "Jul 05", item: "Live class reservation", amount: "2 credits", status: "Scheduled" },
 ];
+
+export const schoolAdminProfile = {
+  id: "school-admin-1",
+  name: "Isabel Herrera",
+  title: "Academic Director",
+  campus: "MOSAICO Online Spanish School",
+  focus: "Learner success, credits, teacher quality, and lesson operations",
+};
+
+export const schoolAdminMetrics = [
+  { label: "Students active", value: "428", detail: "Across family and individual accounts" },
+  { label: "Pending approvals", value: "12", detail: "7 families, 3 teachers, 2 lessons" },
+  { label: "Credits available", value: "1,840", detail: "School-managed credit pool" },
+  { label: "Lessons in review", value: "9", detail: "Drafts waiting for academic approval" },
+];
+
+export const userApprovalQueue = [
+  { id: "ua-1", name: "Nora Alvarez", type: "Tutor / Guardian", request: "Family account for two learners", status: "New", risk: "Low" },
+  { id: "ua-2", name: "Samuel Ortiz", type: "Student", request: "Teen learner profile", status: "Needs review", risk: "Medium" },
+  { id: "ua-3", name: "Paula Mendez", type: "Teacher", request: "Conversation teacher application", status: "Interview complete", risk: "Low" },
+  { id: "ua-4", name: "Colegio Horizonte", type: "School group", request: "Classroom pilot with 18 students", status: "New", risk: "Low" },
+];
+
+export const schoolCreditGrants = [
+  { id: "grant-1", account: "Torres Family Learning Account", student: "Sofia Torres", credits: 4, reason: "Retention support", date: "Today" },
+  { id: "grant-2", account: "Mendez Family", student: "Lucas Mendez", credits: 2, reason: "Missed class courtesy", date: "Yesterday" },
+  { id: "grant-3", account: "Colegio Horizonte", student: "Shared classroom wallet", credits: 24, reason: "Pilot launch", date: "Jun 30" },
+];
+
+export const lessonDrafts = [
+  { id: "lesson-1", title: "A1 Restaurant Roleplay", course: "A1 Foundations", author: "Marisol Vega", status: "Ready for review", level: "A1", skill: "Speaking" },
+  { id: "lesson-2", title: "Past Tense Story Builder", course: "A2 Everyday Spanish", author: "Lucia Ramos", status: "Draft", level: "A2", skill: "Grammar" },
+  { id: "lesson-3", title: "Job Interview Warmup", course: "B1 Real Conversations", author: "Andres Molina", status: "Needs edits", level: "B1", skill: "Speaking" },
+];
+
+export const familyAccounts = [
+  { id: "family-1", name: "Torres Family", tutor: "Camila Torres", students: 2, credits: 17, status: "Healthy", alert: "Sofia needs practice reminder" },
+  { id: "family-2", name: "Mendez Family", tutor: "Ana Mendez", students: 1, credits: 2, status: "Low credits", alert: "Offer credit package" },
+  { id: "school-1", name: "Colegio Horizonte", tutor: "Academic coordinator", students: 18, credits: 24, status: "Pilot", alert: "Schedule onboarding class" },
+];
+
+export const schoolReports = [
+  { label: "Attendance", value: 91, note: "Live class attendance this week" },
+  { label: "Lesson completion", value: 68, note: "Assigned lessons completed" },
+  { label: "Teacher feedback sent", value: 84, note: "Classes with feedback posted" },
+  { label: "Credit utilization", value: 73, note: "Credits converted into classes" },
+];
