@@ -15,14 +15,18 @@ import {
 } from "recharts";
 import {
   ArrowRight,
+  Award,
   BadgeCheck,
+  Bell,
   BookOpen,
   Bot,
   CalendarDays,
+  CalendarCheck,
   Check,
   ChevronRight,
   CircleDollarSign,
   ClipboardCheck,
+  Coins,
   Clock,
   CreditCard,
   FileText,
@@ -33,7 +37,9 @@ import {
   MessageCircle,
   PlayCircle,
   Search,
+  Send,
   Settings,
+  Share2,
   ShieldCheck,
   Sparkles,
   Star,
@@ -50,15 +56,29 @@ import {
   bookings,
   communityPosts,
   courses,
+  creditHistory,
+  creditPackages,
   events,
   lessons,
+  learningAccount,
+  learningRoadmap,
   payments,
   pillars,
   platformStats,
   skillProgress,
   students,
+  teacherAvailability,
+  teacherFeedback,
   teacherMaterials,
   teachers,
+  testResults,
+  tutorAlerts,
+  tutorBadges,
+  tutorMessages,
+  tutorPayments,
+  tutorProfile,
+  tutorProgressByStudent,
+  tutorStudents,
 } from "../data/platformMock";
 
 const colors = ["#E8704C", "#2DA89F", "#4A90D9", "#8B5BB8", "#4FA85F", "#F4C13D"];
@@ -71,6 +91,20 @@ const roleNav = {
     ["ai-tutor", "AI Tutor", Bot],
     ["community", "Community", MessageCircle],
     ["progress", "Progress", Trophy],
+  ],
+  tutor: [
+    ["", "Overview", LayoutDashboard],
+    ["students", "Students", Users],
+    ["classes", "Classes", CalendarCheck],
+    ["credits", "Credits", Coins],
+    ["progress", "Progress", LineChart],
+    ["roadmap", "Roadmap", Target],
+    ["tests", "Tests", ClipboardCheck],
+    ["feedback", "Feedback", MessageCircle],
+    ["messages", "Messages", Send],
+    ["alerts", "Alerts", Bell],
+    ["badges", "Badges", Award],
+    ["payments", "Payments", CreditCard],
   ],
   teacher: [
     ["", "Dashboard", LayoutDashboard],
@@ -101,6 +135,12 @@ const roleMeta = {
     title: "What should I do today?",
     subtitle: "Your Spanish plan, live classes, practice prompts, and community moments in one place.",
   },
+  tutor: {
+    label: "Tutor",
+    base: "/tutor",
+    title: "How is my student doing?",
+    subtitle: "Manage learners, credits, bookings, feedback, alerts, and progress from one trusted family account.",
+  },
   teacher: {
     label: "Teacher",
     base: "/teacher",
@@ -125,13 +165,13 @@ const trendData = [
   { day: "Sun", lessons: 6, classes: 1, xp: 110 },
 ];
 
-function ActionButton({ children, doneText, className = "", variant = "default" }) {
+function ActionButton({ children, doneText, className = "", variant = "default", disabled = false }) {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   return (
     <Button
       variant={variant}
-      disabled={loading || done}
+      disabled={disabled || loading || done}
       className={className}
       onClick={() => {
         setLoading(true);
@@ -182,8 +222,8 @@ function SectionHeader({ eyebrow, title, action }) {
 
 function RoleSwitcher({ current }) {
   return (
-    <div className="grid grid-cols-3 gap-2 rounded-lg border border-[#EFE4D0] bg-white p-1">
-      {["student", "teacher", "admin"].map((role) => (
+    <div className="grid grid-cols-2 gap-2 rounded-lg border border-[#EFE4D0] bg-white p-1 sm:grid-cols-4 lg:grid-cols-2">
+      {["student", "tutor", "teacher", "admin"].map((role) => (
         <Link
           key={role}
           to={roleMeta[role].base}
@@ -270,6 +310,11 @@ export function PlatformLanding() {
               <Link to="/student">
                 <Button className="bg-[#E8704C] text-white hover:bg-[#C95630] px-6 py-6">
                   Start learning <ArrowRight size={16} className="ml-2" />
+                </Button>
+              </Link>
+              <Link to="/tutor">
+                <Button variant="outline" className="border-white/50 bg-white/10 text-white hover:bg-white hover:text-[#1F3B6E] px-6 py-6">
+                  Manage a learner
                 </Button>
               </Link>
               <Link to="/teacher">
@@ -646,6 +691,584 @@ function ProgressPage() {
         </div>
       </Card>
     </div>
+  );
+}
+
+function useTutorState() {
+  const [activeStudentId, setActiveStudentId] = useState(tutorStudents[0].id);
+  const [sharedCredits, setSharedCredits] = useState(learningAccount.sharedCredits);
+  const [studentCredits, setStudentCredits] = useState(
+    Object.fromEntries(tutorStudents.map((student) => [student.id, student.credits]))
+  );
+  const [selectedTeacherId, setSelectedTeacherId] = useState(teachers[0].id);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+
+  const activeStudent = tutorStudents.find((student) => student.id === activeStudentId) || tutorStudents[0];
+  const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId) || teachers[0];
+
+  return {
+    activeStudentId,
+    setActiveStudentId,
+    activeStudent,
+    sharedCredits,
+    setSharedCredits,
+    studentCredits,
+    setStudentCredits,
+    selectedTeacherId,
+    setSelectedTeacherId,
+    selectedTeacher,
+    selectedSlot,
+    setSelectedSlot,
+  };
+}
+
+export function TutorPortal({ module = "dashboard" }) {
+  const tutorState = useTutorState();
+  return (
+    <PlatformShell role="tutor">
+      <TutorStudentBar {...tutorState} />
+      {module === "dashboard" && <TutorDashboard {...tutorState} />}
+      {module === "students" && <TutorStudents {...tutorState} />}
+      {module === "classes" && <TutorClasses {...tutorState} />}
+      {module === "credits" && <TutorCredits {...tutorState} />}
+      {module === "progress" && <TutorProgress {...tutorState} />}
+      {module === "roadmap" && <TutorRoadmap />}
+      {module === "tests" && <TutorTests {...tutorState} />}
+      {module === "feedback" && <TutorFeedback {...tutorState} />}
+      {module === "messages" && <TutorMessages {...tutorState} />}
+      {module === "alerts" && <TutorAlerts {...tutorState} />}
+      {module === "badges" && <TutorBadges {...tutorState} />}
+      {module === "payments" && <TutorPayments />}
+    </PlatformShell>
+  );
+}
+
+function TutorStudentBar({ activeStudentId, setActiveStudentId, activeStudent, sharedCredits, studentCredits }) {
+  return (
+    <Card className="mb-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-[#E8704C] font-semibold">Learning account</p>
+          <h2 className="mt-1 font-display text-xl">{learningAccount.name}</h2>
+          <p className="mt-1 text-sm text-[#5C6680]">
+            {tutorProfile.name} manages {learningAccount.students.length} students. Shared wallet: {sharedCredits} credits.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {tutorStudents.map((student) => (
+            <button
+              key={student.id}
+              onClick={() => {
+                setActiveStudentId(student.id);
+                toast.success(`${student.name} selected.`);
+              }}
+              className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+                activeStudentId === student.id ? "bg-[#1F3B6E] text-white" : "bg-[#FFF0E6] text-[#1F3B6E] hover:bg-[#F8DFCF]"
+              }`}
+            >
+              {student.name} · {studentCredits[student.id]} credits
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-4 rounded-lg bg-[#FBF7EE] p-4">
+        <p className="text-sm text-[#5C6680]">Selected student</p>
+        <p className="font-semibold">{activeStudent.name}: {activeStudent.currentLevel} to {activeStudent.targetLevel} · {activeStudent.profile}</p>
+      </div>
+    </Card>
+  );
+}
+
+function TutorDashboard({ activeStudent, sharedCredits, studentCredits }) {
+  const feedback = teacherFeedback.find((item) => item.studentId === activeStudent.id);
+  const alerts = tutorAlerts.filter((alert) => alert.studentId === activeStudent.id || alert.studentId === "account");
+  const badges = tutorBadges.filter((badge) => badge.studentId === activeStudent.id && badge.status === "Earned");
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Current level" value={activeStudent.currentLevel} detail={`Target ${activeStudent.targetLevel}`} icon={Target} />
+        <MetricCard label="Progress" value={`${activeStudent.progress}%`} detail={activeStudent.targetDate} icon={LineChart} color="#2DA89F" />
+        <MetricCard label="Weekly study" value={`${activeStudent.weeklyStudyMinutes}m`} detail={`${activeStudent.streak} day streak`} icon={Clock} color="#8B5BB8" />
+        <MetricCard label="Credits" value={studentCredits[activeStudent.id]} detail={`${sharedCredits} shared credits`} icon={Coins} color="#4A90D9" />
+      </div>
+      <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+        <Card>
+          <SectionHeader
+            eyebrow="Next action"
+            title={`Support ${activeStudent.name} this week`}
+            action={<ActionButton doneText="Recommendation saved for the tutor." className="bg-[#E8704C] text-white hover:bg-[#C95630]">Save action</ActionButton>}
+          />
+          <div className="mt-5 grid gap-3">
+            <TutorInfoRow icon={CalendarDays} label="Upcoming class" value={activeStudent.upcomingClass} />
+            <TutorInfoRow icon={Video} label="Classes attended" value={`${activeStudent.classesAttended} completed classes`} />
+            <TutorInfoRow icon={MessageCircle} label="Latest teacher feedback" value={feedback?.next || "No new feedback yet."} />
+            <TutorInfoRow icon={Award} label="Recent badges" value={badges.map((badge) => badge.name).join(", ") || "No badges yet."} />
+          </div>
+        </Card>
+        <Card>
+          <h3 className="font-display text-xl">Attention alerts</h3>
+          <div className="mt-4 grid gap-3">
+            {alerts.map((alert) => (
+              <div key={alert.id} className="rounded-lg bg-[#FBF7EE] p-4">
+                <p className="text-xs uppercase tracking-[0.16em] text-[#E8704C]">{alert.type}</p>
+                <p className="mt-1 font-semibold">{alert.message}</p>
+                <ActionButton doneText="Alert acknowledged." variant="outline" className="mt-3">{alert.cta}</ActionButton>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function TutorInfoRow({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg bg-[#FBF7EE] p-4">
+      <div className="rounded-md bg-white p-2 text-[#E8704C]"><Icon size={18} /></div>
+      <div>
+        <p className="text-xs uppercase tracking-[0.15em] text-[#5C6680]">{label}</p>
+        <p className="font-semibold">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function TutorStudents({ activeStudentId, setActiveStudentId, studentCredits }) {
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {tutorStudents.map((student) => (
+        <Card key={student.id} className={activeStudentId === student.id ? "ring-2 ring-[#E8704C]" : ""}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="font-display text-2xl">{student.name}</h3>
+              <p className="mt-1 text-sm text-[#5C6680]">Age {student.age} · {student.profile}</p>
+            </div>
+            <span className="rounded-md bg-[#FFF0E6] px-3 py-1 text-sm text-[#E8704C]">{student.risk}</span>
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+            <TutorMiniStat label="Level" value={`${student.currentLevel} → ${student.targetLevel}`} />
+            <TutorMiniStat label="Progress" value={`${student.progress}%`} />
+            <TutorMiniStat label="Credits" value={studentCredits[student.id]} />
+            <TutorMiniStat label="Next class" value={student.upcomingClass.split(" - ")[1]} />
+          </div>
+          <Progress value={student.progress} className="mt-4 h-2" />
+          <Button
+            onClick={() => {
+              setActiveStudentId(student.id);
+              toast.success(`${student.name} selected.`);
+            }}
+            className="mt-4 bg-[#1F3B6E] text-white hover:bg-[#E8704C]"
+          >
+            Select student
+          </Button>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function TutorMiniStat({ label, value }) {
+  return (
+    <div className="rounded-lg bg-[#FBF7EE] p-3">
+      <p className="text-xs uppercase tracking-[0.14em] text-[#5C6680]">{label}</p>
+      <p className="mt-1 font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function TutorCredits({ activeStudent, sharedCredits, setSharedCredits, studentCredits, setStudentCredits }) {
+  const [assignAmount, setAssignAmount] = useState(2);
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard label="Shared balance" value={sharedCredits} detail="Family account credits" icon={Coins} />
+        <MetricCard label={`${activeStudent.name} balance`} value={studentCredits[activeStudent.id]} detail="Assigned to selected learner" icon={WalletCards} color="#2DA89F" />
+        <MetricCard label="Class cost" value="2-3" detail="Credits per live class" icon={Video} color="#8B5BB8" />
+      </div>
+      <div className="grid gap-5 lg:grid-cols-[1fr_0.75fr]">
+        <Card>
+          <SectionHeader eyebrow="Buy credits" title="Dummy credit packages" />
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {creditPackages.map((pack) => (
+              <div key={pack.id} className="rounded-lg border border-[#EFE4D0] p-4">
+                <p className="font-display text-xl">{pack.name}</p>
+                <p className="mt-2 text-3xl font-display">{pack.credits}</p>
+                <p className="text-sm text-[#5C6680]">credits · {pack.price}</p>
+                <p className="mt-2 text-xs text-[#5C6680]">{pack.bestFor}</p>
+                <Button
+                  className="mt-4 w-full bg-[#E8704C] text-white hover:bg-[#C95630]"
+                  onClick={() => {
+                    setSharedCredits((credits) => credits + pack.credits);
+                    toast.success(`${pack.credits} credits added to shared wallet.`);
+                  }}
+                >
+                  Buy credits
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card>
+          <h3 className="font-display text-xl">Assign credits</h3>
+          <p className="mt-2 text-sm text-[#5C6680]">Move credits from the shared wallet to {activeStudent.name}.</p>
+          <input
+            type="number"
+            min="1"
+            max={sharedCredits}
+            value={assignAmount}
+            onChange={(event) => setAssignAmount(Number(event.target.value))}
+            className="mt-4 w-full rounded-md border border-[#EFE4D0] px-3 py-2 outline-none focus:ring-2 focus:ring-[#E8704C]"
+          />
+          <Button
+            disabled={sharedCredits < assignAmount || assignAmount <= 0}
+            onClick={() => {
+              setSharedCredits((credits) => credits - assignAmount);
+              setStudentCredits((credits) => ({ ...credits, [activeStudent.id]: credits[activeStudent.id] + assignAmount }));
+              toast.success(`${assignAmount} credits assigned to ${activeStudent.name}.`);
+            }}
+            className="mt-4 w-full bg-[#2DA89F] text-white hover:bg-[#23877f]"
+          >
+            Confirm assignment
+          </Button>
+        </Card>
+      </div>
+      <Card>
+        <h3 className="font-display text-xl">Credit history</h3>
+        <div className="mt-4 grid gap-3">
+          {creditHistory.map((item) => (
+            <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[#FBF7EE] p-4">
+              <div>
+                <p className="font-semibold">{item.type}: {item.target}</p>
+                <p className="text-sm text-[#5C6680]">{item.date} · {item.note}</p>
+              </div>
+              <span className="font-display text-xl">{item.amount > 0 ? "+" : ""}{item.amount}</span>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function TutorClasses({ activeStudent, studentCredits, setStudentCredits, selectedTeacherId, setSelectedTeacherId, selectedTeacher, selectedSlot, setSelectedSlot }) {
+  const canBook = studentCredits[activeStudent.id] >= selectedTeacher.creditCost && selectedSlot;
+  return (
+    <div className="grid gap-5">
+      <Card>
+        <SectionHeader eyebrow="Book for student" title={`Booking on behalf of ${activeStudent.name}`} />
+        <p className="mt-2 text-sm text-[#5C6680]">
+          Available balance: {studentCredits[activeStudent.id]} credits. Selected class cost: {selectedTeacher.creditCost} credits.
+        </p>
+      </Card>
+      <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
+        <Card>
+          <h3 className="font-display text-xl">Compare teachers</h3>
+          <div className="mt-4 grid gap-3">
+            {teachers.map((teacher) => (
+              <button
+                key={teacher.id}
+                onClick={() => {
+                  setSelectedTeacherId(teacher.id);
+                  setSelectedSlot(null);
+                  toast.success(`${teacher.name} selected.`);
+                }}
+                className={`rounded-lg border p-4 text-left ${selectedTeacherId === teacher.id ? "border-[#E8704C] bg-[#FFF0E6]" : "border-[#EFE4D0] bg-white"}`}
+              >
+                <TeacherProfileSummary teacher={teacher} />
+              </button>
+            ))}
+          </div>
+        </Card>
+        <Card>
+          <SectionHeader eyebrow="Calendar" title={`${selectedTeacher.name} availability`} />
+          <TutorCalendar teacherId={selectedTeacher.id} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} />
+          <div className="mt-5 rounded-lg bg-[#FBF7EE] p-4">
+            <p className="text-sm text-[#5C6680]">Selected slot</p>
+            <p className="font-semibold">{selectedSlot || "Choose an available slot"} · Time zone: {tutorProfile.timezone}</p>
+          </div>
+          <Button
+            disabled={!canBook}
+            onClick={() => {
+              setStudentCredits((credits) => ({ ...credits, [activeStudent.id]: credits[activeStudent.id] - selectedTeacher.creditCost }));
+              toast.success(`Class booked for ${activeStudent.name}. ${selectedTeacher.creditCost} credits deducted.`);
+            }}
+            className="mt-4 bg-[#E8704C] text-white hover:bg-[#C95630]"
+          >
+            {studentCredits[activeStudent.id] < selectedTeacher.creditCost ? "Insufficient credits" : "Book class"}
+          </Button>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function TeacherProfileSummary({ teacher }) {
+  return (
+    <div>
+      <div className="flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-lg text-white font-display" style={{ backgroundColor: teacher.color }}>
+          {teacher.name.split(" ").map((name) => name[0]).join("")}
+        </div>
+        <div>
+          <p className="font-semibold">{teacher.name}</p>
+          <p className="text-xs text-[#5C6680]">{teacher.country} · {teacher.languages.join(", ")}</p>
+        </div>
+      </div>
+      <p className="mt-3 text-sm text-[#5C6680]">{teacher.bio}</p>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+        {teacher.specialties.map((item) => <span key={item} className="rounded-md bg-[#E0F2F0] px-2 py-1 text-[#2DA89F]">{item}</span>)}
+      </div>
+      <p className="mt-3 text-sm font-semibold">{teacher.rating} rating · {teacher.reviews} reviews · {teacher.creditCost} credits</p>
+    </div>
+  );
+}
+
+function TutorCalendar({ teacherId, selectedSlot, setSelectedSlot }) {
+  const rows = teacherAvailability.filter((item) => item.teacherId === teacherId);
+  return (
+    <div className="mt-5 grid gap-3 md:grid-cols-2">
+      {rows.map((row) => (
+        <div key={row.day} className="rounded-lg border border-[#EFE4D0] p-4">
+          <p className="font-semibold">{row.day}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {row.slots.map((slot) => {
+              const value = `${row.day} ${slot}`;
+              return (
+                <button
+                  key={slot}
+                  onClick={() => {
+                    setSelectedSlot(value);
+                    toast.success(`${value} selected.`);
+                  }}
+                  className={`rounded-md px-2 py-1 text-sm ${selectedSlot === value ? "bg-[#1F3B6E] text-white" : "bg-[#E0F2F0] text-[#2DA89F]"}`}
+                >
+                  {slot}
+                </button>
+              );
+            })}
+            {row.unavailable.map((slot) => <span key={slot} className="rounded-md bg-[#F3EEE3] px-2 py-1 text-sm text-[#5C6680] line-through">{slot}</span>)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TutorProgress({ activeStudent }) {
+  const progress = tutorProgressByStudent[activeStudent.id] || [];
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-4">
+        <MetricCard label="Level progress" value={`${activeStudent.progress}%`} detail={activeStudent.roadmapStage} icon={Target} />
+        <MetricCard label="Lessons completed" value={activeStudent.lessonsCompleted} detail="Guided lessons" icon={BookOpen} color="#2DA89F" />
+        <MetricCard label="Classes attended" value={activeStudent.classesAttended} detail="Live sessions" icon={Video} color="#8B5BB8" />
+        <MetricCard label="Tests completed" value={activeStudent.testsCompleted} detail={`${activeStudent.streak} day streak`} icon={ClipboardCheck} color="#4A90D9" />
+      </div>
+      <Card>
+        <SectionHeader eyebrow="Skill breakdown" title={`${activeStudent.name}'s progress`} />
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          {progress.map((skill) => (
+            <div key={skill.skill}>
+              <div className="flex justify-between text-sm font-semibold"><span>{skill.skill}</span><span>{skill.value}%</span></div>
+              <Progress value={skill.value} className="mt-2 h-2" />
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <ActionButton doneText="Progress link copied." variant="outline"><Share2 size={16} className="mr-2" />Copy link</ActionButton>
+          <ActionButton doneText="Report download prepared." variant="outline">Download report</ActionButton>
+          <ActionButton doneText="Progress shared with family." variant="outline">Share with family</ActionButton>
+          <ActionButton doneText="Progress shared with school." variant="outline">Share with school</ActionButton>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function TutorRoadmap() {
+  return (
+    <Card>
+      <SectionHeader eyebrow="Learning roadmap" title="From onboarding to advanced fluency" />
+      <div className="mt-5 grid gap-3">
+        {learningRoadmap.map((stage) => (
+          <div key={stage.stage} className="grid gap-3 rounded-lg border border-[#EFE4D0] p-4 md:grid-cols-[1fr_auto] md:items-center">
+            <div>
+              <p className="font-semibold">{stage.stage}</p>
+              <p className="text-sm text-[#5C6680]">{stage.lessons} lessons · {stage.tests} tests · {stage.classes} recommended classes · Badge: {stage.badge}</p>
+            </div>
+            <span className={`rounded-md px-3 py-1 text-sm ${stage.status === "Locked" ? "bg-[#F3EEE3] text-[#5C6680]" : stage.status === "Current" ? "bg-[#FFF0E6] text-[#E8704C]" : "bg-[#E0F2F0] text-[#2DA89F]"}`}>
+              {stage.status}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function TutorTests({ activeStudent }) {
+  const rows = testResults.filter((test) => test.studentId === activeStudent.id);
+  return (
+    <Card>
+      <SectionHeader eyebrow="Tests and results" title={`${activeStudent.name}'s test history`} />
+      <div className="mt-5 grid gap-3">
+        {rows.map((test) => (
+          <div key={test.id} className="rounded-lg border border-[#EFE4D0] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold">{test.name}</p>
+                <p className="text-sm text-[#5C6680]">{test.skill} · {test.date} · Score: {test.score}</p>
+              </div>
+              <span className="rounded-md bg-[#FFF0E6] px-3 py-1 text-sm text-[#E8704C]">{test.status}</span>
+            </div>
+            <p className="mt-3 text-sm text-[#5C6680]">Recommended next step: {test.next}</p>
+            <ActionButton doneText="Test recommendation opened." variant="outline" className="mt-3">View recommendation</ActionButton>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function TutorFeedback({ activeStudent }) {
+  const [skillFilter, setSkillFilter] = useState("All");
+  const rows = teacherFeedback.filter((item) => item.studentId === activeStudent.id && (skillFilter === "All" || item.skill === skillFilter));
+  return (
+    <Card>
+      <SectionHeader eyebrow="Teacher feedback" title={`Feedback for ${activeStudent.name}`} />
+      <div className="mt-4 flex flex-wrap gap-2">
+        {["All", "Speaking", "Grammar"].map((skill) => (
+          <button key={skill} onClick={() => setSkillFilter(skill)} className={`rounded-md px-3 py-2 text-sm font-semibold ${skillFilter === skill ? "bg-[#1F3B6E] text-white" : "bg-[#FFF0E6] text-[#1F3B6E]"}`}>
+            {skill}
+          </button>
+        ))}
+      </div>
+      <div className="mt-5 grid gap-4">
+        {rows.length === 0 && <p className="text-sm text-[#5C6680]">No feedback for this filter yet.</p>}
+        {rows.map((item) => (
+          <div key={item.id} className="rounded-lg border border-[#EFE4D0] p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-[#5C6680]">{item.teacher} · {item.classDate} · {item.skill}</p>
+            <p className="mt-3 font-semibold">Strengths: {item.strengths}</p>
+            <p className="mt-2 text-sm text-[#5C6680]">Areas to improve: {item.improve}</p>
+            <p className="mt-2 text-sm text-[#5C6680]">Vocabulary: {item.vocabulary.join(", ")}</p>
+            <p className="mt-2 text-sm text-[#5C6680]">Grammar notes: {item.grammar}</p>
+            <p className="mt-2 text-sm text-[#5C6680]">Homework: {item.homework}</p>
+            <p className="mt-2 font-semibold">Next: {item.next}</p>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function TutorMessages({ activeStudent }) {
+  const [message, setMessage] = useState("");
+  const rows = tutorMessages.filter((item) => item.studentId === activeStudent.id);
+  return (
+    <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+      <Card>
+        <h3 className="font-display text-xl">Recent messages</h3>
+        <div className="mt-4 grid gap-3">
+          {rows.map((item) => (
+            <div key={item.id} className="rounded-lg bg-[#FBF7EE] p-4">
+              <p className="font-semibold">{item.teacher}</p>
+              <p className="text-xs text-[#5C6680]">{item.date}</p>
+              <p className="mt-2 text-sm">{item.body}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+      <Card>
+        <SectionHeader eyebrow="Contact teacher" title="Send a dummy message" />
+        <div className="mt-4 flex flex-wrap gap-2">
+          {["Ask about progress", "Ask to reschedule", "Ask for recommendations"].map((prompt) => (
+            <button key={prompt} onClick={() => setMessage(prompt)} className="rounded-md bg-[#FFF0E6] px-3 py-2 text-sm font-semibold text-[#1F3B6E]">{prompt}</button>
+          ))}
+        </div>
+        <textarea value={message} onChange={(event) => setMessage(event.target.value)} className="mt-4 min-h-36 w-full rounded-md border border-[#EFE4D0] p-3 outline-none focus:ring-2 focus:ring-[#E8704C]" placeholder={`Write to ${activeStudent.name}'s teacher...`} />
+        <Button
+          disabled={!message.trim()}
+          onClick={() => {
+            setMessage("");
+            toast.success("Message sent to teacher.");
+          }}
+          className="mt-4 bg-[#E8704C] text-white hover:bg-[#C95630]"
+        >
+          <Send size={16} className="mr-2" />Send message
+        </Button>
+      </Card>
+    </div>
+  );
+}
+
+function TutorAlerts({ activeStudent }) {
+  const [acknowledged, setAcknowledged] = useState({});
+  const rows = tutorAlerts.filter((alert) => alert.studentId === activeStudent.id || alert.studentId === "account");
+  return (
+    <Card>
+      <SectionHeader eyebrow="Alerts" title="Notifications that need attention" />
+      <div className="mt-5 grid gap-3">
+        {rows.map((alert) => (
+          <div key={alert.id} className="flex flex-col justify-between gap-3 rounded-lg border border-[#EFE4D0] p-4 md:flex-row md:items-center">
+            <div>
+              <p className="font-semibold">{alert.message}</p>
+              <p className="text-sm text-[#5C6680]">{alert.type} · {acknowledged[alert.id] ? "Acknowledged" : alert.status}</p>
+            </div>
+            <Button
+              disabled={acknowledged[alert.id]}
+              onClick={() => {
+                setAcknowledged((items) => ({ ...items, [alert.id]: true }));
+                toast.success("Alert acknowledged.");
+              }}
+              variant="outline"
+            >
+              {acknowledged[alert.id] ? "Acknowledged" : alert.cta}
+            </Button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function TutorBadges({ activeStudent }) {
+  const rows = tutorBadges.filter((badge) => badge.studentId === activeStudent.id);
+  return (
+    <Card>
+      <SectionHeader eyebrow="Badges" title={`${activeStudent.name}'s badge gallery`} />
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {rows.map((badge) => (
+          <div key={badge.id} className={`rounded-lg border p-4 ${badge.status === "Earned" ? "border-[#F4C13D] bg-[#FFF9E8]" : "border-[#EFE4D0] bg-[#FBF7EE] opacity-75"}`}>
+            <Award className={badge.status === "Earned" ? "text-[#F4C13D]" : "text-[#5C6680]"} />
+            <h3 className="mt-3 font-display text-xl">{badge.name}</h3>
+            <p className="mt-2 text-sm text-[#5C6680]">{badge.description}</p>
+            <p className="mt-2 text-xs uppercase tracking-[0.16em] text-[#5C6680]">{badge.status} · {badge.date}</p>
+            <ActionButton doneText="Badge shared." disabled={badge.status !== "Earned"} variant="outline" className="mt-4">Share badge</ActionButton>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function TutorPayments() {
+  return (
+    <Card>
+      <SectionHeader eyebrow="Payments and history" title="Dummy family account transactions" />
+      <div className="mt-5 grid gap-3">
+        {tutorPayments.map((payment) => (
+          <div key={payment.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#EFE4D0] p-4">
+            <div>
+              <p className="font-semibold">{payment.item}</p>
+              <p className="text-sm text-[#5C6680]">{payment.date} · {payment.status}</p>
+            </div>
+            <p className="font-display text-xl">{payment.amount}</p>
+          </div>
+        ))}
+      </div>
+      <ActionButton doneText="Invoice placeholder opened." variant="outline" className="mt-5">View invoice</ActionButton>
+    </Card>
   );
 }
 

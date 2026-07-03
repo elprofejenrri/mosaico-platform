@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider } from "./context/AppContext";
 import { Navbar } from "./components/Navbar";
 import { Footer } from "./components/Footer";
-import { PlatformLanding, StudentPortal, TeacherPortal, AdminPortal } from "./pages/Platform";
+import { PlatformLanding, StudentPortal, TutorPortal, TeacherPortal, AdminPortal } from "./pages/Platform";
 import Pricing from "./pages/Pricing";
 import Faq from "./pages/Faq";
 import Blog from "./pages/Blog";
@@ -33,6 +33,18 @@ function AppRouter() {
           <Route path="/student/ai-tutor" element={<StudentPortal module="ai-tutor" />} />
           <Route path="/student/community" element={<StudentPortal module="community" />} />
           <Route path="/student/progress" element={<StudentPortal module="progress" />} />
+          <Route path="/tutor" element={<TutorPortal />} />
+          <Route path="/tutor/students" element={<TutorPortal module="students" />} />
+          <Route path="/tutor/classes" element={<TutorPortal module="classes" />} />
+          <Route path="/tutor/credits" element={<TutorPortal module="credits" />} />
+          <Route path="/tutor/progress" element={<TutorPortal module="progress" />} />
+          <Route path="/tutor/roadmap" element={<TutorPortal module="roadmap" />} />
+          <Route path="/tutor/tests" element={<TutorPortal module="tests" />} />
+          <Route path="/tutor/feedback" element={<TutorPortal module="feedback" />} />
+          <Route path="/tutor/messages" element={<TutorPortal module="messages" />} />
+          <Route path="/tutor/alerts" element={<TutorPortal module="alerts" />} />
+          <Route path="/tutor/badges" element={<TutorPortal module="badges" />} />
+          <Route path="/tutor/payments" element={<TutorPortal module="payments" />} />
           <Route path="/teacher" element={<TeacherPortal />} />
           <Route path="/teacher/calendar" element={<TeacherPortal module="calendar" />} />
           <Route path="/teacher/students" element={<TeacherPortal module="students" />} />

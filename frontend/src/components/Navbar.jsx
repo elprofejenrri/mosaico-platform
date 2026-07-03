@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Menu, X, Globe, GraduationCap, ShieldCheck, UserRound } from "lucide-react";
+import { Menu, X, Globe, GraduationCap, ShieldCheck, UserRound, Users } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { Button } from "./ui/button";
 import { MosaicoLogo } from "./MosaicoLogo";
@@ -34,6 +34,7 @@ export const Navbar = () => {
         <nav className="hidden md:flex items-center gap-8">
           {navLink("/", "Platform", "nav-home")}
           {navLink("/student", "Student", "nav-student")}
+          {navLink("/tutor", "Tutor", "nav-tutor")}
           {navLink("/teacher", "Teacher", "nav-teacher")}
           {navLink("/admin", "Admin", "nav-admin")}
         </nav>
@@ -92,6 +93,7 @@ export const Navbar = () => {
         <div className="md:hidden border-t border-[#EFE4D0] bg-[#FBF7EE] px-6 py-6 flex flex-col gap-4">
           {navLink("/", "Platform", "nav-home-m")}
           <Link to="/student" onClick={() => setOpen(false)} className="flex items-center gap-2"><UserRound size={16} />Student</Link>
+          <Link to="/tutor" onClick={() => setOpen(false)} className="flex items-center gap-2"><Users size={16} />Tutor</Link>
           <Link to="/teacher" onClick={() => setOpen(false)} className="flex items-center gap-2"><GraduationCap size={16} />Teacher</Link>
           <Link to="/admin" onClick={() => setOpen(false)} className="flex items-center gap-2"><ShieldCheck size={16} />Admin</Link>
           <button onClick={toggleLang} data-testid="lang-toggle-m" className="text-left text-xs uppercase tracking-[0.2em] text-[#5C6680]">
