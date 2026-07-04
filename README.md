@@ -31,6 +31,7 @@ Start here:
 - [Database Schema](docs/DATABASE_SCHEMA.md)
 - [Platform Roadmap](docs/PLATFORM_ROADMAP.md)
 - [Phase 1 Execution Plan](docs/PHASE_1_EXECUTION_PLAN.md)
+- [Technical Wiki](docs/TECHNICAL_WIKI.md)
 
 ## Local Setup
 

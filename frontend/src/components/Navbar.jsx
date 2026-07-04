@@ -1,15 +1,17 @@
 import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Menu, X, Globe, GraduationCap, ShieldCheck, UserRound, Users } from "lucide-react";
+import { Menu, X, Globe, GraduationCap, ShieldCheck, UserRound, Users, BookOpen } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { Button } from "./ui/button";
 import { MosaicoLogo } from "./MosaicoLogo";
+import { isTechnicalUser } from "../lib/access";
 
 export const Navbar = () => {
   const { t, lang, toggleLang, user, logout } = useApp();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const loc = useLocation();
+  const technicalUser = isTechnicalUser(user);
 
   const navLink = (to, label, testid) => (
     <Link
@@ -59,6 +61,13 @@ export const Navbar = () => {
                   <Button variant="ghost" className="text-[#E8704C] hover:bg-[#FFF0E6]">{t.nav.admin}</Button>
                 </Link>
               )}
+              {technicalUser && (
+                <Link to="/technical/wiki" data-testid="nav-technical-wiki">
+                  <Button variant="ghost" className="text-[#1F3B6E] hover:bg-[#FFF0E6]">
+                    <BookOpen size={16} className="mr-2" />Wiki
+                  </Button>
+                </Link>
+              )}
               <Button
                 onClick={async () => { await logout(); navigate("/"); }}
                 variant="outline"
@@ -103,6 +112,7 @@ export const Navbar = () => {
             <>
               <Link to="/dashboard" onClick={() => setOpen(false)}>{t.nav.dashboard}</Link>
               {["admin", "administrador_sitio", "administrador_profesor", "editor_cms"].includes(user.role) && <Link to="/admin" onClick={() => setOpen(false)}>{t.nav.admin}</Link>}
+              {technicalUser && <Link to="/technical/wiki" onClick={() => setOpen(false)} className="flex items-center gap-2"><BookOpen size={16} />Technical wiki</Link>}
               <Button onClick={async () => { await logout(); setOpen(false); navigate("/"); }} variant="outline" data-testid="logout-btn-m">
                 {t.nav.signOut}
               </Button>

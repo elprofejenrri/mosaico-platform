@@ -180,3 +180,13 @@ Immediate next tasks:
 3. Add session listing/revocation endpoints.
 4. Add first-run profile completion fields.
 5. Run the phase 1 database backfill in a controlled database session.
+
+## Documentation And Wiki Rule
+
+Every platform change must update existing documentation or create new documentation. Technical documentation is surfaced inside the product through the technical wiki at:
+
+```text
+/technical/wiki
+```
+
+This route is reserved for technical roles such as `administrador_sitio` or users with wildcard platform permission.
