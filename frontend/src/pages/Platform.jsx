@@ -61,6 +61,8 @@ import {
   academicLevels,
   academicProgress,
   bookings,
+  clientBadgeGallery,
+  clientLearningPath,
   communityPosts,
   courses,
   creditHistory,
@@ -101,6 +103,7 @@ const roleNav = {
   student: [
     ["", "Dashboard", LayoutDashboard],
     ["learn", "Learning Hub", Library],
+    ["roadmap", "Roadmap", Target],
     ["classes", "Live Classes", Video],
     ["ai-tutor", "AI Tutor", Bot],
     ["community", "Community", MessageCircle],
@@ -145,10 +148,10 @@ const roleNav = {
 
 const roleMeta = {
   student: {
-    label: "Student",
+    label: "Client",
     base: "/student",
     title: "What should I do today?",
-    subtitle: "Your Spanish plan, live classes, practice prompts, and community moments in one place.",
+    subtitle: "Your learning roadmap, live classes, practice tests, credits, badges, and daily Spanish plan in one place.",
   },
   tutor: {
     label: "Tutor",
@@ -454,6 +457,7 @@ export function StudentPortal({ module = "dashboard" }) {
     <PlatformShell role="student">
       {module === "dashboard" && <StudentDashboard />}
       {module === "learn" && <LearningHub />}
+      {module === "roadmap" && <ClientRoadmap />}
       {module === "classes" && <StudentClasses />}
       {module === "ai-tutor" && <AiTutor />}
       {module === "community" && <Community />}
@@ -481,6 +485,7 @@ function StudentDashboard() {
           <div className="mt-5 grid gap-3">
             {[
               ["Continue lesson", "Ordering food with confidence", PlayCircle],
+              ["Roadmap unlock", "Claim badges, credits, levels, and tests", Award],
               ["Practice with AI", "Restaurant roleplay with corrections", Bot],
               ["Upcoming class", "Marisol Vega today at 18:00", Video],
               ["Community event", "Restaurant roleplay night at 19:30", Users],
@@ -903,6 +908,142 @@ function ProgressPage() {
           ))}
         </div>
       </Card>
+    </div>
+  );
+}
+
+function ClientRoadmap() {
+  const [claimedRewards, setClaimedRewards] = useState({});
+  const [selectedStageId, setSelectedStageId] = useState("path-a1");
+  const selectedStage = clientLearningPath.find((stage) => stage.id === selectedStageId) || clientLearningPath[2];
+  const unlockedCredits = clientLearningPath
+    .filter((stage) => stage.status === "Completed" || claimedRewards[stage.id])
+    .reduce((sum, stage) => sum + stage.unlocks.credits, 0);
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-4">
+        <MetricCard label="Current path" value={selectedStage.level} detail={selectedStage.stage} icon={Target} />
+        <MetricCard label="Path progress" value={`${selectedStage.progress}%`} detail={selectedStage.status} icon={LineChart} color="#2DA89F" />
+        <MetricCard label="Unlocked credits" value={unlockedCredits} detail="From roadmap rewards" icon={Coins} color="#8B5BB8" />
+        <MetricCard label="Badges earned" value={clientBadgeGallery.filter((badge) => badge.status === "Earned").length} detail="More unlock by level" icon={Award} color="#F4C13D" />
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+        <Card>
+          <SectionHeader eyebrow="Client roadmap" title="Learning path with unlocks" />
+          <div className="mt-5 grid gap-3">
+            {clientLearningPath.map((stage) => (
+              <button
+                key={stage.id}
+                onClick={() => {
+                  setSelectedStageId(stage.id);
+                  toast.success(`${stage.stage} selected.`);
+                }}
+                className={`rounded-lg border p-4 text-left transition-colors ${
+                  selectedStageId === stage.id ? "border-[#E8704C] bg-[#FFF0E6]" : "border-[#EFE4D0] bg-white hover:bg-[#FBF7EE]"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-display text-xl">{stage.stage}</p>
+                    <p className="text-sm text-[#5C6680]">{stage.description}</p>
+                  </div>
+                  <span className={`rounded-md px-2 py-1 text-xs ${stage.status === "Locked" ? "bg-[#F3EEE3] text-[#5C6680]" : "bg-white text-[#E8704C]"}`}>
+                    {stage.status}
+                  </span>
+                </div>
+                <Progress value={stage.progress} className="mt-4 h-2" />
+                <p className="mt-2 text-xs font-semibold text-[#1F3B6E]">
+                  Unlocks {stage.unlocks.credits} credits, {stage.unlocks.badge}, {stage.unlocks.level}
+                </p>
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <SectionHeader
+            eyebrow="Selected stage"
+            title={selectedStage.stage}
+            action={
+              <Button
+                disabled={selectedStage.status === "Locked" || claimedRewards[selectedStage.id]}
+                onClick={() => {
+                  setClaimedRewards((items) => ({ ...items, [selectedStage.id]: true }));
+                  toast.success(`${selectedStage.unlocks.credits} credits unlocked from ${selectedStage.stage}.`);
+                }}
+                className="bg-[#E8704C] text-white hover:bg-[#C95630]"
+              >
+                {claimedRewards[selectedStage.id] ? "Reward claimed" : "Claim unlocks"}
+              </Button>
+            }
+          />
+          <p className="mt-2 text-sm text-[#5C6680]">{selectedStage.description}</p>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div className="rounded-lg bg-[#FBF7EE] p-4">
+              <p className="font-semibold">Requirements</p>
+              <ul className="mt-3 grid gap-2 text-sm text-[#5C6680]">
+                {selectedStage.requirements.map((item) => <li key={item}>• {item}</li>)}
+              </ul>
+            </div>
+            <div className="rounded-lg bg-[#FBF7EE] p-4">
+              <p className="font-semibold">Unlocks</p>
+              <div className="mt-3 grid gap-2 text-sm text-[#5C6680]">
+                <p>{selectedStage.unlocks.credits} learning credits</p>
+                <p>Badge: {selectedStage.unlocks.badge}</p>
+                <p>Next level: {selectedStage.unlocks.level}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <RoadmapTestList title="Official tests" tests={selectedStage.tests} actionText="Start test" />
+            <RoadmapTestList title="Practice tests" tests={selectedStage.practiceTests} actionText="Practice" />
+          </div>
+        </Card>
+      </div>
+
+      <Card>
+        <SectionHeader eyebrow="Badges" title="Badge gallery and level rewards" />
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {clientBadgeGallery.map((badge) => (
+            <div key={badge.id} className={`rounded-lg border p-4 ${badge.status === "Earned" ? "border-[#F4C13D] bg-[#FFF9E8]" : badge.status === "In progress" ? "border-[#E8704C] bg-[#FFF0E6]" : "border-[#EFE4D0] bg-[#FBF7EE]"}`}>
+              <Award className={badge.status === "Locked" ? "text-[#5C6680]" : "text-[#F4C13D]"} />
+              <h3 className="mt-3 font-display text-lg">{badge.name}</h3>
+              <p className="mt-2 text-sm text-[#5C6680]">{badge.description}</p>
+              <p className="mt-3 text-xs uppercase tracking-[0.14em] text-[#5C6680]">{badge.status} · {badge.reward}</p>
+              <ActionButton doneText={`${badge.name} shared.`} disabled={badge.status === "Locked"} variant="outline" className="mt-4">Share</ActionButton>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function RoadmapTestList({ title, tests, actionText }) {
+  return (
+    <div className="rounded-lg border border-[#EFE4D0] p-4">
+      <p className="font-display text-xl">{title}</p>
+      <div className="mt-4 grid gap-3">
+        {tests.map((test) => (
+          <div key={test.name} className="rounded-md bg-[#FBF7EE] p-3">
+            <p className="font-semibold">{test.name}</p>
+            <p className="text-sm text-[#5C6680]">
+              {test.type || test.skill} · {test.status}{test.score ? ` · ${test.score}` : ""}
+            </p>
+            <ActionButton
+              doneText={`${test.name} opened.`}
+              disabled={test.status === "Locked" || test.status?.startsWith("Locked")}
+              variant="outline"
+              className="mt-3"
+            >
+              {actionText}
+            </ActionButton>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

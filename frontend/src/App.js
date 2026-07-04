@@ -31,6 +31,7 @@ function AppRouter() {
           <Route path="/student/learn" element={<StudentPortal module="learn" />} />
           <Route path="/student/course" element={<StudentPortal module="learn" />} />
           <Route path="/student/lesson" element={<StudentPortal module="learn" />} />
+          <Route path="/student/roadmap" element={<StudentPortal module="roadmap" />} />
           <Route path="/student/classes" element={<StudentPortal module="classes" />} />
           <Route path="/student/ai-tutor" element={<StudentPortal module="ai-tutor" />} />
           <Route path="/student/community" element={<StudentPortal module="community" />} />

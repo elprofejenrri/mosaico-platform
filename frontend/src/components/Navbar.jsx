@@ -33,7 +33,7 @@ export const Navbar = () => {
 
         <nav className="hidden md:flex items-center gap-8">
           {navLink("/", "Platform", "nav-home")}
-          {navLink("/student", "Student", "nav-student")}
+          {navLink("/student", "Client", "nav-student")}
           {navLink("/tutor", "Tutor", "nav-tutor")}
           {navLink("/teacher", "Teacher", "nav-teacher")}
           {navLink("/admin", "Administrative", "nav-admin")}
@@ -92,7 +92,7 @@ export const Navbar = () => {
       {open && (
         <div className="md:hidden border-t border-[#EFE4D0] bg-[#FBF7EE] px-6 py-6 flex flex-col gap-4">
           {navLink("/", "Platform", "nav-home-m")}
-          <Link to="/student" onClick={() => setOpen(false)} className="flex items-center gap-2"><UserRound size={16} />Student</Link>
+          <Link to="/student" onClick={() => setOpen(false)} className="flex items-center gap-2"><UserRound size={16} />Client</Link>
           <Link to="/tutor" onClick={() => setOpen(false)} className="flex items-center gap-2"><Users size={16} />Tutor</Link>
           <Link to="/teacher" onClick={() => setOpen(false)} className="flex items-center gap-2"><GraduationCap size={16} />Teacher</Link>
           <Link to="/admin" onClick={() => setOpen(false)} className="flex items-center gap-2"><ShieldCheck size={16} />Administrative</Link>

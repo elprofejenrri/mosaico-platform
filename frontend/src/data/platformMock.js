@@ -249,6 +249,80 @@ export const academicAssessments = [
   { id: "assess-writing", name: "Short Writing Review", status: "Needs more practice", readiness: 52, skills: ["Writing", "Grammar"] },
 ];
 
+export const clientLearningPath = [
+  {
+    id: "path-onboarding",
+    stage: "Onboarding",
+    level: "Start",
+    status: "Completed",
+    progress: 100,
+    description: "Set goals, choose learner profile, and complete the first language snapshot.",
+    requirements: ["Learning profile", "Goal selection", "Welcome activity"],
+    unlocks: { credits: 1, badge: "First Step", level: "Placement unlocked" },
+    tests: [{ name: "Learning profile check", type: "Setup", status: "Completed", score: "100%" }],
+    practiceTests: [{ name: "Confidence warmup", skill: "Speaking", status: "Completed" }],
+  },
+  {
+    id: "path-placement",
+    stage: "Placement Test",
+    level: "A1",
+    status: "Completed",
+    progress: 100,
+    description: "Measure current level and place the learner on the right path.",
+    requirements: ["Grammar snapshot", "Vocabulary check", "Speaking sample"],
+    unlocks: { credits: 2, badge: "Level Finder", level: "A1 Foundations" },
+    tests: [{ name: "Placement test", type: "Official checkpoint", status: "Completed", score: "A1.3" }],
+    practiceTests: [{ name: "Mini placement retake", skill: "Mixed", status: "Available" }],
+  },
+  {
+    id: "path-a1",
+    stage: "A1 Foundations",
+    level: "A1",
+    status: "Current",
+    progress: 64,
+    description: "Build essential Spanish for greetings, food, family, routines, and simple questions.",
+    requirements: ["30 lessons", "8 live classes", "2 checkpoint tests"],
+    unlocks: { credits: 3, badge: "Foundation Builder", level: "A2 Everyday Spanish" },
+    tests: [{ name: "A1 Foundations Checkpoint", type: "Level test", status: "Locked until 80%", score: "-" }],
+    practiceTests: [
+      { name: "A1 grammar practice test", skill: "Grammar", status: "Recommended" },
+      { name: "Cafe speaking practice", skill: "Speaking", status: "Available" },
+    ],
+  },
+  {
+    id: "path-a2",
+    stage: "A2 Everyday Spanish",
+    level: "A2",
+    status: "Next",
+    progress: 22,
+    description: "Handle travel, plans, past events, and everyday conversations.",
+    requirements: ["36 lessons", "10 live classes", "3 checkpoint tests"],
+    unlocks: { credits: 4, badge: "Everyday Speaker", level: "B1 Real Conversations" },
+    tests: [{ name: "A2 checkpoint", type: "Level test", status: "Locked", score: "-" }],
+    practiceTests: [{ name: "Travel Spanish mock test", skill: "Listening", status: "Available soon" }],
+  },
+  {
+    id: "path-b1",
+    stage: "B1 Real Conversations",
+    level: "B1",
+    status: "Locked",
+    progress: 0,
+    description: "Speak with opinions, stories, follow-up questions, and stronger fluency.",
+    requirements: ["42 lessons", "12 live classes", "4 checkpoint tests"],
+    unlocks: { credits: 5, badge: "Conversation Ready", level: "B2 Confident Speaker" },
+    tests: [{ name: "B1 conversation checkpoint", type: "Level test", status: "Locked", score: "-" }],
+    practiceTests: [{ name: "B1 speaking mock", skill: "Speaking", status: "Locked" }],
+  },
+];
+
+export const clientBadgeGallery = [
+  { id: "client-badge-1", name: "First Step", status: "Earned", stage: "Onboarding", reward: "1 credit", description: "Completed learning profile and first activity." },
+  { id: "client-badge-2", name: "Level Finder", status: "Earned", stage: "Placement Test", reward: "2 credits", description: "Completed placement and unlocked A1 Foundations." },
+  { id: "client-badge-3", name: "Foundation Builder", status: "In progress", stage: "A1 Foundations", reward: "3 credits", description: "Complete A1 requirements and checkpoint." },
+  { id: "client-badge-4", name: "Everyday Speaker", status: "Locked", stage: "A2 Everyday Spanish", reward: "4 credits", description: "Unlock B1 with everyday conversation mastery." },
+  { id: "client-badge-5", name: "Conversation Ready", status: "Locked", stage: "B1 Real Conversations", reward: "5 credits", description: "Prove real conversation fluency." },
+];
+
 export const lessons = [
   { title: "Airport arrival", type: "Roleplay", time: "12 min", skill: "Speaking" },
   { title: "Ser vs estar in real life", type: "Grammar", time: "16 min", skill: "Grammar" },
