@@ -29,6 +29,7 @@ Already shipped:
 - Local email/password auth with persistent sessions.
 - Social login remains primary.
 - Multi-role RBAC with permission levels.
+- RBAC Admin Module at `/admin/roles-permissions` with role CRUD, permission matrix, user assignments, critical confirmations, and audit log.
 - Database catalog tables, `NOT VALID` relational guardrails, and backfill audit script.
 
 Exit criteria:

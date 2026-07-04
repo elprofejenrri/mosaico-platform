@@ -168,6 +168,33 @@ Lists RBAC levels, role catalogue, and permission catalogue grouped by functiona
 
 Requires `roles:manage`.
 
+### RBAC Admin Module
+
+The real RBAC administration surface uses `/admin/rbac/*` endpoints. These endpoints enforce dot-notation permissions server-side while legacy RBAC endpoints remain available for compatibility.
+
+- `GET /admin/rbac/roles` requires `roles.management.view`
+- `GET /admin/rbac/roles/{role_name}` requires `roles.management.view`
+- `POST /admin/rbac/roles` requires `roles.management.create`
+- `PATCH /admin/rbac/roles/{role_name}` requires `roles.management.edit`
+- `POST /admin/rbac/roles/{role_name}/duplicate` requires `roles.management.create`
+- `PATCH /admin/rbac/roles/{role_name}/status` requires `roles.management.edit`
+- `DELETE /admin/rbac/roles/{role_name}` requires `roles.management.delete`
+- `GET /admin/rbac/permissions` requires `roles.management.view`
+- `PATCH /admin/rbac/roles/{role_name}/permissions` requires `roles.permissions.modify`
+- `GET /admin/rbac/users` requires `users.profile.view`
+- `PATCH /admin/rbac/users/{user_id}/roles` requires `users.roles.assign`
+- `POST /admin/rbac/users/bulk-roles` requires `users.roles.assign`
+- `GET /admin/rbac/audit-logs` requires `audit.logs.view`
+
+Safety behavior:
+
+- System roles cannot be deleted.
+- Super Admin cannot be deactivated.
+- Critical permission changes require `confirmCritical: true`.
+- Assigning Super Admin requires `confirmPrivileged: true`.
+- User-role changes that leave a user without roles are rejected.
+- Users cannot remove their own last admin access.
+
 ### PATCH `/admin/roles/{role_name}/permissions`
 
 Updates the permission level assignments for a role.

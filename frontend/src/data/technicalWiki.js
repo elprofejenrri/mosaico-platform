@@ -8,6 +8,7 @@ export const technicalWikiSections = [
       { id: "phase-1-execution-plan", title: "Phase 1 Execution Plan", path: "docs/PHASE_1_EXECUTION_PLAN.md", status: "Active", owner: "Engineering" },
       { id: "product-documentation", title: "Product Documentation", path: "docs/PRODUCT_DOCUMENTATION.md", status: "Reference", owner: "Product" },
       { id: "teacher-calendar-workspace", title: "Teacher Calendar Workspace", path: "docs/TEACHER_CALENDAR_WORKSPACE.md", status: "Active", owner: "Product + Engineering" },
+      { id: "rbac-admin-module", title: "RBAC Admin Module", path: "docs/RBAC_ADMIN_MODULE.md", status: "Active", owner: "Security + Engineering" },
     ],
   },
   {

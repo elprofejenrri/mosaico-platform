@@ -52,6 +52,8 @@ Important RBAC fields:
 - `label`
 - `description`
 - `level`
+- `type`
+- `status`
 - `active`
 
 ### `permissions`
@@ -63,8 +65,11 @@ Important RBAC fields:
 - `name`
 - `label`
 - `catalog`
+- `module`
+- `section`
 - `feature`
 - `action`
+- `risk_level`
 - `level`
 - `active`
 

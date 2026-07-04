@@ -68,6 +68,7 @@ function AppRouter() {
           <Route path="/admin/families" element={<AdminPortal module="families" />} />
           <Route path="/admin/reports" element={<AdminPortal module="reports" />} />
           <Route path="/admin/roles" element={<AdminPortal module="roles" />} />
+          <Route path="/admin/roles-permissions" element={<AdminPortal module="roles-permissions" />} />
           <Route path="/admin/payments" element={<AdminPortal module="credits" />} />
           <Route path="/admin/community" element={<AdminPortal module="families" />} />
           <Route path="/admin/analytics" element={<AdminPortal module="reports" />} />

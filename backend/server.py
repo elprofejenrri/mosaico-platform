@@ -219,19 +219,94 @@ ROLE_ALIASES = {
 }
 ADMIN_ROLES = {"administrador_sitio", "administrador_profesor"}
 ROLE_LABELS = {
-    "administrador_sitio": "Administrador sitio",
-    "administrador_profesor": "Administrador profesor",
-    "profesor": "Profesor",
+    "administrador_sitio": "Super Admin",
+    "administrador_profesor": "Admin",
+    "coordinador": "Coordinator",
+    "profesor": "Teacher",
     "editor_cms": "Editor CMS",
-    "alumno": "Alumno",
+    "alumno": "Student",
+    "tutor_padre": "Tutor / Parent",
+    "viewer": "Viewer",
 }
 ROLE_LEVELS = {
     "alumno": 10,
+    "viewer": 15,
+    "tutor_padre": 20,
     "profesor": 30,
+    "coordinador": 60,
     "editor_cms": 40,
     "administrador_profesor": 70,
     "administrador_sitio": 100,
 }
+SYSTEM_ROLE_NAMES = {"administrador_sitio", "administrador_profesor", "coordinador", "profesor", "alumno", "tutor_padre", "viewer"}
+CRITICAL_PERMISSION_ACTIONS = {"delete", "refund", "grant", "modify", "assign", "sync_google"}
+
+
+def _dot_permission(name: str, description: str, level: int = 1) -> dict:
+    parts = name.split(".")
+    module = parts[0] if parts else "platform"
+    section = parts[1] if len(parts) > 1 else "general"
+    action = parts[2] if len(parts) > 2 else "view"
+    risk = "critical" if action in CRITICAL_PERMISSION_ACTIONS or "permissions" in section else "high" if action in {"edit", "create", "cancel", "complete", "export"} else "low"
+    return {
+        "name": name,
+        "label": name,
+        "description": description,
+        "catalog": module,
+        "module": module,
+        "section": section,
+        "feature": section,
+        "action": action,
+        "risk_level": risk,
+        "level": level,
+    }
+
+
+DOT_PERMISSION_CATALOG = [
+    _dot_permission("dashboard.general.view", "View the administrative dashboard."),
+    _dot_permission("users.profile.view", "View user profiles."),
+    _dot_permission("users.profile.edit", "Edit user profiles.", 4),
+    _dot_permission("users.profile.delete", "Delete users.", 5),
+    _dot_permission("users.roles.assign", "Assign roles to users.", 5),
+    _dot_permission("roles.management.view", "View roles and permissions.", 5),
+    _dot_permission("roles.management.create", "Create roles.", 5),
+    _dot_permission("roles.management.edit", "Edit roles.", 5),
+    _dot_permission("roles.management.delete", "Delete roles.", 5),
+    _dot_permission("roles.permissions.modify", "Modify role permissions.", 5),
+    _dot_permission("calendar.teacher.view", "View teacher calendar."),
+    _dot_permission("calendar.teacher.create", "Create calendar availability.", 3),
+    _dot_permission("calendar.teacher.edit", "Edit calendar sessions.", 3),
+    _dot_permission("calendar.teacher.delete", "Delete calendar sessions.", 4),
+    _dot_permission("calendar.teacher.block", "Block teacher time.", 3),
+    _dot_permission("calendar.teacher.sync_google", "Connect or sync Google Calendar.", 4),
+    _dot_permission("calendar.teacher.invite_students", "Invite students to open slots.", 3),
+    _dot_permission("classes.sessions.view", "View class sessions."),
+    _dot_permission("classes.sessions.create", "Create class sessions.", 3),
+    _dot_permission("classes.sessions.edit", "Edit class sessions.", 3),
+    _dot_permission("classes.sessions.cancel", "Cancel class sessions.", 4),
+    _dot_permission("classes.sessions.complete", "Complete class sessions.", 3),
+    _dot_permission("classes.sessions.feedback", "Submit class feedback.", 3),
+    _dot_permission("students.profile.view", "View student profiles."),
+    _dot_permission("students.profile.edit", "Edit student profiles.", 4),
+    _dot_permission("students.progress.view", "View student progress."),
+    _dot_permission("students.progress.edit", "Edit student progress.", 4),
+    _dot_permission("students.credits.view", "View student credits."),
+    _dot_permission("students.credits.modify", "Modify student credits.", 5),
+    _dot_permission("teachers.profile.view", "View teacher profiles."),
+    _dot_permission("teachers.profile.edit", "Edit teacher profiles.", 4),
+    _dot_permission("teachers.availability.view", "View teacher availability."),
+    _dot_permission("teachers.availability.manage", "Manage teacher availability.", 4),
+    _dot_permission("credits.wallet.view", "View credit wallets."),
+    _dot_permission("credits.wallet.purchase", "Purchase credits.", 2),
+    _dot_permission("credits.wallet.grant", "Grant credits.", 5),
+    _dot_permission("credits.wallet.transfer", "Transfer credits.", 4),
+    _dot_permission("credits.wallet.refund", "Refund credits.", 5),
+    _dot_permission("reports.analytics.view", "View analytics reports."),
+    _dot_permission("reports.analytics.export", "Export analytics reports.", 4),
+    _dot_permission("settings.platform.view", "View platform settings.", 4),
+    _dot_permission("settings.platform.edit", "Edit platform settings.", 5),
+    _dot_permission("audit.logs.view", "View audit logs.", 5),
+]
 PERMISSION_CATALOG = [
     {"name": "*", "label": "Acceso total", "catalog": "system", "feature": "all", "action": "manage", "level": 100},
     {"name": "dashboard:view", "label": "Ver dashboard", "catalog": "platform", "feature": "dashboard", "action": "view", "level": 1},
@@ -250,20 +325,44 @@ PERMISSION_CATALOG = [
     {"name": "credits:grant", "label": "Otorgar créditos", "catalog": "learning", "feature": "credits", "action": "grant", "level": 4},
     {"name": "lessons:create", "label": "Crear lecciones", "catalog": "learning", "feature": "lessons", "action": "create", "level": 3},
     {"name": "lessons:approve", "label": "Aprobar lecciones", "catalog": "learning", "feature": "lessons", "action": "approve", "level": 4},
-]
+] + DOT_PERMISSION_CATALOG
 ROLE_PERMISSION_LEVELS: Dict[str, Dict[str, int]] = {
     "administrador_sitio": {"*": 100},
     "administrador_profesor": {
         "dashboard:view": 5, "users:manage": 4, "roles:manage": 4, "teachers:manage": 4,
         "students:manage": 4, "products:manage": 4, "bookings:manage": 4,
         "credits:grant": 4, "lessons:create": 4, "lessons:approve": 4,
+        "dashboard.general.view": 5, "users.profile.view": 5, "users.profile.edit": 4,
+        "users.roles.assign": 5, "roles.management.view": 5, "roles.management.create": 5,
+        "roles.management.edit": 5, "roles.management.delete": 4, "roles.permissions.modify": 5,
+        "calendar.teacher.view": 4, "calendar.teacher.edit": 4, "classes.sessions.view": 4,
+        "classes.sessions.edit": 4, "students.profile.view": 4, "students.progress.view": 4,
+        "teachers.profile.view": 4, "credits.wallet.view": 4, "credits.wallet.grant": 4,
+        "reports.analytics.view": 4, "reports.analytics.export": 4, "settings.platform.view": 4,
+        "audit.logs.view": 5,
+    },
+    "coordinador": {
+        "dashboard.general.view": 3, "users.profile.view": 3, "calendar.teacher.view": 3,
+        "calendar.teacher.edit": 3, "calendar.teacher.block": 3, "calendar.teacher.invite_students": 3,
+        "classes.sessions.view": 3, "classes.sessions.create": 3, "classes.sessions.edit": 3,
+        "classes.sessions.cancel": 3, "students.profile.view": 3, "students.profile.edit": 3,
+        "students.progress.view": 3, "students.credits.view": 3, "teachers.profile.view": 3,
+        "teachers.profile.edit": 3, "teachers.availability.view": 3, "teachers.availability.manage": 3,
+        "credits.wallet.view": 3, "reports.analytics.view": 3,
     },
     "profesor": {
         "dashboard:view": 1, "teachers:own": 2, "students:view": 2,
         "bookings:assigned": 2, "lessons:create": 2,
+        "calendar.teacher.view": 2, "calendar.teacher.create": 2, "calendar.teacher.edit": 2,
+        "calendar.teacher.block": 2, "calendar.teacher.invite_students": 2,
+        "classes.sessions.view": 2, "classes.sessions.feedback": 2,
+        "students.profile.view": 1, "students.progress.view": 1,
+        "teachers.availability.view": 2, "teachers.availability.manage": 2,
     },
     "editor_cms": {"dashboard:view": 1, "cms:manage": 4, "media:manage": 3, "lessons:create": 3},
-    "alumno": {"student:self": 1},
+    "alumno": {"student:self": 1, "dashboard.general.view": 1, "students.progress.view": 1, "credits.wallet.view": 1, "credits.wallet.purchase": 1},
+    "tutor_padre": {"dashboard.general.view": 1, "students.progress.view": 1, "credits.wallet.view": 1, "credits.wallet.purchase": 1, "classes.sessions.view": 1},
+    "viewer": {"dashboard.general.view": 1, "reports.analytics.view": 1},
 }
 ROLE_PERMISSIONS = {role: set(perms) for role, perms in ROLE_PERMISSION_LEVELS.items()}
 
@@ -340,6 +439,87 @@ async def _effective_permission_levels(user: User) -> Dict[str, int]:
 async def _has_permission(user: User, permission: str, min_level: int = 1) -> bool:
     permissions = await _effective_permission_levels(user)
     return permissions.get("*", 0) >= min_level or permissions.get(permission, 0) >= min_level
+
+
+async def _has_any_permission(user: User, permissions: List[str]) -> bool:
+    return any([await _has_permission(user, permission) for permission in permissions])
+
+
+async def _has_all_permissions(user: User, permissions: List[str]) -> bool:
+    return all([await _has_permission(user, permission) for permission in permissions])
+
+
+async def _can_perform_action(user: User, action: str) -> bool:
+    return await _has_permission(user, action)
+
+
+async def _can_access_route(user: User, route: str) -> bool:
+    route_permissions = {
+        "/admin/roles-permissions": "roles.management.view",
+        "/admin/roles": "roles.management.view",
+        "/admin/users": "users.profile.view",
+        "/teacher/calendar": "calendar.teacher.view",
+    }
+    permission = route_permissions.get(route)
+    return True if not permission else await _has_permission(user, permission)
+
+
+def _permission_risk(permission: str) -> str:
+    if permission == "*":
+        return "critical"
+    for item in PERMISSION_CATALOG:
+        if item["name"] == permission:
+            return item.get("risk_level", "low")
+    action = permission.split(".")[-1]
+    return "critical" if action in CRITICAL_PERMISSION_ACTIONS else "low"
+
+
+def _role_type(role_name: str, role: Optional[dict] = None) -> str:
+    return (role or {}).get("type") or ("system" if role_name in SYSTEM_ROLE_NAMES else "custom")
+
+
+def _role_status(role: dict) -> str:
+    return role.get("status") or ("active" if role.get("active", True) else "inactive")
+
+
+async def _active_user_roles(user_id: str) -> List[str]:
+    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    roles = {_normalize_role((user_doc or {}).get("role"))} if user_doc else set()
+    docs = await db.user_roles.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    roles.update({_normalize_role(doc.get("role_name")) for doc in docs if doc.get("active", True)})
+    return sorted(roles, key=lambda role: ROLE_LEVELS.get(role, 0), reverse=True)
+
+
+async def _role_payload(role: dict, include_users: bool = False, include_audit: bool = False) -> dict:
+    assignments = await db.role_permissions.find({"role_name": role["name"]}, {"_id": 0}).to_list(500)
+    permission_levels = {rp["permission"]: int(rp.get("level") or 1) for rp in assignments if int(rp.get("level") or 0) > 0}
+    active_assignments = await db.user_roles.find({"role_name": role["name"], "active": True}, {"_id": 0}).to_list(500)
+    user_ids = {item["user_id"] for item in active_assignments}
+    primary_users = await db.users.find({"role": role["name"]}, {"_id": 0}).to_list(500)
+    user_ids.update({item["user_id"] for item in primary_users})
+    payload = {
+        **role,
+        "type": _role_type(role["name"], role),
+        "status": _role_status(role),
+        "active": role.get("active", True),
+        "permissions": sorted(permission_levels.keys()),
+        "permission_levels": permission_levels,
+        "permissionCount": len(permission_levels),
+        "userCount": len(user_ids),
+    }
+    if include_users:
+        users = []
+        for user_id in sorted(user_ids):
+            doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+            if doc:
+                doc["roles"] = await _active_user_roles(user_id)
+                users.append(doc)
+        payload["users"] = users
+    if include_audit:
+        audit = await db.audit_events.find({"entity_type": "role", "entity_id": role["name"]}, {"_id": 0}).to_list(100)
+        audit.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+        payload["audit"] = audit
+    return payload
 
 # ---------- Auth helpers ----------
 async def _record_login(user_id: str, email: str, provider: str, request: Optional[Request] = None) -> None:
@@ -565,6 +745,7 @@ TECHNICAL_DOCS = {
     "phase-1-execution-plan": {"title": "Phase 1 Execution Plan", "path": "docs/PHASE_1_EXECUTION_PLAN.md", "section": "roadmap"},
     "product-documentation": {"title": "Product Documentation", "path": "docs/PRODUCT_DOCUMENTATION.md", "section": "roadmap"},
     "teacher-calendar-workspace": {"title": "Teacher Calendar Workspace", "path": "docs/TEACHER_CALENDAR_WORKSPACE.md", "section": "roadmap"},
+    "rbac-admin-module": {"title": "RBAC Admin Module", "path": "docs/RBAC_ADMIN_MODULE.md", "section": "roadmap"},
     "architecture": {"title": "Architecture", "path": "docs/ARCHITECTURE.md", "section": "architecture"},
     "deployment-guide": {"title": "Deployment Guide", "path": "docs/DEPLOYMENT_GUIDE.md", "section": "architecture"},
     "operations-runbook": {"title": "Operations Runbook", "path": "docs/OPERATIONS_RUNBOOK.md", "section": "architecture"},
@@ -665,14 +846,24 @@ async def seed_data():
     for name, label in ROLE_LABELS.items():
         role_doc = {
             "id": name, "name": name, "label": label, "description": label,
-            "level": ROLE_LEVELS.get(name, 0), "active": True, "updated_at": now,
+            "level": ROLE_LEVELS.get(name, 0), "type": "system", "status": "active", "active": True, "updated_at": now,
         }
         if await db.roles.find_one({"name": name}, {"_id": 0}):
             await db.roles.update_one({"name": name}, {"$set": role_doc})
         else:
             await db.roles.insert_one({**role_doc, "created_at": now})
     for item in PERMISSION_CATALOG:
-        doc = {**item, "id": item["name"], "description": item["label"], "active": True, "updated_at": now}
+        name_parts = item["name"].split(".")
+        doc = {
+            **item,
+            "id": item["name"],
+            "description": item.get("description") or item["label"],
+            "module": item.get("module") or item.get("catalog") or name_parts[0],
+            "section": item.get("section") or item.get("feature") or (name_parts[1] if len(name_parts) > 1 else "general"),
+            "risk_level": item.get("risk_level") or _permission_risk(item["name"]),
+            "active": True,
+            "updated_at": now,
+        }
         if await db.permissions.find_one({"name": item["name"]}, {"_id": 0}):
             await db.permissions.update_one({"name": item["name"]}, {"$set": doc})
         else:
@@ -1541,6 +1732,223 @@ async def admin_update_user_roles(user_id: str, payload: dict, request: Request,
         request=request,
     )
     return updated
+
+
+@api.get("/admin/rbac/roles")
+async def admin_rbac_roles(_: User = Depends(require_permission("roles.management.view"))):
+    roles = await db.roles.find({}, {"_id": 0}).to_list(200)
+    payload = [await _role_payload(role) for role in roles]
+    payload.sort(key=lambda item: (item.get("type") != "system", -int(item.get("level") or 0), item.get("label", "")))
+    return payload
+
+
+@api.get("/admin/rbac/roles/{role_name}")
+async def admin_rbac_role_detail(role_name: str, _: User = Depends(require_permission("roles.management.view"))):
+    role = await db.roles.find_one({"name": _normalize_role(role_name)}, {"_id": 0})
+    if not role:
+        raise HTTPException(404, "Role not found")
+    return await _role_payload(role, include_users=True, include_audit=True)
+
+
+@api.post("/admin/rbac/roles")
+async def admin_rbac_create_role(payload: dict, request: Request, user: User = Depends(require_permission("roles.management.create"))):
+    name = (payload.get("name") or "").strip().lower().replace(" ", "_")
+    if not name or not name.replace("_", "").replace("-", "").isalnum():
+        raise HTTPException(400, "Valid role name required")
+    name = _normalize_role(name)
+    if await db.roles.find_one({"name": name}, {"_id": 0}):
+        raise HTTPException(400, "Role already exists")
+    now = _now_iso()
+    doc = {
+        "id": name,
+        "name": name,
+        "label": payload.get("label") or payload.get("name") or name,
+        "description": payload.get("description") or "",
+        "level": int(payload.get("level") or 20),
+        "type": "custom",
+        "status": "active",
+        "active": True,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.roles.insert_one(doc)
+    await _record_audit_event("rbac.role.create", "role", entity_id=name, actor_user_id=user.user_id, metadata={"after": doc}, request=request)
+    return await _role_payload(doc)
+
+
+@api.patch("/admin/rbac/roles/{role_name}")
+async def admin_rbac_update_role(role_name: str, payload: dict, request: Request, user: User = Depends(require_permission("roles.management.edit"))):
+    role_name = _normalize_role(role_name)
+    before = await db.roles.find_one({"name": role_name}, {"_id": 0})
+    if not before:
+        raise HTTPException(404, "Role not found")
+    if _role_type(role_name, before) == "system" and any(key in payload for key in ("name", "type")):
+        raise HTTPException(400, "System role identity cannot be changed")
+    allowed = {key: payload[key] for key in ("label", "description", "level") if key in payload}
+    if "level" in allowed:
+        allowed["level"] = int(allowed["level"])
+    if not allowed:
+        return await _role_payload(before)
+    allowed["updated_at"] = _now_iso()
+    await db.roles.update_one({"name": role_name}, {"$set": allowed})
+    after = await db.roles.find_one({"name": role_name}, {"_id": 0})
+    await _record_audit_event("rbac.role.update", "role", entity_id=role_name, actor_user_id=user.user_id, metadata={"before": before, "after": after}, request=request)
+    return await _role_payload(after)
+
+
+@api.post("/admin/rbac/roles/{role_name}/duplicate")
+async def admin_rbac_duplicate_role(role_name: str, payload: dict, request: Request, user: User = Depends(require_permission("roles.management.create"))):
+    source_name = _normalize_role(role_name)
+    source = await db.roles.find_one({"name": source_name}, {"_id": 0})
+    if not source:
+        raise HTTPException(404, "Role not found")
+    new_name = (payload.get("name") or f"{source_name}_copy").strip().lower().replace(" ", "_")
+    if await db.roles.find_one({"name": new_name}, {"_id": 0}):
+        raise HTTPException(400, "Role already exists")
+    now = _now_iso()
+    new_role = {**source, "id": new_name, "name": new_name, "label": payload.get("label") or f"{source.get('label', source_name)} Copy", "type": "custom", "status": "active", "active": True, "created_at": now, "updated_at": now}
+    await db.roles.insert_one(new_role)
+    assignments = await db.role_permissions.find({"role_name": source_name}, {"_id": 0}).to_list(500)
+    for assignment in assignments:
+        if int(assignment.get("level") or 0) > 0:
+            await db.role_permissions.insert_one({"id": str(uuid.uuid4()), "role_name": new_name, "permission": assignment["permission"], "level": int(assignment.get("level") or 1), "scope": assignment.get("scope") or "global", "created_at": now, "updated_at": now})
+    await _record_audit_event("rbac.role.duplicate", "role", entity_id=new_name, actor_user_id=user.user_id, metadata={"source": source_name, "after": new_role}, request=request)
+    return await _role_payload(new_role)
+
+
+@api.patch("/admin/rbac/roles/{role_name}/status")
+async def admin_rbac_role_status(role_name: str, payload: dict, request: Request, user: User = Depends(require_permission("roles.management.edit"))):
+    role_name = _normalize_role(role_name)
+    role = await db.roles.find_one({"name": role_name}, {"_id": 0})
+    if not role:
+        raise HTTPException(404, "Role not found")
+    requested_status = payload.get("status")
+    if requested_status not in ("active", "inactive"):
+        raise HTTPException(400, "status must be active or inactive")
+    if role_name == "administrador_sitio" and requested_status != "active":
+        raise HTTPException(400, "Super Admin role cannot be deactivated")
+    if _role_type(role_name, role) == "system" and role_name in {"administrador_sitio"}:
+        raise HTTPException(400, "Required system role cannot be deactivated")
+    before = dict(role)
+    active = requested_status == "active"
+    await db.roles.update_one({"name": role_name}, {"$set": {"status": requested_status, "active": active, "updated_at": _now_iso()}})
+    after = await db.roles.find_one({"name": role_name}, {"_id": 0})
+    await _record_audit_event("rbac.role.status", "role", entity_id=role_name, actor_user_id=user.user_id, metadata={"before": before, "after": after}, request=request)
+    return await _role_payload(after)
+
+
+@api.delete("/admin/rbac/roles/{role_name}")
+async def admin_rbac_delete_role(role_name: str, request: Request, user: User = Depends(require_permission("roles.management.delete"))):
+    role_name = _normalize_role(role_name)
+    role = await db.roles.find_one({"name": role_name}, {"_id": 0})
+    if not role:
+        raise HTTPException(404, "Role not found")
+    if _role_type(role_name, role) == "system":
+        raise HTTPException(400, "System roles cannot be deleted")
+    assigned = await db.user_roles.find({"role_name": role_name, "active": True}, {"_id": 0}).to_list(500)
+    primary_users = await db.users.find({"role": role_name}, {"_id": 0}).to_list(500)
+    assigned_user_ids = {assignment["user_id"] for assignment in assigned} | {item["user_id"] for item in primary_users}
+    for assigned_user_id in assigned_user_ids:
+        remaining = [item for item in await _active_user_roles(assigned_user_id) if item != role_name]
+        if not remaining:
+            raise HTTPException(400, "Cannot delete role because it would leave users without roles")
+    for assignment in await db.role_permissions.find({"role_name": role_name}, {"_id": 0}).to_list(500):
+        await db.role_permissions.delete_one({"id": assignment["id"]})
+    await db.roles.delete_one({"name": role_name})
+    await _record_audit_event("rbac.role.delete", "role", entity_id=role_name, actor_user_id=user.user_id, metadata={"before": role}, request=request)
+    return {"ok": True}
+
+
+@api.get("/admin/rbac/permissions")
+async def admin_rbac_permissions(_: User = Depends(require_permission("roles.management.view"))):
+    permissions = await db.permissions.find({"active": True}, {"_id": 0}).to_list(1000)
+    permissions.sort(key=lambda item: (item.get("module", ""), item.get("section", ""), item.get("action", "")))
+    grouped: Dict[str, Dict[str, List[dict]]] = {}
+    for permission in permissions:
+        module = permission.get("module") or permission.get("catalog") or "platform"
+        section = permission.get("section") or permission.get("feature") or "general"
+        grouped.setdefault(module, {}).setdefault(section, []).append(permission)
+    return {"permissions": permissions, "grouped": grouped}
+
+
+@api.patch("/admin/rbac/roles/{role_name}/permissions")
+async def admin_rbac_update_role_permissions(role_name: str, payload: dict, request: Request, user: User = Depends(require_permission("roles.permissions.modify"))):
+    role_name = _normalize_role(role_name)
+    role = await db.roles.find_one({"name": role_name}, {"_id": 0})
+    if not role:
+        raise HTTPException(404, "Role not found")
+    requested = payload.get("permissions", [])
+    if not isinstance(requested, list):
+        raise HTTPException(400, "permissions must be a list")
+    requested_names = {item.get("permission") if isinstance(item, dict) else str(item) for item in requested}
+    existing_permissions = await db.role_permissions.find({"role_name": role_name}, {"_id": 0}).to_list(500)
+    before_names = {item["permission"] for item in existing_permissions if int(item.get("level") or 0) > 0}
+    changed = requested_names.symmetric_difference(before_names)
+    if any(_permission_risk(permission) == "critical" for permission in changed) and not payload.get("confirmCritical"):
+        raise HTTPException(400, "Critical permission changes require confirmation")
+    return await admin_update_role_permissions(role_name, payload, request, user)
+
+
+@api.get("/admin/rbac/users")
+async def admin_rbac_users(_: User = Depends(require_permission("users.profile.view"))):
+    users = await admin_list_users(_)
+    for item in users:
+        user_model = User(**item)
+        item["effective_permissions"] = await _effective_permission_levels(user_model)
+        item["effective_permission_count"] = len(item["effective_permissions"])
+    return users
+
+
+@api.patch("/admin/rbac/users/{user_id}/roles")
+async def admin_rbac_replace_user_roles(user_id: str, payload: dict, request: Request, user: User = Depends(require_permission("users.roles.assign"))):
+    requested = [_normalize_role(role) for role in payload.get("roles", []) if role]
+    if not requested:
+        raise HTTPException(400, "Every user must have at least one role")
+    if user_id == user.user_id:
+        current_roles = await _active_user_roles(user_id)
+        had_admin = any(role in {"administrador_sitio", "administrador_profesor"} for role in current_roles)
+        keeps_admin = any(role in {"administrador_sitio", "administrador_profesor"} for role in requested)
+        if had_admin and not keeps_admin:
+            raise HTTPException(400, "Cannot remove your own last admin access")
+    if "administrador_sitio" in requested and not payload.get("confirmPrivileged"):
+        raise HTTPException(400, "Assigning Super Admin requires confirmation")
+    return await admin_update_user_roles(user_id, {"roles": requested}, request, user)
+
+
+@api.post("/admin/rbac/users/bulk-roles")
+async def admin_rbac_bulk_roles(payload: dict, request: Request, user: User = Depends(require_permission("users.roles.assign"))):
+    user_ids = payload.get("userIds", [])
+    roles = payload.get("roles", [])
+    mode = payload.get("mode", "assign")
+    if not isinstance(user_ids, list) or not user_ids:
+        raise HTTPException(400, "userIds required")
+    if not isinstance(roles, list) or not roles:
+        raise HTTPException(400, "roles required")
+    updated = []
+    for target_user_id in user_ids[:100]:
+        current_roles = await _active_user_roles(target_user_id)
+        next_roles = set(current_roles)
+        normalized = {_normalize_role(role) for role in roles}
+        if mode == "replace":
+            next_roles = normalized
+        elif mode == "remove":
+            next_roles = next_roles - normalized
+        else:
+            next_roles = next_roles | normalized
+        if not next_roles:
+            raise HTTPException(400, f"Bulk action would leave {target_user_id} without roles")
+        result = await admin_rbac_replace_user_roles(target_user_id, {"roles": sorted(next_roles), "confirmPrivileged": payload.get("confirmPrivileged", False)}, request, user)
+        updated.append(result["user_id"])
+    await _record_audit_event("rbac.user_roles.bulk", "user_role", actor_user_id=user.user_id, metadata={"user_ids": updated, "roles": roles, "mode": mode}, request=request)
+    return {"ok": True, "updated": updated}
+
+
+@api.get("/admin/rbac/audit-logs")
+async def admin_rbac_audit_logs(_: User = Depends(require_permission("audit.logs.view"))):
+    events = await db.audit_events.find({}, {"_id": 0}).to_list(500)
+    events = [event for event in events if str(event.get("event_type", "")).startswith(("rbac.", "admin.role", "admin.user.roles"))]
+    events.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+    return events[:200]
 
 
 @api.get("/admin/users/{user_id}/login-history")

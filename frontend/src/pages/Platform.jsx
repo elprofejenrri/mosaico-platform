@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import TeacherCalendarWorkspace from "../components/teacher-calendar/TeacherCalendarWorkspace";
+import AdminRbacWorkspace from "../components/admin-rbac/AdminRbacWorkspace";
 import {
   Area,
   AreaChart,
@@ -148,7 +149,7 @@ const roleNav = {
     ["bookings", "Bookings", CalendarDays],
     ["families", "Families", ShieldCheck],
     ["reports", "Reports", LineChart],
-    ["roles", "Roles & Access", ShieldCheck],
+    ["roles-permissions", "Roles & Access", ShieldCheck],
     ["settings", "School Setup", Settings],
   ],
 };
@@ -1790,7 +1791,7 @@ export function AdminPortal({ module = "dashboard" }) {
       {module === "bookings" && <AdminBookings />}
       {module === "families" && <AdminFamilies />}
       {module === "reports" && <AdminReports />}
-      {module === "roles" && <AdminRolesAccess />}
+      {(module === "roles" || module === "roles-permissions") && <AdminRbacWorkspace />}
       {module === "settings" && <AdminSettings />}
     </PlatformShell>
   );
