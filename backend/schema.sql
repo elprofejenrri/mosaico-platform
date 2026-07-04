@@ -17,6 +17,29 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_type TEXT NOT NULL DEFAULT 'c
 ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TEXT;
+ALTER TABLE users ALTER COLUMN role SET DEFAULT 'alumno';
+
+CREATE TABLE IF NOT EXISTS auth_providers (
+    code        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT now()::TEXT
+);
+INSERT INTO auth_providers (code, label) VALUES
+    ('supabase', 'Supabase social auth'),
+    ('local', 'Local email/password')
+ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
+
+CREATE TABLE IF NOT EXISTS user_profile_types (
+    code        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT now()::TEXT
+);
+INSERT INTO user_profile_types (code, label) VALUES
+    ('client', 'Client learner'),
+    ('student', 'Student'),
+    ('parent', 'Parent'),
+    ('tutor', 'Tutor or guardian')
+ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
 
 CREATE TABLE IF NOT EXISTS products (
     id                TEXT PRIMARY KEY,
@@ -40,6 +63,28 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS image TEXT NOT NULL DEFAULT '';
 ALTER TABLE products ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'es';
 ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TEXT;
+
+CREATE TABLE IF NOT EXISTS product_types (
+    code        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT now()::TEXT
+);
+INSERT INTO product_types (code, label) VALUES
+    ('trial', 'Trial class'),
+    ('single', 'Single class'),
+    ('package', 'Lesson package'),
+    ('subscription', 'Subscription')
+ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
+
+CREATE TABLE IF NOT EXISTS language_catalog (
+    code        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT now()::TEXT
+);
+INSERT INTO language_catalog (code, label) VALUES
+    ('es', 'Spanish'),
+    ('en', 'English')
+ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
 
 CREATE TABLE IF NOT EXISTS availability (
     id          TEXT PRIMARY KEY,
@@ -72,6 +117,18 @@ CREATE TABLE IF NOT EXISTS bookings (
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS end_time TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS student_profile_id TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS updated_at TEXT;
+
+CREATE TABLE IF NOT EXISTS booking_statuses (
+    code        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT now()::TEXT
+);
+INSERT INTO booking_statuses (code, label) VALUES
+    ('confirmed', 'Confirmed'),
+    ('scheduled', 'Scheduled'),
+    ('completed', 'Completed'),
+    ('cancelled', 'Cancelled')
+ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
 
 CREATE TABLE IF NOT EXISTS blog_posts (
     id          TEXT PRIMARY KEY,
@@ -117,6 +174,29 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     booking_created  BOOLEAN NOT NULL DEFAULT FALSE,
     created_at       TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS payment_statuses (
+    code        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT now()::TEXT
+);
+INSERT INTO payment_statuses (code, label) VALUES
+    ('initiated', 'Initiated'),
+    ('paid', 'Paid'),
+    ('unpaid', 'Unpaid'),
+    ('no_payment_required', 'No payment required')
+ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
+
+CREATE TABLE IF NOT EXISTS checkout_statuses (
+    code        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT now()::TEXT
+);
+INSERT INTO checkout_statuses (code, label) VALUES
+    ('open', 'Open'),
+    ('complete', 'Complete'),
+    ('expired', 'Expired')
+ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
 
 CREATE TABLE IF NOT EXISTS files (
     id                  TEXT PRIMARY KEY,
@@ -215,6 +295,17 @@ CREATE TABLE IF NOT EXISTS student_profiles (
     updated_at         TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS student_profile_statuses (
+    code        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT now()::TEXT
+);
+INSERT INTO student_profile_statuses (code, label) VALUES
+    ('activo', 'Active'),
+    ('pausado', 'Paused'),
+    ('inactivo', 'Inactive')
+ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
+
 CREATE TABLE IF NOT EXISTS pages (
     id                TEXT PRIMARY KEY,
     title             TEXT NOT NULL,
@@ -233,6 +324,17 @@ CREATE TABLE IF NOT EXISTS pages (
     UNIQUE(slug, language)
 );
 
+CREATE TABLE IF NOT EXISTS page_statuses (
+    code        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT now()::TEXT
+);
+INSERT INTO page_statuses (code, label) VALUES
+    ('draft', 'Draft'),
+    ('published', 'Published'),
+    ('archived', 'Archived')
+ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
+
 CREATE TABLE IF NOT EXISTS media_assets (
     id           TEXT PRIMARY KEY,
     file_name    TEXT NOT NULL,
@@ -244,6 +346,18 @@ CREATE TABLE IF NOT EXISTS media_assets (
     updated_at   TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS media_types (
+    code        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT now()::TEXT
+);
+INSERT INTO media_types (code, label) VALUES
+    ('image', 'Image'),
+    ('video', 'Video'),
+    ('document', 'Document'),
+    ('file', 'File')
+ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
+
 CREATE TABLE IF NOT EXISTS login_history (
     id          TEXT PRIMARY KEY,
     user_id     TEXT NOT NULL,
@@ -253,6 +367,17 @@ CREATE TABLE IF NOT EXISTS login_history (
     user_agent  TEXT,
     created_at  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS login_providers (
+    code        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT now()::TEXT
+);
+INSERT INTO login_providers (code, label) VALUES
+    ('google', 'Google social login'),
+    ('local_password', 'Local password login'),
+    ('local_password_register', 'Local password registration')
+ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
 
 CREATE TABLE IF NOT EXISTS local_auth_sessions (
     id            TEXT PRIMARY KEY,
@@ -274,3 +399,115 @@ CREATE INDEX IF NOT EXISTS idx_media_type ON media_assets(type);
 CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_token ON local_auth_sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_user ON local_auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_auth_provider ON users(auth_provider);
+CREATE INDEX IF NOT EXISTS idx_users_profile_type ON users(profile_type);
+CREATE INDEX IF NOT EXISTS idx_products_type ON products(type);
+CREATE INDEX IF NOT EXISTS idx_products_teacher ON products(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_product ON bookings(product_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_teacher ON bookings(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_student_profile ON bookings(student_profile_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_user ON payment_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_product ON payment_transactions(product_id);
+CREATE INDEX IF NOT EXISTS idx_teacher_profiles_user ON teacher_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_teacher_profiles_teacher ON teacher_profiles(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_student_profiles_user ON student_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_name);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_permission ON role_permissions(permission);
+CREATE INDEX IF NOT EXISTS idx_user_roles_user ON user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles(role_name);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_users_role') THEN
+        ALTER TABLE users ADD CONSTRAINT fk_users_role FOREIGN KEY (role) REFERENCES roles(name) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_users_auth_provider') THEN
+        ALTER TABLE users ADD CONSTRAINT fk_users_auth_provider FOREIGN KEY (auth_provider) REFERENCES auth_providers(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_users_profile_type') THEN
+        ALTER TABLE users ADD CONSTRAINT fk_users_profile_type FOREIGN KEY (profile_type) REFERENCES user_profile_types(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_type') THEN
+        ALTER TABLE products ADD CONSTRAINT fk_products_type FOREIGN KEY (type) REFERENCES product_types(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_language') THEN
+        ALTER TABLE products ADD CONSTRAINT fk_products_language FOREIGN KEY (language) REFERENCES language_catalog(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_teacher') THEN
+        ALTER TABLE products ADD CONSTRAINT fk_products_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_availability_teacher') THEN
+        ALTER TABLE availability ADD CONSTRAINT fk_availability_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_bookings_user') THEN
+        ALTER TABLE bookings ADD CONSTRAINT fk_bookings_user FOREIGN KEY (user_id) REFERENCES users(user_id) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_bookings_product') THEN
+        ALTER TABLE bookings ADD CONSTRAINT fk_bookings_product FOREIGN KEY (product_id) REFERENCES products(id) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_bookings_teacher') THEN
+        ALTER TABLE bookings ADD CONSTRAINT fk_bookings_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_bookings_student_profile') THEN
+        ALTER TABLE bookings ADD CONSTRAINT fk_bookings_student_profile FOREIGN KEY (student_profile_id) REFERENCES student_profiles(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_bookings_status') THEN
+        ALTER TABLE bookings ADD CONSTRAINT fk_bookings_status FOREIGN KEY (status) REFERENCES booking_statuses(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payment_transactions_user') THEN
+        ALTER TABLE payment_transactions ADD CONSTRAINT fk_payment_transactions_user FOREIGN KEY (user_id) REFERENCES users(user_id) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payment_transactions_product') THEN
+        ALTER TABLE payment_transactions ADD CONSTRAINT fk_payment_transactions_product FOREIGN KEY (product_id) REFERENCES products(id) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payment_transactions_payment_status') THEN
+        ALTER TABLE payment_transactions ADD CONSTRAINT fk_payment_transactions_payment_status FOREIGN KEY (payment_status) REFERENCES payment_statuses(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payment_transactions_status') THEN
+        ALTER TABLE payment_transactions ADD CONSTRAINT fk_payment_transactions_status FOREIGN KEY (status) REFERENCES checkout_statuses(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_role_permissions_role') THEN
+        ALTER TABLE role_permissions ADD CONSTRAINT fk_role_permissions_role FOREIGN KEY (role_name) REFERENCES roles(name) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_role_permissions_permission') THEN
+        ALTER TABLE role_permissions ADD CONSTRAINT fk_role_permissions_permission FOREIGN KEY (permission) REFERENCES permissions(name) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_user_roles_user') THEN
+        ALTER TABLE user_roles ADD CONSTRAINT fk_user_roles_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_user_roles_role') THEN
+        ALTER TABLE user_roles ADD CONSTRAINT fk_user_roles_role FOREIGN KEY (role_name) REFERENCES roles(name) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_teacher_profiles_user') THEN
+        ALTER TABLE teacher_profiles ADD CONSTRAINT fk_teacher_profiles_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_teacher_profiles_teacher') THEN
+        ALTER TABLE teacher_profiles ADD CONSTRAINT fk_teacher_profiles_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_student_profiles_user') THEN
+        ALTER TABLE student_profiles ADD CONSTRAINT fk_student_profiles_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_student_profiles_status') THEN
+        ALTER TABLE student_profiles ADD CONSTRAINT fk_student_profiles_status FOREIGN KEY (status) REFERENCES student_profile_statuses(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_pages_language') THEN
+        ALTER TABLE pages ADD CONSTRAINT fk_pages_language FOREIGN KEY (language) REFERENCES language_catalog(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_pages_status') THEN
+        ALTER TABLE pages ADD CONSTRAINT fk_pages_status FOREIGN KEY (status) REFERENCES page_statuses(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_media_assets_type') THEN
+        ALTER TABLE media_assets ADD CONSTRAINT fk_media_assets_type FOREIGN KEY (type) REFERENCES media_types(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_login_history_user') THEN
+        ALTER TABLE login_history ADD CONSTRAINT fk_login_history_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_login_history_provider') THEN
+        ALTER TABLE login_history ADD CONSTRAINT fk_login_history_provider FOREIGN KEY (provider) REFERENCES login_providers(code) NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_local_auth_sessions_user') THEN
+        ALTER TABLE local_auth_sessions ADD CONSTRAINT fk_local_auth_sessions_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+END $$;

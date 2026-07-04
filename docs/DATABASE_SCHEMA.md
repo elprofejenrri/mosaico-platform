@@ -85,6 +85,24 @@ Relationship between users and roles.
 
 Users can have multiple active roles. The app keeps `users.role` as the primary role for backward compatibility and syncs it into `user_roles`.
 
+### Catalog Tables
+
+The schema now includes first-pass catalog tables for controlled values:
+
+- `auth_providers`
+- `user_profile_types`
+- `product_types`
+- `language_catalog`
+- `booking_statuses`
+- `payment_statuses`
+- `checkout_statuses`
+- `student_profile_statuses`
+- `page_statuses`
+- `media_types`
+- `login_providers`
+
+These tables replace unbounded string values over time. Current constraints are added with `NOT VALID` so production can deploy safely before historical data is fully backfilled and validated.
+
 ### `teachers`
 
 Teacher records used by public teacher lists, products, availability, and bookings.
@@ -187,6 +205,8 @@ Current migration style:
 
 - `CREATE TABLE IF NOT EXISTS`
 - `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+- idempotent catalog seed inserts
+- idempotent `NOT VALID` foreign-key constraints for production-safe standardization
 - startup-applied schema
 
 This is pragmatic for the current deployment. For a larger team or higher-change production environment, consider adding a formal migration tool such as Alembic.
