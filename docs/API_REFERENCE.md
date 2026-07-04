@@ -184,6 +184,10 @@ Requires `roles:manage`.
 
 Lists login history for a user.
 
+### GET `/admin/users/{user_id}/audit-events`
+
+Lists platform audit events for a user, newest first.
+
 ## Admin: Teachers
 
 ### GET `/admin/teachers`

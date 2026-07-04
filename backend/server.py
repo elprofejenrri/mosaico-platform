@@ -354,12 +354,36 @@ async def _record_login(user_id: str, email: str, provider: str, request: Option
     })
 
 
+async def _record_audit_event(
+    event_type: str,
+    entity_type: str,
+    entity_id: Optional[str] = None,
+    actor_user_id: Optional[str] = None,
+    target_user_id: Optional[str] = None,
+    metadata: Optional[dict] = None,
+    request: Optional[Request] = None,
+) -> None:
+    await db.audit_events.insert_one({
+        "id": str(uuid.uuid4()),
+        "actor_user_id": actor_user_id,
+        "target_user_id": target_user_id,
+        "event_type": event_type,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "metadata": metadata or {},
+        "ip_address": request.client.host if request and request.client else None,
+        "user_agent": request.headers.get("user-agent") if request else None,
+        "created_at": _now_iso(),
+    })
+
+
 async def _create_local_session(user: User, request: Optional[Request] = None) -> dict:
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(minutes=LOCAL_AUTH_SESSION_MINUTES)
     token = f"{LOCAL_AUTH_TOKEN_PREFIX}{secrets.token_urlsafe(48)}"
+    session_id = str(uuid.uuid4())
     await db.local_auth_sessions.insert_one({
-        "id": str(uuid.uuid4()),
+        "id": session_id,
         "user_id": user.user_id,
         "token_hash": _token_hash(token),
         "expires_at": expires_at.isoformat(),
@@ -369,7 +393,7 @@ async def _create_local_session(user: User, request: Optional[Request] = None) -
         "ip_address": request.client.host if request and request.client else None,
         "user_agent": request.headers.get("user-agent") if request else None,
     })
-    return {"access_token": token, "token_type": "bearer", "expires_at": expires_at.isoformat(), "expires_in": LOCAL_AUTH_SESSION_MINUTES * 60}
+    return {"access_token": token, "token_type": "bearer", "session_id": session_id, "expires_at": expires_at.isoformat(), "expires_in": LOCAL_AUTH_SESSION_MINUTES * 60}
 
 
 async def _get_user_from_local_session(token: str) -> User:
@@ -773,6 +797,15 @@ async def auth_register(payload: RegisterPayload, request: Request):
     user = User(**doc)
     session = await _create_local_session(user, request)
     await _record_login(user_id, email, "local_password_register", request)
+    await _record_audit_event(
+        "auth.register",
+        "user",
+        entity_id=user_id,
+        actor_user_id=user_id,
+        target_user_id=user_id,
+        metadata={"provider": "local", "profile_type": profile_type, "default_role": "alumno"},
+        request=request,
+    )
     user_doc = _public_user(user)
     user_doc["roles"] = await _effective_role_names(user)
     user_doc["permissions"] = await _effective_permission_levels(user)
@@ -795,6 +828,15 @@ async def auth_login(payload: LocalAuthPayload, request: Request):
     user = User(**user_doc)
     session = await _create_local_session(user, request)
     await _record_login(user.user_id, user.email, "local_password", request)
+    await _record_audit_event(
+        "auth.login",
+        "session",
+        entity_id=session.get("session_id"),
+        actor_user_id=user.user_id,
+        target_user_id=user.user_id,
+        metadata={"provider": "local"},
+        request=request,
+    )
     public = _public_user(user)
     public["roles"] = await _effective_role_names(user)
     public["permissions"] = await _effective_permission_levels(user)
@@ -809,11 +851,22 @@ async def auth_me(user: User = Depends(get_current_user)):
     return doc
 
 @api.post("/auth/logout")
-async def auth_logout(authorization: Optional[str] = Header(default=None)):
+async def auth_logout(request: Request, authorization: Optional[str] = Header(default=None)):
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
         if token.startswith(LOCAL_AUTH_TOKEN_PREFIX):
+            session = await db.local_auth_sessions.find_one({"token_hash": _token_hash(token)}, {"_id": 0})
             await db.local_auth_sessions.update_one({"token_hash": _token_hash(token)}, {"$set": {"revoked_at": _now_iso()}})
+            if session:
+                await _record_audit_event(
+                    "auth.logout",
+                    "session",
+                    entity_id=session.get("id"),
+                    actor_user_id=session.get("user_id"),
+                    target_user_id=session.get("user_id"),
+                    metadata={"provider": "local"},
+                    request=request,
+                )
     return {"ok": True}
 
 # ---- Products
@@ -1306,7 +1359,8 @@ async def admin_list_users(_: User = Depends(require_admin)):
 
 
 @api.patch("/admin/users/{user_id}")
-async def admin_update_user(user_id: str, payload: dict, _: User = Depends(require_admin)):
+async def admin_update_user(user_id: str, payload: dict, request: Request, current: User = Depends(require_admin)):
+    before = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     allowed = {k: v for k, v in payload.items() if k in ("name", "role", "picture", "active")}
     if "role" in allowed:
         allowed["role"] = _normalize_role(allowed["role"])
@@ -1316,7 +1370,19 @@ async def admin_update_user(user_id: str, payload: dict, _: User = Depends(requi
     await db.users.update_one({"user_id": user_id}, {"$set": allowed})
     if "role" in allowed:
         await _sync_user_role(user_id, allowed["role"])
-    return await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    after = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    changed_fields = [key for key in allowed if key != "updated_at" and (before or {}).get(key) != allowed.get(key)]
+    if changed_fields:
+        await _record_audit_event(
+            "admin.user.update",
+            "user",
+            entity_id=user_id,
+            actor_user_id=current.user_id,
+            target_user_id=user_id,
+            metadata={"changed_fields": changed_fields, "role": after.get("role"), "active": after.get("active")},
+            request=request,
+        )
+    return after
 
 
 @api.delete("/admin/users/{user_id}")
@@ -1358,7 +1424,7 @@ async def admin_rbac_catalog(_: User = Depends(require_permission("roles:manage"
 
 
 @api.patch("/admin/roles/{role_name}/permissions")
-async def admin_update_role_permissions(role_name: str, payload: dict, user: User = Depends(require_permission("roles:manage"))):
+async def admin_update_role_permissions(role_name: str, payload: dict, request: Request, user: User = Depends(require_permission("roles:manage"))):
     role_name = _normalize_role(role_name)
     if not await db.roles.find_one({"name": role_name}, {"_id": 0}):
         raise HTTPException(404, "role not found")
@@ -1387,11 +1453,19 @@ async def admin_update_role_permissions(role_name: str, payload: dict, user: Use
                 {"role_name": role_name, "permission": assignment.get("permission")},
                 {"$set": {"level": 0, "updated_at": now}},
             )
+    await _record_audit_event(
+        "admin.role.permissions.update",
+        "role",
+        entity_id=role_name,
+        actor_user_id=user.user_id,
+        metadata={"permissions": sorted(requested_names)},
+        request=request,
+    )
     return {"ok": True, "updated_by": user.user_id}
 
 
 @api.patch("/admin/users/{user_id}/roles")
-async def admin_update_user_roles(user_id: str, payload: dict, user: User = Depends(require_permission("roles:manage"))):
+async def admin_update_user_roles(user_id: str, payload: dict, request: Request, user: User = Depends(require_permission("roles:manage"))):
     requested = payload.get("roles", [])
     if not isinstance(requested, list) or not requested:
         raise HTTPException(400, "roles must be a non-empty list")
@@ -1417,12 +1491,28 @@ async def admin_update_user_roles(user_id: str, payload: dict, user: User = Depe
             )
     updated = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     updated["roles"] = await _effective_role_names(User(**updated))
+    await _record_audit_event(
+        "admin.user.roles.update",
+        "user",
+        entity_id=user_id,
+        actor_user_id=user.user_id,
+        target_user_id=user_id,
+        metadata={"roles": updated["roles"], "primary_role": updated.get("role")},
+        request=request,
+    )
     return updated
 
 
 @api.get("/admin/users/{user_id}/login-history")
 async def admin_user_login_history(user_id: str, _: User = Depends(require_admin)):
     docs = await db.login_history.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    docs.sort(key=lambda d: d.get("created_at", ""), reverse=True)
+    return docs
+
+
+@api.get("/admin/users/{user_id}/audit-events")
+async def admin_user_audit_events(user_id: str, _: User = Depends(require_admin)):
+    docs = await db.audit_events.find({"target_user_id": user_id}, {"_id": 0}).to_list(200)
     docs.sort(key=lambda d: d.get("created_at", ""), reverse=True)
     return docs
 

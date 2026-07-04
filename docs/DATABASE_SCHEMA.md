@@ -186,6 +186,20 @@ JSON document for site/admin configurable settings.
 
 Login audit records.
 
+### `audit_events`
+
+Platform audit trail for security and administrative changes.
+
+Important fields:
+
+- `actor_user_id`
+- `target_user_id`
+- `event_type`
+- `entity_type`
+- `entity_id`
+- `metadata`
+- `created_at`
+
 ## JSONB Fields
 
 The database layer encodes and decodes JSONB fields for:

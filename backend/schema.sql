@@ -391,6 +391,19 @@ CREATE TABLE IF NOT EXISTS local_auth_sessions (
     user_agent    TEXT
 );
 
+CREATE TABLE IF NOT EXISTS audit_events (
+    id             TEXT PRIMARY KEY,
+    actor_user_id  TEXT,
+    target_user_id TEXT,
+    event_type     TEXT NOT NULL,
+    entity_type    TEXT NOT NULL,
+    entity_id      TEXT,
+    metadata       JSONB NOT NULL DEFAULT '{}',
+    ip_address     TEXT,
+    user_agent     TEXT,
+    created_at     TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_availability_date ON availability(date);
 CREATE INDEX IF NOT EXISTS idx_availability_teacher ON availability(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings(user_id);
@@ -399,6 +412,10 @@ CREATE INDEX IF NOT EXISTS idx_media_type ON media_assets(type);
 CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_token ON local_auth_sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_user ON local_auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events(actor_user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_events_target ON audit_events(target_user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_events_type ON audit_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_audit_events_entity ON audit_events(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_auth_provider ON users(auth_provider);
 CREATE INDEX IF NOT EXISTS idx_users_profile_type ON users(profile_type);
@@ -509,5 +526,11 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_local_auth_sessions_user') THEN
         ALTER TABLE local_auth_sessions ADD CONSTRAINT fk_local_auth_sessions_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_audit_events_actor') THEN
+        ALTER TABLE audit_events ADD CONSTRAINT fk_audit_events_actor FOREIGN KEY (actor_user_id) REFERENCES users(user_id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_audit_events_target') THEN
+        ALTER TABLE audit_events ADD CONSTRAINT fk_audit_events_target FOREIGN KEY (target_user_id) REFERENCES users(user_id) ON DELETE SET NULL NOT VALID;
     END IF;
 END $$;

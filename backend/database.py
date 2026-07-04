@@ -54,6 +54,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
     "media_assets": ["id", "file_name", "url", "type", "alt_text", "uploaded_by", "created_at", "updated_at"],
     "login_history": ["id", "user_id", "email", "provider", "ip_address", "user_agent", "created_at"],
     "local_auth_sessions": ["id", "user_id", "token_hash", "expires_at", "revoked_at", "created_at", "last_seen_at", "ip_address", "user_agent"],
+    "audit_events": ["id", "actor_user_id", "target_user_id", "event_type", "entity_type", "entity_id", "metadata", "ip_address", "user_agent", "created_at"],
 }
 
 JSONB_COLUMNS = {
@@ -62,6 +63,7 @@ JSONB_COLUMNS = {
     "teacher_profiles": {"specialties", "assigned_products"},
     "student_profiles": {"enrolled_products"},
     "pages": {"content_blocks"},
+    "audit_events": {"metadata"},
 }
 
 BOOL_COLUMNS = {
@@ -403,6 +405,7 @@ class Database:
         self.media_assets = Collection("media_assets", pool)
         self.login_history = Collection("login_history", pool)
         self.local_auth_sessions = Collection("local_auth_sessions", pool)
+        self.audit_events = Collection("audit_events", pool)
 
 
 _db: Optional[Database] = None
