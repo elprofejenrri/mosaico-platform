@@ -134,32 +134,62 @@ CREATE TABLE IF NOT EXISTS site_settings (
 CREATE TABLE IF NOT EXISTS roles (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE,
+    label       TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
+    level       INTEGER NOT NULL DEFAULT 0,
+    active      BOOLEAN NOT NULL DEFAULT TRUE,
     created_at  TEXT NOT NULL
 );
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT '';
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS level INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS updated_at TEXT;
 
 CREATE TABLE IF NOT EXISTS permissions (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE,
+    label       TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
+    catalog     TEXT NOT NULL DEFAULT 'platform',
+    feature     TEXT NOT NULL DEFAULT '',
+    action      TEXT NOT NULL DEFAULT '',
+    level       INTEGER NOT NULL DEFAULT 1,
+    active      BOOLEAN NOT NULL DEFAULT TRUE,
     created_at  TEXT NOT NULL
 );
+ALTER TABLE permissions ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT '';
+ALTER TABLE permissions ADD COLUMN IF NOT EXISTS catalog TEXT NOT NULL DEFAULT 'platform';
+ALTER TABLE permissions ADD COLUMN IF NOT EXISTS feature TEXT NOT NULL DEFAULT '';
+ALTER TABLE permissions ADD COLUMN IF NOT EXISTS action TEXT NOT NULL DEFAULT '';
+ALTER TABLE permissions ADD COLUMN IF NOT EXISTS level INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE permissions ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE permissions ADD COLUMN IF NOT EXISTS updated_at TEXT;
 
 CREATE TABLE IF NOT EXISTS role_permissions (
     id            TEXT PRIMARY KEY,
     role_name     TEXT NOT NULL,
     permission    TEXT NOT NULL,
+    level         INTEGER NOT NULL DEFAULT 1,
+    scope         TEXT NOT NULL DEFAULT 'global',
     created_at    TEXT NOT NULL,
     UNIQUE(role_name, permission)
 );
+ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS level INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'global';
+ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS updated_at TEXT;
 
 CREATE TABLE IF NOT EXISTS user_roles (
     id          TEXT PRIMARY KEY,
     user_id     TEXT NOT NULL,
     role_name   TEXT NOT NULL,
+    active      BOOLEAN NOT NULL DEFAULT TRUE,
+    assigned_by TEXT,
     created_at  TEXT NOT NULL,
     UNIQUE(user_id, role_name)
 );
+ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS assigned_by TEXT;
+ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS updated_at TEXT;
 
 CREATE TABLE IF NOT EXISTS teacher_profiles (
     id                  TEXT PRIMARY KEY,

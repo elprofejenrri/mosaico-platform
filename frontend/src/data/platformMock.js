@@ -603,3 +603,59 @@ export const schoolReports = [
   { label: "Teacher feedback sent", value: 84, note: "Classes with feedback posted" },
   { label: "Credit utilization", value: 73, note: "Credits converted into classes" },
 ];
+
+export const rbacPermissionLevels = [
+  { level: 1, label: "View", description: "Open a feature and read assigned information." },
+  { level: 2, label: "Operate", description: "Work with own or assigned records." },
+  { level: 3, label: "Create", description: "Create school content, classes, or resources." },
+  { level: 4, label: "Manage", description: "Approve, edit, grant, and administer records." },
+  { level: 5, label: "Govern", description: "Change roles, permission levels, and access policy." },
+];
+
+export const rbacCatalogs = [
+  {
+    id: "school",
+    name: "School Operations",
+    permissions: [
+      { key: "users:manage", feature: "People", action: "Approve and manage users", level: 4 },
+      { key: "credits:grant", feature: "Credits", action: "Grant or adjust credits", level: 4 },
+      { key: "bookings:manage", feature: "Classes", action: "Manage bookings and attendance", level: 4 },
+      { key: "teachers:manage", feature: "Teachers", action: "Approve and manage teachers", level: 4 },
+    ],
+  },
+  {
+    id: "learning",
+    name: "Learning Content",
+    permissions: [
+      { key: "lessons:create", feature: "Lessons", action: "Create new lessons", level: 3 },
+      { key: "lessons:approve", feature: "Lessons", action: "Approve lesson publishing", level: 4 },
+      { key: "students:view", feature: "Learners", action: "View learner progress", level: 1 },
+      { key: "student:self", feature: "Client Portal", action: "Access own roadmap", level: 1 },
+    ],
+  },
+  {
+    id: "governance",
+    name: "Access Governance",
+    permissions: [
+      { key: "roles:manage", feature: "RBAC", action: "Edit roles and permission levels", level: 5 },
+      { key: "dashboard:view", feature: "Dashboard", action: "View operational dashboard", level: 1 },
+      { key: "cms:manage", feature: "CMS", action: "Manage public content", level: 4 },
+      { key: "media:manage", feature: "Media", action: "Upload and organize media", level: 3 },
+    ],
+  },
+];
+
+export const rbacRoles = [
+  { id: "administrador_sitio", label: "Site Administrator", level: 5, permissions: ["roles:manage", "users:manage", "credits:grant", "lessons:approve", "bookings:manage", "cms:manage"] },
+  { id: "administrador_profesor", label: "School Principal", level: 4, permissions: ["users:manage", "credits:grant", "lessons:create", "lessons:approve", "teachers:manage", "bookings:manage"] },
+  { id: "profesor", label: "Teacher", level: 2, permissions: ["students:view", "lessons:create", "bookings:manage"] },
+  { id: "editor_cms", label: "Content Editor", level: 3, permissions: ["cms:manage", "media:manage", "lessons:create"] },
+  { id: "alumno", label: "Client Learner", level: 1, permissions: ["student:self"] },
+];
+
+export const rbacUsers = [
+  { id: "isabel", name: "Isabel Herrera", profile: "School principal", roles: ["administrador_profesor", "editor_cms"] },
+  { id: "marisol", name: "Marisol Vega", profile: "Lead teacher", roles: ["profesor", "editor_cms"] },
+  { id: "camila", name: "Camila Torres", profile: "Parent tutor", roles: ["alumno"] },
+  { id: "platform", name: "MOSAICO Ops", profile: "Technical admin", roles: ["administrador_sitio"] },
+];

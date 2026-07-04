@@ -128,7 +128,25 @@ Deletes user unless it is the current user.
 
 ### GET `/admin/roles`
 
-Lists roles and permissions.
+Lists roles, permissions, and permission levels.
+
+### GET `/admin/rbac/catalog`
+
+Lists RBAC levels, role catalogue, and permission catalogue grouped by functionality.
+
+Requires `roles:manage`.
+
+### PATCH `/admin/roles/{role_name}/permissions`
+
+Updates the permission level assignments for a role.
+
+Requires `roles:manage`.
+
+### PATCH `/admin/users/{user_id}/roles`
+
+Assigns multiple roles to one user and updates the primary `users.role` to the highest-level role.
+
+Requires `roles:manage`.
 
 ### GET `/admin/users/{user_id}/login-history`
 
@@ -305,4 +323,3 @@ Updates settings.
 ### POST `/admin/settings/test-gcal`
 
 Sends a Google Calendar test invite if calendar settings are configured.
-

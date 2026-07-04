@@ -31,19 +31,44 @@ Important fields:
 
 Role catalogue.
 
+Important RBAC fields:
+
+- `name`
+- `label`
+- `description`
+- `level`
+- `active`
+
 ### `permissions`
 
-Permission catalogue.
+Permission catalogue. Permissions are catalogued by functionality and level.
+
+Important RBAC fields:
+
+- `name`
+- `label`
+- `catalog`
+- `feature`
+- `action`
+- `level`
+- `active`
 
 ### `role_permissions`
 
 Relationship between roles and permissions.
 
+Important RBAC fields:
+
+- `role_name`
+- `permission`
+- `level`
+- `scope`
+
 ### `user_roles`
 
 Relationship between users and roles.
 
-The app currently stores primary role on `users.role` and also syncs into `user_roles`.
+Users can have multiple active roles. The app keeps `users.role` as the primary role for backward compatibility and syncs it into `user_roles`.
 
 ### `teachers`
 
@@ -150,4 +175,3 @@ Current migration style:
 - startup-applied schema
 
 This is pragmatic for the current deployment. For a larger team or higher-change production environment, consider adding a formal migration tool such as Alembic.
-

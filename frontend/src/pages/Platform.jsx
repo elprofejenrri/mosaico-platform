@@ -80,6 +80,10 @@ import {
   schoolAdminProfile,
   schoolCreditGrants,
   schoolReports,
+  rbacCatalogs,
+  rbacPermissionLevels,
+  rbacRoles,
+  rbacUsers,
   skillProgress,
   students,
   teacherAvailability,
@@ -142,6 +146,7 @@ const roleNav = {
     ["bookings", "Bookings", CalendarDays],
     ["families", "Families", ShieldCheck],
     ["reports", "Reports", LineChart],
+    ["roles", "Roles & Access", ShieldCheck],
     ["settings", "School Setup", Settings],
   ],
 };
@@ -1783,6 +1788,7 @@ export function AdminPortal({ module = "dashboard" }) {
       {module === "bookings" && <AdminBookings />}
       {module === "families" && <AdminFamilies />}
       {module === "reports" && <AdminReports />}
+      {module === "roles" && <AdminRolesAccess />}
       {module === "settings" && <AdminSettings />}
     </PlatformShell>
   );
@@ -2041,6 +2047,119 @@ function AdminReports({ compact = false }) {
         </ResponsiveContainer>
       </div>
     </Card>
+  );
+}
+
+function AdminRolesAccess() {
+  const [selectedRole, setSelectedRole] = useState(rbacRoles[1].id);
+  const [selectedUser, setSelectedUser] = useState(rbacUsers[0].id);
+  const activeRole = rbacRoles.find((role) => role.id === selectedRole) || rbacRoles[0];
+  const activeUser = rbacUsers.find((user) => user.id === selectedUser) || rbacUsers[0];
+  const permissionLookup = useMemo(() => {
+    const entries = rbacCatalogs.flatMap((catalog) => catalog.permissions.map((permission) => [permission.key, { ...permission, catalog: catalog.name }]));
+    return Object.fromEntries(entries);
+  }, []);
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-5">
+        {rbacPermissionLevels.map((item) => (
+          <div key={item.level} className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.16em] text-[#5C6680]">Level {item.level}</p>
+            <p className="mt-2 font-semibold">{item.label}</p>
+            <p className="mt-1 text-sm text-[#5C6680]">{item.description}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+        <Card>
+          <SectionHeader eyebrow="Role catalog" title="Roles can hold many permission levels" />
+          <label className="mt-4 block text-sm font-semibold">Role</label>
+          <select value={selectedRole} onChange={(event) => setSelectedRole(event.target.value)} className="mt-2 w-full rounded-md border border-[#EFE4D0] px-3 py-2 outline-none focus:ring-2 focus:ring-[#E8704C]">
+            {rbacRoles.map((role) => <option key={role.id} value={role.id}>{role.label}</option>)}
+          </select>
+          <div className="mt-5 rounded-lg bg-[#FBF7EE] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold">{activeRole.label}</p>
+                <p className="text-sm text-[#5C6680]">{activeRole.id}</p>
+              </div>
+              <span className="rounded-md bg-[#E0F2F0] px-3 py-1 text-sm text-[#2DA89F]">Level {activeRole.level}</span>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {activeRole.permissions.map((permissionKey) => {
+                const permission = permissionLookup[permissionKey] || { feature: permissionKey, action: "Configured access", level: 1, catalog: "Custom" };
+                return (
+                  <div key={permissionKey} className="flex flex-col justify-between gap-2 rounded-md bg-white px-3 py-2 md:flex-row md:items-center">
+                    <div>
+                      <p className="font-medium">{permission.feature}</p>
+                      <p className="text-sm text-[#5C6680]">{permission.action} - {permission.catalog}</p>
+                    </div>
+                    <span className="rounded-md bg-[#FFF0E6] px-3 py-1 text-sm text-[#E8704C]">L{permission.level}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <ActionButton doneText={`${activeRole.label} permissions saved.`} className="mt-4 bg-[#E8704C] text-white hover:bg-[#C95630]">Save role permissions</ActionButton>
+          </div>
+        </Card>
+
+        <Card>
+          <SectionHeader eyebrow="Permission catalog" title="Functionality access by feature" />
+          <div className="mt-5 grid gap-4">
+            {rbacCatalogs.map((catalog) => (
+              <div key={catalog.id} className="rounded-lg border border-[#EFE4D0] p-4">
+                <p className="font-semibold">{catalog.name}</p>
+                <div className="mt-3 grid gap-2">
+                  {catalog.permissions.map((permission) => (
+                    <div key={permission.key} className="grid gap-2 rounded-md bg-[#FBF7EE] p-3 md:grid-cols-[0.8fr_1fr_auto] md:items-center">
+                      <p className="font-medium">{permission.feature}</p>
+                      <p className="text-sm text-[#5C6680]">{permission.action}</p>
+                      <span className="w-fit rounded-md bg-white px-3 py-1 text-sm text-[#5C6680]">Level {permission.level}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      <Card>
+        <SectionHeader eyebrow="Multi-role users" title="One person can inherit access from multiple roles" />
+        <div className="mt-5 grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
+          <div>
+            <label className="block text-sm font-semibold">User</label>
+            <select value={selectedUser} onChange={(event) => setSelectedUser(event.target.value)} className="mt-2 w-full rounded-md border border-[#EFE4D0] px-3 py-2 outline-none focus:ring-2 focus:ring-[#E8704C]">
+              {rbacUsers.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
+            </select>
+            <div className="mt-4 rounded-lg bg-[#FBF7EE] p-4">
+              <p className="font-semibold">{activeUser.name}</p>
+              <p className="text-sm text-[#5C6680]">{activeUser.profile}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {activeUser.roles.map((roleId) => {
+                  const role = rbacRoles.find((item) => item.id === roleId);
+                  return <span key={roleId} className="rounded-md bg-white px-3 py-1 text-sm text-[#5C6680]">{role?.label || roleId}</span>;
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {rbacRoles.map((role) => (
+              <label key={`${activeUser.id}-${role.id}`} className="flex items-start gap-3 rounded-lg border border-[#EFE4D0] p-4">
+                <input type="checkbox" defaultChecked={activeUser.roles.includes(role.id)} className="mt-1 h-4 w-4 accent-[#E8704C]" />
+                <span>
+                  <span className="block font-semibold">{role.label}</span>
+                  <span className="text-sm text-[#5C6680]">Level {role.level} - {role.permissions.length} permissions</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <ActionButton doneText={`${activeUser.name} roles updated.`} className="mt-5 bg-[#2DA89F] text-white hover:bg-[#23877f]">Save user roles</ActionButton>
+      </Card>
+    </div>
   );
 }
 

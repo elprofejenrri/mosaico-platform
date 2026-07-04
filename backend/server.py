@@ -6,7 +6,7 @@ import mimetypes
 import json
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Set
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -196,15 +196,10 @@ class BlogPost(BaseModel):
 ROLE_ALIASES = {
     "admin": "administrador_sitio",
     "student": "alumno",
+    "teacher": "profesor",
+    "cms": "editor_cms",
 }
 ADMIN_ROLES = {"administrador_sitio", "administrador_profesor"}
-ROLE_PERMISSIONS = {
-    "administrador_sitio": {"*"},
-    "administrador_profesor": {"dashboard:view", "users:manage", "teachers:manage", "students:manage", "products:manage", "bookings:manage"},
-    "profesor": {"dashboard:view", "teachers:own", "students:view", "bookings:assigned"},
-    "editor_cms": {"dashboard:view", "cms:manage", "media:manage"},
-    "alumno": {"student:self"},
-}
 ROLE_LABELS = {
     "administrador_sitio": "Administrador sitio",
     "administrador_profesor": "Administrador profesor",
@@ -212,6 +207,47 @@ ROLE_LABELS = {
     "editor_cms": "Editor CMS",
     "alumno": "Alumno",
 }
+ROLE_LEVELS = {
+    "alumno": 10,
+    "profesor": 30,
+    "editor_cms": 40,
+    "administrador_profesor": 70,
+    "administrador_sitio": 100,
+}
+PERMISSION_CATALOG = [
+    {"name": "*", "label": "Acceso total", "catalog": "system", "feature": "all", "action": "manage", "level": 100},
+    {"name": "dashboard:view", "label": "Ver dashboard", "catalog": "platform", "feature": "dashboard", "action": "view", "level": 1},
+    {"name": "users:manage", "label": "Administrar usuarios", "catalog": "administration", "feature": "users", "action": "manage", "level": 4},
+    {"name": "roles:manage", "label": "Administrar roles y permisos", "catalog": "administration", "feature": "rbac", "action": "manage", "level": 5},
+    {"name": "teachers:manage", "label": "Administrar profesores", "catalog": "school", "feature": "teachers", "action": "manage", "level": 4},
+    {"name": "teachers:own", "label": "Ver perfil docente propio", "catalog": "school", "feature": "teachers", "action": "own", "level": 1},
+    {"name": "students:manage", "label": "Administrar alumnos", "catalog": "school", "feature": "students", "action": "manage", "level": 4},
+    {"name": "students:view", "label": "Ver alumnos", "catalog": "school", "feature": "students", "action": "view", "level": 1},
+    {"name": "products:manage", "label": "Administrar productos", "catalog": "commerce", "feature": "products", "action": "manage", "level": 4},
+    {"name": "bookings:manage", "label": "Administrar reservas", "catalog": "school", "feature": "bookings", "action": "manage", "level": 4},
+    {"name": "bookings:assigned", "label": "Ver clases asignadas", "catalog": "school", "feature": "bookings", "action": "assigned", "level": 1},
+    {"name": "cms:manage", "label": "Administrar contenido", "catalog": "content", "feature": "cms", "action": "manage", "level": 4},
+    {"name": "media:manage", "label": "Administrar medios", "catalog": "content", "feature": "media", "action": "manage", "level": 3},
+    {"name": "student:self", "label": "Portal propio de alumno", "catalog": "learning", "feature": "student_portal", "action": "self", "level": 1},
+    {"name": "credits:grant", "label": "Otorgar créditos", "catalog": "learning", "feature": "credits", "action": "grant", "level": 4},
+    {"name": "lessons:create", "label": "Crear lecciones", "catalog": "learning", "feature": "lessons", "action": "create", "level": 3},
+    {"name": "lessons:approve", "label": "Aprobar lecciones", "catalog": "learning", "feature": "lessons", "action": "approve", "level": 4},
+]
+ROLE_PERMISSION_LEVELS: Dict[str, Dict[str, int]] = {
+    "administrador_sitio": {"*": 100},
+    "administrador_profesor": {
+        "dashboard:view": 5, "users:manage": 4, "roles:manage": 4, "teachers:manage": 4,
+        "students:manage": 4, "products:manage": 4, "bookings:manage": 4,
+        "credits:grant": 4, "lessons:create": 4, "lessons:approve": 4,
+    },
+    "profesor": {
+        "dashboard:view": 1, "teachers:own": 2, "students:view": 2,
+        "bookings:assigned": 2, "lessons:create": 2,
+    },
+    "editor_cms": {"dashboard:view": 1, "cms:manage": 4, "media:manage": 3, "lessons:create": 3},
+    "alumno": {"student:self": 1},
+}
+ROLE_PERMISSIONS = {role: set(perms) for role, perms in ROLE_PERMISSION_LEVELS.items()}
 
 
 def _now_iso() -> str:
@@ -222,16 +258,43 @@ def _normalize_role(role: Optional[str]) -> str:
     return ROLE_ALIASES.get((role or "alumno").strip(), (role or "alumno").strip())
 
 
-def _has_permission(user: User, permission: str) -> bool:
-    role = _normalize_role(user.role)
-    perms = ROLE_PERMISSIONS.get(role, set())
-    return "*" in perms or permission in perms
+async def _effective_role_names(user: User) -> List[str]:
+    roles: Set[str] = {_normalize_role(user.role)}
+    docs = await db.user_roles.find({"user_id": user.user_id}, {"_id": 0}).to_list(100)
+    for doc in docs:
+        if doc.get("active", True):
+            roles.add(_normalize_role(doc.get("role_name")))
+    return sorted(roles, key=lambda role: ROLE_LEVELS.get(role, 0), reverse=True)
+
+
+async def _effective_permission_levels(user: User) -> Dict[str, int]:
+    effective: Dict[str, int] = {}
+    for role in await _effective_role_names(user):
+        fallback = ROLE_PERMISSION_LEVELS.get(role, {})
+        for permission, level in fallback.items():
+            effective[permission] = max(effective.get(permission, 0), int(level))
+        docs = await db.role_permissions.find({"role_name": role}, {"_id": 0}).to_list(200)
+        for doc in docs:
+            permission = doc.get("permission")
+            level = int(doc.get("level") or 0)
+            if permission and level > 0:
+                effective[permission] = max(effective.get(permission, 0), level)
+    return effective
+
+
+async def _has_permission(user: User, permission: str, min_level: int = 1) -> bool:
+    permissions = await _effective_permission_levels(user)
+    return permissions.get("*", 0) >= min_level or permissions.get(permission, 0) >= min_level
 
 # ---------- Auth helpers ----------
-async def _sync_user_role(user_id: str, role: str) -> None:
+async def _sync_user_role(user_id: str, role: str, assigned_by: Optional[str] = None) -> None:
     role = _normalize_role(role)
-    if not await db.user_roles.find_one({"user_id": user_id, "role_name": role}, {"_id": 0}):
-        await db.user_roles.insert_one({"id": str(uuid.uuid4()), "user_id": user_id, "role_name": role, "created_at": _now_iso()})
+    now = _now_iso()
+    existing = await db.user_roles.find_one({"user_id": user_id, "role_name": role}, {"_id": 0})
+    if existing:
+        await db.user_roles.update_one({"user_id": user_id, "role_name": role}, {"$set": {"active": True, "assigned_by": assigned_by, "updated_at": now}})
+    else:
+        await db.user_roles.insert_one({"id": str(uuid.uuid4()), "user_id": user_id, "role_name": role, "active": True, "assigned_by": assigned_by, "created_at": now, "updated_at": now})
 
 
 async def _get_or_create_user_from_supabase(payload: dict, request: Optional[Request] = None) -> User:
@@ -356,14 +419,15 @@ async def get_current_user(
     return await _get_or_create_user_from_supabase(payload, request)
 
 async def require_admin(user: User = Depends(get_current_user)) -> User:
-    if _normalize_role(user.role) not in ADMIN_ROLES:
+    roles = await _effective_role_names(user)
+    if not any(role in ADMIN_ROLES for role in roles):
         raise HTTPException(status_code=403, detail="Admin only")
     return user
 
 
-def require_permission(permission: str):
+def require_permission(permission: str, min_level: int = 1):
     async def checker(user: User = Depends(get_current_user)) -> User:
-        if not _has_permission(user, permission):
+        if not await _has_permission(user, permission, min_level):
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return user
     return checker
@@ -438,22 +502,30 @@ async def init_storage():
 @app.on_event("startup")
 async def seed_data():
     now = _now_iso()
-    if await db.roles.count_documents({}) == 0:
-        await db.roles.insert_many([
-            {"id": name, "name": name, "description": ROLE_LABELS[name], "created_at": now}
-            for name in ROLE_LABELS
-        ])
-        perms = sorted({p for values in ROLE_PERMISSIONS.values() for p in values if p != "*"} | {"*"})
-        await db.permissions.insert_many([
-            {"id": p, "name": p, "description": p, "created_at": now}
-            for p in perms
-        ])
-        rp = []
-        for role, permissions in ROLE_PERMISSIONS.items():
-            for perm in permissions:
-                rp.append({"id": str(uuid.uuid4()), "role_name": role, "permission": perm, "created_at": now})
-        await db.role_permissions.insert_many(rp)
-        logger.info("Seeded RBAC roles")
+    for name, label in ROLE_LABELS.items():
+        role_doc = {
+            "id": name, "name": name, "label": label, "description": label,
+            "level": ROLE_LEVELS.get(name, 0), "active": True, "updated_at": now,
+        }
+        if await db.roles.find_one({"name": name}, {"_id": 0}):
+            await db.roles.update_one({"name": name}, {"$set": role_doc})
+        else:
+            await db.roles.insert_one({**role_doc, "created_at": now})
+    for item in PERMISSION_CATALOG:
+        doc = {**item, "id": item["name"], "description": item["label"], "active": True, "updated_at": now}
+        if await db.permissions.find_one({"name": item["name"]}, {"_id": 0}):
+            await db.permissions.update_one({"name": item["name"]}, {"$set": doc})
+        else:
+            await db.permissions.insert_one({**doc, "created_at": now})
+    for role, permissions in ROLE_PERMISSION_LEVELS.items():
+        for permission, level in permissions.items():
+            existing = await db.role_permissions.find_one({"role_name": role, "permission": permission}, {"_id": 0})
+            doc = {"role_name": role, "permission": permission, "level": level, "scope": "global", "updated_at": now}
+            if existing:
+                await db.role_permissions.update_one({"role_name": role, "permission": permission}, {"$set": doc})
+            else:
+                await db.role_permissions.insert_one({"id": str(uuid.uuid4()), **doc, "created_at": now})
+    logger.info("RBAC catalog ready")
     if await db.users.count_documents({}) == 0:
         sample_users = [
             ("seed-admin", "admin@mosaico.studio", "Admin MOSAICO", "administrador_sitio"),
@@ -558,7 +630,10 @@ async def root():
 
 @api.get("/auth/me")
 async def auth_me(user: User = Depends(get_current_user)):
-    return user
+    doc = user.model_dump()
+    doc["roles"] = await _effective_role_names(user)
+    doc["permissions"] = await _effective_permission_levels(user)
+    return doc
 
 @api.post("/auth/logout")
 async def auth_logout():
@@ -1043,6 +1118,12 @@ async def admin_list_users(_: User = Depends(require_admin)):
     for d in docs:
         d["booking_count"] = await db.bookings.count_documents({"user_id": d["user_id"]})
         d["role"] = _normalize_role(d.get("role"))
+        role_docs = await db.user_roles.find({"user_id": d["user_id"]}, {"_id": 0}).to_list(100)
+        d["roles"] = sorted(
+            {_normalize_role(r.get("role_name")) for r in role_docs if r.get("active", True)} | {d["role"]},
+            key=lambda role: ROLE_LEVELS.get(role, 0),
+            reverse=True,
+        )
     docs.sort(key=lambda u: str(u.get("created_at", "")), reverse=True)
     return docs
 
@@ -1074,9 +1155,92 @@ async def admin_delete_user(user_id: str, current: User = Depends(require_admin)
 async def admin_roles(_: User = Depends(require_admin)):
     roles = await db.roles.find({}, {"_id": 0}).to_list(100)
     for role in roles:
-        role["permissions"] = [rp["permission"] for rp in await db.role_permissions.find({"role_name": role["name"]}, {"_id": 0}).to_list(100)]
-    roles.sort(key=lambda r: list(ROLE_LABELS).index(r["name"]) if r["name"] in ROLE_LABELS else 99)
+        assignments = await db.role_permissions.find({"role_name": role["name"]}, {"_id": 0}).to_list(200)
+        role["permission_levels"] = {rp["permission"]: int(rp.get("level") or 1) for rp in assignments if int(rp.get("level") or 0) > 0}
+        role["permissions"] = list(role["permission_levels"].keys())
+    roles.sort(key=lambda r: ROLE_LEVELS.get(r["name"], 0), reverse=True)
     return roles
+
+
+@api.get("/admin/rbac/catalog")
+async def admin_rbac_catalog(_: User = Depends(require_permission("roles:manage"))):
+    roles = await admin_roles(_)
+    permissions = await db.permissions.find({}, {"_id": 0}).to_list(500)
+    permissions.sort(key=lambda p: (p.get("catalog", ""), p.get("feature", ""), int(p.get("level") or 1), p.get("name", "")))
+    return {
+        "levels": [
+            {"level": 1, "label": "View", "description": "Puede ver una funcionalidad."},
+            {"level": 2, "label": "Operate", "description": "Puede operar datos propios o asignados."},
+            {"level": 3, "label": "Create", "description": "Puede crear contenido o registros."},
+            {"level": 4, "label": "Manage", "description": "Puede aprobar, editar y administrar."},
+            {"level": 5, "label": "Govern", "description": "Puede gobernar roles, reglas y accesos."},
+        ],
+        "roles": roles,
+        "permissions": permissions,
+    }
+
+
+@api.patch("/admin/roles/{role_name}/permissions")
+async def admin_update_role_permissions(role_name: str, payload: dict, user: User = Depends(require_permission("roles:manage"))):
+    role_name = _normalize_role(role_name)
+    if not await db.roles.find_one({"name": role_name}, {"_id": 0}):
+        raise HTTPException(404, "role not found")
+    requested = payload.get("permissions", [])
+    if not isinstance(requested, list):
+        raise HTTPException(400, "permissions must be a list")
+    now = _now_iso()
+    requested_names = set()
+    for item in requested:
+        permission = item.get("permission") if isinstance(item, dict) else str(item)
+        level = int(item.get("level", 1)) if isinstance(item, dict) else 1
+        level = max(1, min(level, 100))
+        if not await db.permissions.find_one({"name": permission}, {"_id": 0}):
+            raise HTTPException(400, f"invalid permission: {permission}")
+        requested_names.add(permission)
+        existing = await db.role_permissions.find_one({"role_name": role_name, "permission": permission}, {"_id": 0})
+        doc = {"role_name": role_name, "permission": permission, "level": level, "scope": "global", "updated_at": now}
+        if existing:
+            await db.role_permissions.update_one({"role_name": role_name, "permission": permission}, {"$set": doc})
+        else:
+            await db.role_permissions.insert_one({"id": str(uuid.uuid4()), **doc, "created_at": now})
+    existing_permissions = await db.role_permissions.find({"role_name": role_name}, {"_id": 0}).to_list(500)
+    for assignment in existing_permissions:
+        if assignment.get("permission") not in requested_names:
+            await db.role_permissions.update_one(
+                {"role_name": role_name, "permission": assignment.get("permission")},
+                {"$set": {"level": 0, "updated_at": now}},
+            )
+    return {"ok": True, "updated_by": user.user_id}
+
+
+@api.patch("/admin/users/{user_id}/roles")
+async def admin_update_user_roles(user_id: str, payload: dict, user: User = Depends(require_permission("roles:manage"))):
+    requested = payload.get("roles", [])
+    if not isinstance(requested, list) or not requested:
+        raise HTTPException(400, "roles must be a non-empty list")
+    roles = [_normalize_role(role) for role in requested]
+    invalid = []
+    for role in roles:
+        if not await db.roles.find_one({"name": role}, {"_id": 0}):
+            invalid.append(role)
+    if invalid:
+        raise HTTPException(400, f"invalid roles: {', '.join(invalid)}")
+    now = _now_iso()
+    primary_role = sorted(set(roles), key=lambda role: ROLE_LEVELS.get(role, 0), reverse=True)[0]
+    await db.users.update_one({"user_id": user_id}, {"$set": {"role": primary_role, "updated_at": now}})
+    for role in set(roles):
+        await _sync_user_role(user_id, role, assigned_by=user.user_id)
+    existing = await db.user_roles.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    for assignment in existing:
+        role = _normalize_role(assignment.get("role_name"))
+        if role not in set(roles):
+            await db.user_roles.update_one(
+                {"user_id": user_id, "role_name": role},
+                {"$set": {"active": False, "updated_at": now}},
+            )
+    updated = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    updated["roles"] = await _effective_role_names(User(**updated))
+    return updated
 
 
 @api.get("/admin/users/{user_id}/login-history")

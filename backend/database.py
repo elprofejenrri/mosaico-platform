@@ -44,10 +44,10 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "id", "storage_path", "original_filename", "content_type", "size",
         "uploaded_by", "is_deleted", "created_at",
     ],
-    "roles": ["id", "name", "description", "created_at"],
-    "permissions": ["id", "name", "description", "created_at"],
-    "role_permissions": ["id", "role_name", "permission", "created_at"],
-    "user_roles": ["id", "user_id", "role_name", "created_at"],
+    "roles": ["id", "name", "label", "description", "level", "active", "created_at", "updated_at"],
+    "permissions": ["id", "name", "label", "description", "catalog", "feature", "action", "level", "active", "created_at", "updated_at"],
+    "role_permissions": ["id", "role_name", "permission", "level", "scope", "created_at", "updated_at"],
+    "user_roles": ["id", "user_id", "role_name", "active", "assigned_by", "created_at", "updated_at"],
     "teacher_profiles": ["id", "user_id", "teacher_id", "specialties", "assigned_products", "created_at", "updated_at"],
     "student_profiles": ["id", "user_id", "phone", "enrolled_products", "notes", "status", "created_at", "updated_at"],
     "pages": ["id", "title", "slug", "language", "status", "meta_title", "meta_description", "content_blocks", "hero_image", "created_by", "updated_by", "published_date", "created_at", "updated_at"],
@@ -71,6 +71,9 @@ BOOL_COLUMNS = {
     "teachers": {"active"},
     "payment_transactions": {"booking_created"},
     "files": {"is_deleted"},
+    "roles": {"active"},
+    "permissions": {"active"},
+    "user_roles": {"active"},
 }
 
 
