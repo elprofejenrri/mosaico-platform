@@ -28,6 +28,7 @@ SUPABASE_ANON_KEY=...
 SUPABASE_STORAGE_BUCKET=mosaico
 ADMIN_EMAILS=admin@example.com
 CORS_ORIGINS=https://mosaico-web.onrender.com
+LOCAL_AUTH_SESSION_MINUTES=10080
 ```
 
 Optional payment variables:
@@ -58,6 +59,7 @@ Do not enable `DEV_AUTH` in production.
 | `SUPABASE_STORAGE_BUCKET` | Yes | Storage bucket name, usually `mosaico` |
 | `ADMIN_EMAILS` | Yes | Comma-separated Google emails promoted to admin |
 | `CORS_ORIGINS` | Yes | Allowed frontend origins |
+| `LOCAL_AUTH_SESSION_MINUTES` | No | Local email/password session duration. Defaults to 10080 minutes, or 7 days |
 | `STRIPE_API_KEY` | No | Stripe secret key |
 | `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook signing secret |
 
@@ -108,4 +110,3 @@ SUPABASE_URL=https://xlimivzjwhfdhkxjdwvl.supabase.co/rest/v1
 ```
 
 The `/rest/v1` URL is the Data API endpoint, not the base Supabase URL needed for Auth and Storage.
-

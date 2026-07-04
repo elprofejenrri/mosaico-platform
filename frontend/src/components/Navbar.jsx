@@ -70,11 +70,11 @@ export const Navbar = () => {
             </>
           ) : (
             <Button
-              onClick={() => navigate("/student")}
+              onClick={() => navigate("/login")}
               data-testid="nav-signin-btn"
               className="bg-[#E8704C] text-[#FBF7EE] hover:bg-[#C95630] hover:text-[#FBF7EE] rounded-full px-5"
             >
-              Start demo
+              Sign in
             </Button>
           )}
         </div>
@@ -108,8 +108,8 @@ export const Navbar = () => {
               </Button>
             </>
           ) : (
-            <Button onClick={() => { setOpen(false); navigate("/student"); }} data-testid="nav-signin-btn-m" className="bg-[#E8704C] text-[#FBF7EE] hover:bg-[#C95630]">
-              Start demo
+            <Button onClick={() => { setOpen(false); navigate("/login"); }} data-testid="nav-signin-btn-m" className="bg-[#E8704C] text-[#FBF7EE] hover:bg-[#C95630]">
+              Sign in
             </Button>
           )}
         </div>

@@ -22,10 +22,25 @@ Important fields:
 - `name`
 - `picture`
 - `role`
+- `password_hash`
+- `auth_provider`
+- `profile_type`
 - `active`
 - `created_at`
 - `updated_at`
 - `last_login_at`
+
+### `local_auth_sessions`
+
+Opaque session tokens for MOSAICO local email/password login. Tokens are stored as hashes and expire through `expires_at`.
+
+Important fields:
+
+- `user_id`
+- `token_hash`
+- `expires_at`
+- `revoked_at`
+- `last_seen_at`
 
 ### `roles`
 

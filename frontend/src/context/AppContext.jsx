@@ -76,6 +76,11 @@ export const AppProvider = ({ children }) => {
         setUser(r.data);
         return;
       }
+      if (localStorage.getItem("mosaico_local_token")) {
+        const r = await api.get("/auth/me");
+        setUser(r.data);
+        return;
+      }
       const { data } = await supabase.auth.getSession();
       if (!data.session) {
         setUser(null);
@@ -84,6 +89,8 @@ export const AppProvider = ({ children }) => {
       const r = await api.get("/auth/me");
       setUser(r.data);
     } catch {
+      localStorage.removeItem("mosaico_local_token");
+      localStorage.removeItem("mosaico_local_expires_at");
       setUser(null);
     } finally {
       setAuthLoading(false);
@@ -106,6 +113,7 @@ export const AppProvider = ({ children }) => {
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.access_token) checkAuth();
       else {
+        if (localStorage.getItem("mosaico_local_token") || localStorage.getItem("mosaico_dev_token")) return;
         setUser(null);
         setAuthLoading(false);
       }
@@ -122,6 +130,8 @@ export const AppProvider = ({ children }) => {
   const logout = async () => {
     try { await api.post("/auth/logout"); } catch {}
     localStorage.removeItem("mosaico_dev_token");
+    localStorage.removeItem("mosaico_local_token");
+    localStorage.removeItem("mosaico_local_expires_at");
     await supabase.auth.signOut();
     setUser(null);
   };
@@ -139,6 +149,8 @@ export const AppProvider = ({ children }) => {
 export const useApp = () => useContext(AppContext);
 
 export const startGoogleAuth = () => {
+  localStorage.removeItem("mosaico_local_token");
+  localStorage.removeItem("mosaico_local_expires_at");
   const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || "";
   const devAuth = process.env.REACT_APP_DEV_AUTH === "true" || supabaseUrl.includes("PROJECT_REF");
   if (devAuth) {

@@ -11,6 +11,7 @@ import BlogPost from "./pages/BlogPost";
 import Book from "./pages/Book";
 import Dashboard from "./pages/Dashboard";
 import Admin from "./pages/Admin";
+import Login from "./pages/Login";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import AuthCallback from "./pages/AuthCallback";
 import { Toaster } from "sonner";
@@ -70,6 +71,7 @@ function AppRouter() {
           <Route path="/admin/community" element={<AdminPortal module="families" />} />
           <Route path="/admin/analytics" element={<AdminPortal module="reports" />} />
           <Route path="/admin/settings" element={<AdminPortal module="settings" />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/faq" element={<Faq />} />
           <Route path="/blog" element={<Blog />} />

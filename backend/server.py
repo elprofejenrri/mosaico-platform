@@ -4,6 +4,8 @@ import uuid
 import logging
 import mimetypes
 import json
+import hashlib
+import secrets
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -33,6 +35,9 @@ SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 SUPABASE_STORAGE_BUCKET = os.environ.get("SUPABASE_STORAGE_BUCKET", "mosaico")
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+LOCAL_AUTH_SESSION_MINUTES = int(os.environ.get("LOCAL_AUTH_SESSION_MINUTES") or os.environ.get("AUTH_SESSION_DURATION_MINUTES") or "10080")
+LOCAL_AUTH_TOKEN_PREFIX = "mosaico_local_"
+PASSWORD_HASH_ITERATIONS = 210_000
 
 APP_NAME = "mosaico"
 _ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp", "image/gif"}
@@ -128,6 +133,9 @@ class User(BaseModel):
     picture: Optional[str] = None
     role: str = "alumno"
     google_id: Optional[str] = None
+    password_hash: Optional[str] = None
+    auth_provider: str = "supabase"
+    profile_type: str = "client"
     active: bool = True
     updated_at: Optional[str] = None
     last_login_at: Optional[str] = None
@@ -191,6 +199,16 @@ class BlogPost(BaseModel):
     cover_image: str
     published: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class LocalAuthPayload(BaseModel):
+    email: str
+    password: str
+
+
+class RegisterPayload(LocalAuthPayload):
+    name: str
+    profile_type: str = "client"
 
 
 ROLE_ALIASES = {
@@ -258,6 +276,43 @@ def _normalize_role(role: Optional[str]) -> str:
     return ROLE_ALIASES.get((role or "alumno").strip(), (role or "alumno").strip())
 
 
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), PASSWORD_HASH_ITERATIONS)
+    return f"pbkdf2_sha256${PASSWORD_HASH_ITERATIONS}${salt}${digest.hex()}"
+
+
+def _verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        scheme, iterations, salt, expected = stored_hash.split("$", 3)
+        if scheme != "pbkdf2_sha256":
+            return False
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), int(iterations)).hex()
+        return secrets.compare_digest(digest, expected)
+    except (ValueError, TypeError):
+        return False
+
+
+def _parse_iso(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _safe_profile_type(profile_type: Optional[str]) -> str:
+    allowed = {"client", "student", "parent", "tutor"}
+    value = (profile_type or "client").strip().lower()
+    return value if value in allowed else "client"
+
+
+def _public_user(user: User) -> dict:
+    doc = user.model_dump()
+    doc.pop("password_hash", None)
+    return doc
+
+
 async def _effective_role_names(user: User) -> List[str]:
     roles: Set[str] = {_normalize_role(user.role)}
     docs = await db.user_roles.find({"user_id": user.user_id}, {"_id": 0}).to_list(100)
@@ -287,6 +342,50 @@ async def _has_permission(user: User, permission: str, min_level: int = 1) -> bo
     return permissions.get("*", 0) >= min_level or permissions.get(permission, 0) >= min_level
 
 # ---------- Auth helpers ----------
+async def _record_login(user_id: str, email: str, provider: str, request: Optional[Request] = None) -> None:
+    await db.login_history.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "email": email,
+        "provider": provider,
+        "ip_address": request.client.host if request and request.client else None,
+        "user_agent": request.headers.get("user-agent") if request else None,
+        "created_at": _now_iso(),
+    })
+
+
+async def _create_local_session(user: User, request: Optional[Request] = None) -> dict:
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=LOCAL_AUTH_SESSION_MINUTES)
+    token = f"{LOCAL_AUTH_TOKEN_PREFIX}{secrets.token_urlsafe(48)}"
+    await db.local_auth_sessions.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "token_hash": _token_hash(token),
+        "expires_at": expires_at.isoformat(),
+        "revoked_at": None,
+        "created_at": now.isoformat(),
+        "last_seen_at": now.isoformat(),
+        "ip_address": request.client.host if request and request.client else None,
+        "user_agent": request.headers.get("user-agent") if request else None,
+    })
+    return {"access_token": token, "token_type": "bearer", "expires_at": expires_at.isoformat(), "expires_in": LOCAL_AUTH_SESSION_MINUTES * 60}
+
+
+async def _get_user_from_local_session(token: str) -> User:
+    session = await db.local_auth_sessions.find_one({"token_hash": _token_hash(token)}, {"_id": 0})
+    if not session or session.get("revoked_at"):
+        raise HTTPException(status_code=401, detail="Invalid auth token")
+    if _parse_iso(session["expires_at"]) <= datetime.now(timezone.utc):
+        await db.local_auth_sessions.update_one({"id": session["id"]}, {"$set": {"revoked_at": _now_iso()}})
+        raise HTTPException(status_code=401, detail="Session expired")
+    await db.local_auth_sessions.update_one({"id": session["id"]}, {"$set": {"last_seen_at": _now_iso()}})
+    user_doc = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
+    if not user_doc or user_doc.get("active") is False:
+        raise HTTPException(status_code=403, detail="User is inactive")
+    return User(**user_doc)
+
+
 async def _sync_user_role(user_id: str, role: str, assigned_by: Optional[str] = None) -> None:
     role = _normalize_role(role)
     now = _now_iso()
@@ -327,6 +426,8 @@ async def _get_or_create_user_from_supabase(payload: dict, request: Optional[Req
             "picture": picture,
             "role": role,
             "google_id": user_id,
+            "auth_provider": "supabase",
+            "profile_type": "client",
             "active": True,
             "created_at": now,
             "updated_at": now,
@@ -335,15 +436,7 @@ async def _get_or_create_user_from_supabase(payload: dict, request: Optional[Req
 
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     await _sync_user_role(user_id, user_doc.get("role", role))
-    await db.login_history.insert_one({
-        "id": str(uuid.uuid4()),
-        "user_id": user_id,
-        "email": email,
-        "provider": "google",
-        "ip_address": request.client.host if request and request.client else None,
-        "user_agent": request.headers.get("user-agent") if request else None,
-        "created_at": now,
-    })
+    await _record_login(user_id, email, "google", request)
     if user_doc.get("active") is False:
         raise HTTPException(status_code=403, detail="User is inactive")
     return User(**user_doc)
@@ -392,6 +485,9 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     token = authorization.split(" ", 1)[1].strip()
+    if token.startswith(LOCAL_AUTH_TOKEN_PREFIX):
+        return await _get_user_from_local_session(token)
+
     if _dev_auth_enabled() and token == "dev-admin":
         now = _now_iso()
         user_id = "dev-admin"
@@ -628,15 +724,96 @@ async def seed_data():
 async def root():
     return {"app": "Lily Spanish", "ok": True}
 
+
+@api.post("/auth/register")
+async def auth_register(payload: RegisterPayload, request: Request):
+    email = payload.email.strip().lower()
+    password = payload.password
+    name = payload.name.strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Valid email is required")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=409, detail="Email already exists")
+    now = _now_iso()
+    user_id = f"local-{uuid.uuid4()}"
+    profile_type = _safe_profile_type(payload.profile_type)
+    doc = {
+        "user_id": user_id,
+        "email": email,
+        "name": name,
+        "picture": "",
+        "role": "alumno",
+        "google_id": None,
+        "password_hash": _hash_password(password),
+        "auth_provider": "local",
+        "profile_type": profile_type,
+        "active": True,
+        "created_at": now,
+        "updated_at": now,
+        "last_login_at": now,
+    }
+    await db.users.insert_one(doc)
+    await _sync_user_role(user_id, "alumno")
+    if profile_type in {"client", "student", "parent", "tutor"}:
+        await db.student_profiles.insert_one({
+            "id": f"sp_{user_id}",
+            "user_id": user_id,
+            "phone": "",
+            "enrolled_products": [],
+            "notes": f"Self-registered profile type: {profile_type}",
+            "status": "activo",
+            "created_at": now,
+            "updated_at": now,
+        })
+    user = User(**doc)
+    session = await _create_local_session(user, request)
+    await _record_login(user_id, email, "local_password_register", request)
+    user_doc = _public_user(user)
+    user_doc["roles"] = await _effective_role_names(user)
+    user_doc["permissions"] = await _effective_permission_levels(user)
+    return {**session, "user": user_doc}
+
+
+@api.post("/auth/login")
+async def auth_login(payload: LocalAuthPayload, request: Request):
+    email = payload.email.strip().lower()
+    user_doc = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user_doc or not user_doc.get("password_hash"):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user_doc.get("active") is False:
+        raise HTTPException(status_code=403, detail="User is inactive")
+    if not _verify_password(payload.password, user_doc["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    now = _now_iso()
+    await db.users.update_one({"user_id": user_doc["user_id"]}, {"$set": {"last_login_at": now, "updated_at": now}})
+    user_doc = await db.users.find_one({"user_id": user_doc["user_id"]}, {"_id": 0})
+    user = User(**user_doc)
+    session = await _create_local_session(user, request)
+    await _record_login(user.user_id, user.email, "local_password", request)
+    public = _public_user(user)
+    public["roles"] = await _effective_role_names(user)
+    public["permissions"] = await _effective_permission_levels(user)
+    return {**session, "user": public}
+
+
 @api.get("/auth/me")
 async def auth_me(user: User = Depends(get_current_user)):
-    doc = user.model_dump()
+    doc = _public_user(user)
     doc["roles"] = await _effective_role_names(user)
     doc["permissions"] = await _effective_permission_levels(user)
     return doc
 
 @api.post("/auth/logout")
-async def auth_logout():
+async def auth_logout(authorization: Optional[str] = Header(default=None)):
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        if token.startswith(LOCAL_AUTH_TOKEN_PREFIX):
+            await db.local_auth_sessions.update_one({"token_hash": _token_hash(token)}, {"$set": {"revoked_at": _now_iso()}})
     return {"ok": True}
 
 # ---- Products

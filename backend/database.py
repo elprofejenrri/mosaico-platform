@@ -15,7 +15,7 @@ logger = logging.getLogger("lily.db")
 _pool: Optional[asyncpg.Pool] = None
 
 TABLE_COLUMNS: Dict[str, List[str]] = {
-    "users": ["user_id", "email", "name", "picture", "role", "created_at", "google_id", "active", "updated_at", "last_login_at"],
+    "users": ["user_id", "email", "name", "picture", "role", "created_at", "google_id", "password_hash", "auth_provider", "profile_type", "active", "updated_at", "last_login_at"],
     "products": [
         "id", "slug", "name_en", "name_es", "description_en", "description_es",
         "duration_min", "sessions_included", "price_usd", "type", "popular",
@@ -53,6 +53,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
     "pages": ["id", "title", "slug", "language", "status", "meta_title", "meta_description", "content_blocks", "hero_image", "created_by", "updated_by", "published_date", "created_at", "updated_at"],
     "media_assets": ["id", "file_name", "url", "type", "alt_text", "uploaded_by", "created_at", "updated_at"],
     "login_history": ["id", "user_id", "email", "provider", "ip_address", "user_agent", "created_at"],
+    "local_auth_sessions": ["id", "user_id", "token_hash", "expires_at", "revoked_at", "created_at", "last_seen_at", "ip_address", "user_agent"],
 }
 
 JSONB_COLUMNS = {
@@ -401,6 +402,7 @@ class Database:
         self.pages = Collection("pages", pool)
         self.media_assets = Collection("media_assets", pool)
         self.login_history = Collection("login_history", pool)
+        self.local_auth_sessions = Collection("local_auth_sessions", pool)
 
 
 _db: Optional[Database] = None

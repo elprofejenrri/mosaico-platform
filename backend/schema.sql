@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'supabase';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_type TEXT NOT NULL DEFAULT 'client';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TEXT;
@@ -251,9 +254,23 @@ CREATE TABLE IF NOT EXISTS login_history (
     created_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS local_auth_sessions (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL,
+    token_hash    TEXT NOT NULL UNIQUE,
+    expires_at    TEXT NOT NULL,
+    revoked_at    TEXT,
+    created_at    TEXT NOT NULL,
+    last_seen_at  TEXT,
+    ip_address    TEXT,
+    user_agent    TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_availability_date ON availability(date);
 CREATE INDEX IF NOT EXISTS idx_availability_teacher ON availability(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings(user_id);
 CREATE INDEX IF NOT EXISTS idx_pages_status ON pages(status);
 CREATE INDEX IF NOT EXISTS idx_media_type ON media_assets(type);
 CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_token ON local_auth_sessions(token_hash);
+CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_user ON local_auth_sessions(user_id);

@@ -16,6 +16,11 @@ api.interceptors.request.use(async (cfg) => {
     cfg.headers.Authorization = `Bearer ${devToken}`;
     return cfg;
   }
+  const localToken = localStorage.getItem("mosaico_local_token");
+  if (localToken) {
+    cfg.headers.Authorization = `Bearer ${localToken}`;
+    return cfg;
+  }
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (token) cfg.headers.Authorization = `Bearer ${token}`;

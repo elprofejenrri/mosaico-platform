@@ -10,8 +10,10 @@ Production: https://mosaico-api.onrender.com/api
 Authenticated requests use:
 
 ```http
-Authorization: Bearer <supabase_access_token>
+Authorization: Bearer <supabase_access_token_or_mosaico_local_token>
 ```
+
+Social login remains the preferred login path through Supabase Auth. Local email/password accounts use MOSAICO-issued opaque session tokens.
 
 ## Public
 
@@ -28,6 +30,36 @@ Response:
 ### GET `/settings/public`
 
 Returns public site settings.
+
+## Auth
+
+### POST `/auth/register`
+
+Creates a local email/password account, creates a learner profile, assigns the default `alumno` role, and returns a persistent session token.
+
+Body:
+
+```json
+{"name":"Ana Gomez","email":"ana@example.com","password":"strong-password","profile_type":"client"}
+```
+
+### POST `/auth/login`
+
+Logs in a local email/password user and returns a persistent session token.
+
+Body:
+
+```json
+{"email":"ana@example.com","password":"strong-password"}
+```
+
+### GET `/auth/me`
+
+Returns the authenticated user, effective roles, and effective permission levels.
+
+### POST `/auth/logout`
+
+Revokes the current local session token when present and signs the user out client-side.
 
 ### GET `/products`
 
