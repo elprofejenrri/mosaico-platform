@@ -22,6 +22,7 @@ Implemented UI capabilities:
 - Scheduling insights KPIs and action suggestions.
 - Student quick view drawer with class actions: complete, cancel, no-show, late, reschedule, notes, homework, and feedback.
 - Responsive desktop, tablet, and mobile layouts.
+- Month view uses compact non-overflowing slot cards and stacks the operations sidebar below the calendar until wide desktop space is available.
 
 ## Product Behavior
 
@@ -77,4 +78,3 @@ Recommended backend endpoints:
 This change is frontend-first and does not modify production data or schema. There is no database backfill required for the current implementation.
 
 When the backend implementation starts, use additive migrations first, run backfill scripts separately, and keep Google Calendar sync opt-in until conflict handling has been tested with real records.
-

@@ -116,13 +116,16 @@ function CalendarToolbar({ view, setView, label, setLabel, openAvailability, ope
 
 function CalendarSlotCard({ session, onOpen, compact = false }) {
   return (
-    <button onClick={() => onOpen(session)} className={`w-full rounded-lg border p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${statusStyles[session.status] || statusStyles.empty}`}>
+    <button
+      onClick={() => onOpen(session)}
+      className={`min-w-0 w-full rounded-lg border text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${compact ? "p-2" : "p-3"} ${statusStyles[session.status] || statusStyles.empty}`}
+    >
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="font-semibold">{session.start} - {session.end}</p>
-          {!compact && <p className="mt-1 text-sm">{session.studentName || session.classType}</p>}
+        <div className="min-w-0">
+          <p className={`${compact ? "truncate text-xs" : "font-semibold"}`}>{session.start} - {session.end}</p>
+          {!compact && <p className="mt-1 truncate text-sm">{session.studentName || session.classType}</p>}
         </div>
-        <MoreHorizontal size={16} />
+        {!compact && <MoreHorizontal size={16} className="shrink-0" />}
       </div>
       {!compact && (
         <div className="mt-2 grid gap-1 text-xs">
@@ -176,17 +179,18 @@ function WeekView({ sessions, onOpen }) {
 function MonthView({ sessions, onOpen }) {
   const dates = Array.from({ length: 30 }, (_, idx) => idx + 1);
   return (
-    <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
+    <div className="min-w-0 rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
       <h2 className="font-display text-2xl text-[#1F3B6E]">Month view</h2>
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-7">
         {dates.map((date) => {
           const key = `2026-07-${String(date).padStart(2, "0")}`;
           const daySessions = sessions.filter((session) => session.date === key);
           return (
-            <div key={date} className="min-h-28 rounded-lg border border-[#EFE4D0] bg-[#FBF7EE] p-3">
+            <div key={date} className="min-h-28 min-w-0 overflow-hidden rounded-lg border border-[#EFE4D0] bg-[#FBF7EE] p-3">
               <p className="font-semibold text-[#1F3B6E]">Jul {date}</p>
-              <div className="mt-2 grid gap-1">
+              <div className="mt-2 grid min-w-0 gap-1">
                 {daySessions.slice(0, 3).map((session) => <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} compact />)}
+                {daySessions.length > 3 && <p className="text-xs font-semibold text-[#5C6680]">+{daySessions.length - 3} more</p>}
                 {daySessions.length === 0 && <p className="text-xs text-[#5C6680]">No items</p>}
               </div>
             </div>
@@ -519,14 +523,14 @@ export default function TeacherCalendarWorkspace() {
   return (
     <div className="grid gap-5">
       <CalendarToolbar view={view} setView={setView} label={label} setLabel={setLabel} openAvailability={() => setAvailabilityOpen(true)} openBlock={() => setBlockOpen(true)} />
-      <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
-        <div className="grid gap-5">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid min-w-0 gap-5">
           {view === "day" && <DayView sessions={sessions} onOpen={setSelectedSession} />}
           {view === "week" && <WeekView sessions={sessions} onOpen={setSelectedSession} />}
           {view === "month" && <MonthView sessions={sessions} onOpen={setSelectedSession} />}
           <EmptySlotsPanel slots={emptySlots} onInvite={setInviteSlot} />
         </div>
-        <aside className="grid h-fit gap-5">
+        <aside className="grid h-fit min-w-0 gap-5">
           <GoogleCalendarCard integration={integration} setIntegration={setIntegration} />
           <UpcomingClassesPanel sessions={sessions} onOpen={setSelectedSession} />
           <SchedulingInsightsPanel insights={insights} />
