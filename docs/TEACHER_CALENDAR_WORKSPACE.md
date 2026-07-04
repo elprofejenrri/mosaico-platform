@@ -1,0 +1,80 @@
+# Teacher Calendar Workspace
+
+## Purpose
+
+The Teacher Calendar Workspace is the operational scheduling surface for teachers. It replaces the earlier lightweight calendar mock with a workflow-oriented view where a teacher can manage availability, blocked time, upcoming classes, empty slots, student invitations, Google Calendar sync state, and session outcomes from one place.
+
+## Current Scope
+
+The frontend is implemented with a local service mock in `frontend/src/services/teacherCalendarService.js`. This lets product, UX, and stakeholder review continue before the backend scheduling tables and Google Calendar integration are finalized.
+
+Implemented UI capabilities:
+
+- Day, week, and month calendar views.
+- Calendar navigation controls and primary actions for opening availability and blocking time.
+- Slot states for booked, available, blocked, cancelled, completed, conflict, and empty gaps.
+- Upcoming classes grouped into next class, today, and this week.
+- Availability modal for one-time and recurring availability, capacity, location, copy Monday, duplication, bulk generation, and template selection.
+- Block time modal with reason, date/time, recurrence, notes, and conflict summary.
+- Empty slot panel with fill-rate opportunities and student invite entry points.
+- Student invite drawer with filters, message preview, selected recipients, and bulk send behavior.
+- Google Calendar connection card with connected/syncing/error states.
+- Scheduling insights KPIs and action suggestions.
+- Student quick view drawer with class actions: complete, cancel, no-show, late, reschedule, notes, homework, and feedback.
+- Responsive desktop, tablet, and mobile layouts.
+
+## Product Behavior
+
+Teachers should be able to answer three questions quickly:
+
+1. What is my next class and what do I need to do?
+2. Where can I open or protect time?
+3. Which open slots should I fill with student invitations?
+
+The page is intentionally operational rather than promotional. It prioritizes compact controls, state visibility, and direct actions.
+
+## Technical Design
+
+Frontend entry point:
+
+- `frontend/src/components/teacher-calendar/TeacherCalendarWorkspace.jsx`
+
+Supporting service:
+
+- `frontend/src/services/teacherCalendarService.js`
+
+The workspace owns local view state and calls the mock service for calendar data and mutations. The service keeps mutable in-memory data for prototype-quality interactions while keeping the UI free from hardcoded class records.
+
+The Teacher Portal renders this workspace for the calendar module from:
+
+- `frontend/src/pages/Platform.jsx`
+
+## Backend Backlog
+
+Before this becomes a fully real scheduling platform, replace the mock service with backend-backed resources:
+
+- `teacher_availability_windows`
+- `teacher_time_blocks`
+- `class_sessions`
+- `class_session_actions`
+- `calendar_integrations`
+- `student_invitation_campaigns`
+- `student_invitation_recipients`
+
+Recommended backend endpoints:
+
+- `GET /api/teacher/calendar`
+- `POST /api/teacher/availability`
+- `PATCH /api/teacher/availability/{id}`
+- `DELETE /api/teacher/availability/{id}`
+- `POST /api/teacher/time-blocks`
+- `PATCH /api/teacher/sessions/{id}`
+- `POST /api/teacher/invitations`
+- `POST /api/teacher/calendar-integrations/google/sync`
+
+## Production Safety
+
+This change is frontend-first and does not modify production data or schema. There is no database backfill required for the current implementation.
+
+When the backend implementation starts, use additive migrations first, run backfill scripts separately, and keep Google Calendar sync opt-in until conflict handling has been tested with real records.
+

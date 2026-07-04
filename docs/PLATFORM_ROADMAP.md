@@ -117,6 +117,11 @@ Exit criteria:
 
 Goal: support real teacher workflows.
 
+Current shipped surface:
+
+- Teacher Calendar Workspace frontend with day/week/month views, availability creation, blocked time, empty-slot invites, Google Calendar sync states, scheduling insights, and class action drawers.
+- Current implementation uses `frontend/src/services/teacherCalendarService.js` as a mock service so the workflow can be reviewed before backend schedule tables are introduced.
+
 Backend:
 
 - Normalize teacher availability, assigned students, teaching products, feedback, and class reports.

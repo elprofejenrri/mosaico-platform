@@ -564,6 +564,7 @@ TECHNICAL_DOCS = {
     "platform-roadmap": {"title": "Platform Roadmap", "path": "docs/PLATFORM_ROADMAP.md", "section": "roadmap"},
     "phase-1-execution-plan": {"title": "Phase 1 Execution Plan", "path": "docs/PHASE_1_EXECUTION_PLAN.md", "section": "roadmap"},
     "product-documentation": {"title": "Product Documentation", "path": "docs/PRODUCT_DOCUMENTATION.md", "section": "roadmap"},
+    "teacher-calendar-workspace": {"title": "Teacher Calendar Workspace", "path": "docs/TEACHER_CALENDAR_WORKSPACE.md", "section": "roadmap"},
     "architecture": {"title": "Architecture", "path": "docs/ARCHITECTURE.md", "section": "architecture"},
     "deployment-guide": {"title": "Deployment Guide", "path": "docs/DEPLOYMENT_GUIDE.md", "section": "architecture"},
     "operations-runbook": {"title": "Operations Runbook", "path": "docs/OPERATIONS_RUNBOOK.md", "section": "architecture"},

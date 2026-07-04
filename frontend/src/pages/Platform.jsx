@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import TeacherCalendarWorkspace from "../components/teacher-calendar/TeacherCalendarWorkspace";
 import {
   Area,
   AreaChart,
@@ -1636,7 +1637,7 @@ export function TeacherPortal({ module = "dashboard" }) {
   return (
     <PlatformShell role="teacher">
       {module === "dashboard" && <TeacherDashboard />}
-      {module === "calendar" && <TeacherCalendar />}
+      {module === "calendar" && <TeacherCalendarWorkspace />}
       {module === "students" && <TeacherStudents />}
       {module === "classes" && <TeacherClasses />}
       {module === "materials" && <TeacherMaterials />}

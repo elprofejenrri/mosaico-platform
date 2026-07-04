@@ -58,6 +58,24 @@ Current admin modules:
 - Site/payment/calendar settings
 - Booking management
 
+### Teacher Portal
+
+The teacher portal includes an operational calendar workspace for reviewing and managing teaching time.
+
+Current teacher calendar capabilities:
+
+- Day, week, and month calendar views.
+- Booked, available, blocked, cancelled, completed, conflict, and empty slot states.
+- Availability opening flow.
+- Block time flow with reason and conflict summary.
+- Upcoming classes panel.
+- Empty slot invite flow for students.
+- Google Calendar sync status card.
+- Scheduling insights and fill-rate suggestions.
+- Student quick view with class actions, notes, homework, and feedback.
+
+The current teacher calendar is frontend-first and backed by a local mock service until the scheduling backend is implemented.
+
 ### Booking System
 
 Bookings connect:
@@ -229,4 +247,3 @@ Frontend: https://mosaico-web.onrender.com
 Backend:  https://mosaico-api.onrender.com
 API root: https://mosaico-api.onrender.com/api/
 ```
-
