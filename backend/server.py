@@ -552,6 +552,45 @@ def require_permission(permission: str, min_level: int = 1):
         return user
     return checker
 
+
+async def require_technical(user: User = Depends(get_current_user)) -> User:
+    roles = await _effective_role_names(user)
+    if "administrador_sitio" in roles or await _has_permission(user, "*", 100):
+        return user
+    raise HTTPException(status_code=403, detail="Technical role required")
+
+
+TECHNICAL_DOCS = {
+    "platform-roadmap": {"title": "Platform Roadmap", "path": "docs/PLATFORM_ROADMAP.md", "section": "roadmap"},
+    "phase-1-execution-plan": {"title": "Phase 1 Execution Plan", "path": "docs/PHASE_1_EXECUTION_PLAN.md", "section": "roadmap"},
+    "product-documentation": {"title": "Product Documentation", "path": "docs/PRODUCT_DOCUMENTATION.md", "section": "roadmap"},
+    "architecture": {"title": "Architecture", "path": "docs/ARCHITECTURE.md", "section": "architecture"},
+    "deployment-guide": {"title": "Deployment Guide", "path": "docs/DEPLOYMENT_GUIDE.md", "section": "architecture"},
+    "operations-runbook": {"title": "Operations Runbook", "path": "docs/OPERATIONS_RUNBOOK.md", "section": "architecture"},
+    "troubleshooting": {"title": "Troubleshooting", "path": "docs/TROUBLESHOOTING.md", "section": "architecture"},
+    "database-schema": {"title": "Database Schema", "path": "docs/DATABASE_SCHEMA.md", "section": "data"},
+    "database-standardization-plan": {"title": "Database Standardization Plan", "path": "docs/DATABASE_STANDARDIZATION_PLAN.md", "section": "data"},
+    "phase-1-backfill-audit": {"title": "Phase 1 Backfill Audit", "path": "backend/backfill_standardization_phase1.sql", "section": "data"},
+    "api-reference": {"title": "API Reference", "path": "docs/API_REFERENCE.md", "section": "data"},
+    "environment-variables": {"title": "Environment Variables", "path": "docs/ENVIRONMENT_VARIABLES.md", "section": "configuration"},
+    "backend-env-example": {"title": "Backend Env Example", "path": "backend/.env.example", "section": "configuration"},
+    "technical-wiki": {"title": "Technical Wiki", "path": "docs/TECHNICAL_WIKI.md", "section": "configuration"},
+}
+
+
+def _technical_doc_payload(doc_id: str, include_content: bool = False) -> dict:
+    doc = TECHNICAL_DOCS.get(doc_id)
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    path = (ROOT_DIR.parent / doc["path"]).resolve()
+    repo_root = ROOT_DIR.parent.resolve()
+    if not str(path).startswith(str(repo_root)):
+        raise HTTPException(400, "Invalid document path")
+    payload = {"id": doc_id, **doc}
+    if include_content:
+        payload["content"] = path.read_text(encoding="utf-8")
+    return payload
+
 # ---------- Seed data ----------
 DEFAULT_PRODUCTS = [
     {"id": "trial", "slug": "trial-class", "name_en": "Trial Class", "name_es": "Clase de Prueba",
@@ -1515,6 +1554,16 @@ async def admin_user_audit_events(user_id: str, _: User = Depends(require_admin)
     docs = await db.audit_events.find({"target_user_id": user_id}, {"_id": 0}).to_list(200)
     docs.sort(key=lambda d: d.get("created_at", ""), reverse=True)
     return docs
+
+
+@api.get("/technical/docs")
+async def technical_docs(_: User = Depends(require_technical)):
+    return [_technical_doc_payload(doc_id) for doc_id in TECHNICAL_DOCS]
+
+
+@api.get("/technical/docs/{doc_id}")
+async def technical_doc(doc_id: str, _: User = Depends(require_technical)):
+    return _technical_doc_payload(doc_id, include_content=True)
 
 
 # ---- Student profiles

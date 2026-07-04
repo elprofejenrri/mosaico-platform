@@ -24,7 +24,7 @@ Authenticated non-technical users see an access-required screen.
 
 ## Purpose
 
-The wiki gives technical operators a navigable view of the platform documentation:
+The wiki gives technical operators a navigable, in-product view of the platform documentation. Documents are read inside MOSAICO; technical users do not need to open GitHub, external apps, or external websites.
 
 - platform roadmap
 - Phase 1 execution plan
@@ -68,6 +68,22 @@ docs/OPERATIONS_RUNBOOK.md
 
 This means: commit, merge if needed, push, backfill if needed, verify safety, and do not break production.
 
+## Internal Document Reader
+
+The wiki includes an internal document reader backed by protected API endpoints:
+
+```text
+GET /api/technical/docs
+GET /api/technical/docs/{doc_id}
+```
+
+The backend only serves allowlisted files from this repository. The frontend renders the Markdown content inside `/technical/wiki`.
+
+When a document is added to the wiki, update both:
+
+- backend allowlist in `backend/server.py`
+- frontend navigation in `frontend/src/data/technicalWiki.js`
+
 ## Implementation Files
 
 - `frontend/src/pages/TechnicalWiki.jsx`
@@ -75,3 +91,4 @@ This means: commit, merge if needed, push, backfill if needed, verify safety, an
 - `frontend/src/lib/access.js`
 - `frontend/src/components/Navbar.jsx`
 - `frontend/src/App.js`
+- `backend/server.py`

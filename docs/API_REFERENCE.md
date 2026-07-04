@@ -188,6 +188,20 @@ Lists login history for a user.
 
 Lists platform audit events for a user, newest first.
 
+## Technical Wiki
+
+### GET `/technical/docs`
+
+Lists allowlisted technical documentation available in the in-product technical wiki.
+
+Requires technical access.
+
+### GET `/technical/docs/{doc_id}`
+
+Returns one allowlisted technical document with Markdown content for in-product rendering.
+
+Requires technical access.
+
 ## Admin: Teachers
 
 ### GET `/admin/teachers`
