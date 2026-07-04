@@ -531,9 +531,57 @@ function StudentDashboard() {
 function LearningHub() {
   const [selectedCourseId, setSelectedCourseId] = useState(academicCourses[0].id);
   const [selectedLessonId, setSelectedLessonId] = useState(academicCourses[0].units[0].lessons[1].id);
+  const [earnedXp, setEarnedXp] = useState(0);
+  const [activityState, setActivityState] = useState(() => {
+    const state = {};
+    academicCourses.forEach((course) => {
+      course.units.forEach((unit) => {
+        unit.lessons.forEach((lesson) => {
+          lesson.activities.forEach((activity) => {
+            state[`${lesson.id}::${activity.title}`] = activity.status;
+          });
+        });
+      });
+    });
+    return state;
+  });
   const selectedCourse = academicCourses.find((course) => course.id === selectedCourseId) || academicCourses[0];
   const allLessons = selectedCourse.units.flatMap((unit) => unit.lessons.map((lesson) => ({ ...lesson, unitTitle: unit.title, outcome: unit.outcome })));
   const selectedLesson = allLessons.find((lesson) => lesson.id === selectedLessonId) || allLessons[0];
+  const activityKey = (lesson, activity) => `${lesson.id}::${activity.title}`;
+  const lessonProgress = (lesson) => {
+    const completed = lesson.activities.filter((activity) => activityState[activityKey(lesson, activity)] === "Completed").length;
+    return Math.round((completed / lesson.activities.length) * 100);
+  };
+  const lessonStatus = (lesson) => {
+    const progress = lessonProgress(lesson);
+    if (progress === 100) return "Completed";
+    if (progress > 0) return "In progress";
+    return lesson.status;
+  };
+  const courseProgress = (course) => {
+    const activities = course.units.flatMap((unit) => unit.lessons.flatMap((lesson) => lesson.activities.map((activity) => ({ lesson, activity }))));
+    const completed = activities.filter(({ lesson, activity }) => activityState[activityKey(lesson, activity)] === "Completed").length;
+    return Math.max(course.progress, Math.round((completed / activities.length) * 100));
+  };
+  const selectedLessonProgress = lessonProgress(selectedLesson);
+  const advanceActivity = (activity) => {
+    const key = activityKey(selectedLesson, activity);
+    const current = activityState[key] || activity.status;
+    if (current === "Completed") {
+      toast.success(`${activity.title} opened for review.`);
+      return;
+    }
+    const next = current === "In progress" ? "Completed" : "In progress";
+    setActivityState((state) => ({ ...state, [key]: next }));
+    if (next === "Completed") {
+      const xp = Math.max(10, Math.round(selectedLesson.xp / selectedLesson.activities.length));
+      setEarnedXp((total) => total + xp);
+      toast.success(`${activity.title} completed. +${xp} XP`);
+    } else {
+      toast.success(`${activity.title} started.`);
+    }
+  };
 
   return (
     <div className="grid gap-5">
@@ -574,7 +622,8 @@ function LearningHub() {
                   </div>
                   <span className="rounded-md bg-white px-2 py-1 text-xs text-[#E8704C]">{course.status}</span>
                 </div>
-                <Progress value={course.progress} className="mt-4 h-2" />
+                <Progress value={courseProgress(course)} className="mt-4 h-2" />
+                <p className="mt-2 text-xs font-semibold text-[#1F3B6E]">{courseProgress(course)}% complete</p>
                 <p className="mt-3 text-xs text-[#5C6680]">Focus: {course.skillFocus.join(", ")}</p>
               </button>
             ))}
@@ -587,7 +636,10 @@ function LearningHub() {
             title={selectedCourse.title}
             action={<ActionButton doneText="Course resumed." className="bg-[#E8704C] text-white hover:bg-[#C95630]">Continue course</ActionButton>}
           />
-          <p className="mt-2 text-sm text-[#5C6680]">{selectedCourse.subtitle}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[#5C6680]">
+            <span>{selectedCourse.subtitle}</span>
+            <span className="rounded-md bg-[#E0F2F0] px-2 py-1 text-[#2DA89F]">{earnedXp} XP earned today</span>
+          </div>
           <div className="mt-5 grid gap-4">
             {selectedCourse.units.map((unit) => (
               <div key={unit.id} className="rounded-lg border border-[#EFE4D0] p-4">
@@ -608,8 +660,11 @@ function LearningHub() {
                       <span>
                         <span className="font-semibold">{lesson.title}</span>
                         <span className="block text-sm text-[#5C6680]">{lesson.type} · {lesson.duration} · {lesson.xp} XP</span>
+                        <span className="mt-2 block h-1.5 w-full rounded-full bg-[#EFE4D0] md:w-48">
+                          <span className="block h-1.5 rounded-full bg-[#2DA89F]" style={{ width: `${lessonProgress(lesson)}%` }} />
+                        </span>
                       </span>
-                      <span className="rounded-md bg-[#FFF0E6] px-2 py-1 text-xs text-[#E8704C]">{lesson.status}</span>
+                      <span className="rounded-md bg-[#FFF0E6] px-2 py-1 text-xs text-[#E8704C]">{lessonStatus(lesson)}</span>
                     </button>
                   ))}
                 </div>
@@ -621,27 +676,39 @@ function LearningHub() {
 
       <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
         <Card>
-          <SectionHeader eyebrow="Lesson detail" title={selectedLesson.title} />
+          <SectionHeader
+            eyebrow="Lesson detail"
+            title={selectedLesson.title}
+            action={<span className="rounded-md bg-[#FFF0E6] px-3 py-2 text-sm font-semibold text-[#E8704C]">{selectedLessonProgress}% complete</span>}
+          />
           <p className="mt-2 text-sm text-[#5C6680]">
             Unit: {selectedLesson.unitTitle} · Outcome: {selectedLesson.outcome}
           </p>
+          <Progress value={selectedLessonProgress} className="mt-4 h-2" />
           <div className="mt-5 grid gap-3">
-            {selectedLesson.activities.map((activity, index) => (
+            {selectedLesson.activities.map((activity, index) => {
+              const status = activityState[activityKey(selectedLesson, activity)] || activity.status;
+              return (
               <div key={`${activity.type}-${activity.title}`} className="flex flex-col justify-between gap-3 rounded-lg border border-[#EFE4D0] p-4 md:flex-row md:items-center">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-md text-white" style={{ backgroundColor: colors[index % colors.length] }}>
-                    {index + 1}
+                  <div className="flex h-9 w-9 items-center justify-center rounded-md text-white" style={{ backgroundColor: status === "Completed" ? "#2DA89F" : colors[index % colors.length] }}>
+                    {status === "Completed" ? <Check size={16} /> : index + 1}
                   </div>
                   <div>
                     <p className="font-semibold">{activity.type}: {activity.title}</p>
-                    <p className="text-sm text-[#5C6680]">{activity.status}</p>
+                    <p className="text-sm text-[#5C6680]">{status}</p>
                   </div>
                 </div>
-                <ActionButton doneText={`${activity.title} marked complete.`} variant="outline">
-                  {activity.status === "Completed" ? "Review" : "Start"}
-                </ActionButton>
+                <Button
+                  variant="outline"
+                  onClick={() => advanceActivity(activity)}
+                  className={status === "Completed" ? "border-[#2DA89F] text-[#2DA89F]" : ""}
+                >
+                  {status === "Completed" ? "Review" : status === "In progress" ? "Mark complete" : "Start"}
+                </Button>
               </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
 
