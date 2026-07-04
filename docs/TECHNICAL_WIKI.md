@@ -58,6 +58,16 @@ If none of those fit, create a new doc and add it to the technical wiki data sou
 frontend/src/data/technicalWiki.js
 ```
 
+## Release Phrase
+
+When the user says `Turn the lights on`, run the safe release checklist from:
+
+```text
+docs/OPERATIONS_RUNBOOK.md
+```
+
+This means: commit, merge if needed, push, backfill if needed, verify safety, and do not break production.
+
 ## Implementation Files
 
 - `frontend/src/pages/TechnicalWiki.jsx`

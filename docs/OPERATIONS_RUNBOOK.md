@@ -137,6 +137,39 @@ Render -> service -> Environment -> Save Changes
 
 Render normally redeploys after saving environment changes.
 
+## Turn The Lights On
+
+When the user says:
+
+```text
+Turn the lights on
+```
+
+Run the safe release checklist:
+
+1. Check local git state with `git status --short`.
+2. Confirm the current branch and upstream.
+3. Review pending changes and make sure documentation was updated or created.
+4. Run relevant safety checks:
+   - `python -m py_compile backend/server.py backend/database.py`
+   - `npm run build` when frontend changed
+   - `git diff --check`
+5. Commit pending changes with a focused message.
+6. Merge only if there is an explicit branch to merge and it is safe.
+7. Push to `origin/main`.
+8. Evaluate whether a backfill is needed.
+9. Do not run destructive backfills or validate production constraints unless the data audit is clean and the action is explicitly approved.
+10. Verify production health:
+    - `https://mosaico-api.onrender.com/api/`
+    - relevant frontend route or bundle when frontend changed
+11. Report commit hash, push status, backfill status, and production health.
+
+Production safety rule:
+
+```text
+Do not break prod.
+```
+
 ## Supabase Storage
 
 Bucket:
@@ -168,4 +201,3 @@ Calendar integration is managed in Admin Settings and requires:
 - Calendar ID
 
 Use the admin test invite action after configuring.
-
