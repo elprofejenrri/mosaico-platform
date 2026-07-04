@@ -23,6 +23,14 @@ Next work:
   - sessions/login history without users
 - Run `ALTER TABLE ... VALIDATE CONSTRAINT ...` after data is clean.
 
+Backfill helper:
+
+```text
+backend/backfill_standardization_phase1.sql
+```
+
+Run it manually in Supabase SQL Editor or via a controlled database session. It is idempotent and ends with audit queries that should return zero rows before constraints are validated.
+
 ## Phase 3: Reduce Duplication
 
 Separate true relationships from historical snapshots:
