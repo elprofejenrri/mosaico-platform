@@ -68,6 +68,7 @@ Deliverables:
 
 - Backend permission checks for admin-only APIs continue using effective multi-role permissions.
 - Frontend hides privileged actions when effective permissions are missing.
+- Admin users screen loads real database users, assigned roles, active status, login history, and audit events. Shipped.
 - Admin user detail screen shows roles and permissions.
 - Technical wiki route `/technical/wiki` is restricted to technical platform roles. Shipped.
 - Technical wiki renders documentation inside the product through protected documentation endpoints. Shipped.
@@ -76,6 +77,7 @@ Acceptance:
 
 - A client cannot see or call privileged admin operations.
 - Role changes are audited.
+- Administrative users can update assigned roles from the modern `/admin/users` portal.
 - Technical documentation is visible only to technical roles.
 - Technical users can read documentation without opening external apps or websites.
 

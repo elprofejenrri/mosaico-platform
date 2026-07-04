@@ -92,3 +92,13 @@ When a document is added to the wiki, update both:
 - `frontend/src/components/Navbar.jsx`
 - `frontend/src/App.js`
 - `backend/server.py`
+
+## Related Admin UI
+
+The modern administrative portal includes a real user and role management screen:
+
+```text
+/admin/users
+```
+
+This screen uses the backend user and RBAC endpoints to show database users, active status, assigned roles, login history, and audit events.

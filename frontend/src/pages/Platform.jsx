@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { toast } from "sonner";
+import { api } from "../lib/api";
 import {
   Area,
   AreaChart,
@@ -1780,7 +1781,7 @@ export function AdminPortal({ module = "dashboard" }) {
     <PlatformShell role="admin">
       {module === "dashboard" && <AdminDashboard />}
       {module === "approvals" && <AdminApprovals />}
-      {module === "users" && <AdminUsers />}
+      {module === "users" && <AdminUsersReal />}
       {module === "credits" && <AdminCredits />}
       {module === "lessons" && <AdminLessons />}
       {module === "teachers" && <AdminTeachers />}
@@ -1891,6 +1892,212 @@ function AdminUsers() {
         ))}
       </div>
     </Card>
+  );
+}
+
+function AdminUsersReal() {
+  const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [roleDrafts, setRoleDrafts] = useState({});
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [auditEvents, setAuditEvents] = useState([]);
+  const [loginHistory, setLoginHistory] = useState([]);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [usersResponse, rolesResponse] = await Promise.all([
+        api.get("/admin/users"),
+        api.get("/admin/roles"),
+      ]);
+      const nextUsers = usersResponse.data || [];
+      setUsers(nextUsers);
+      setRoles(rolesResponse.data || []);
+      setRoleDrafts(Object.fromEntries(nextUsers.map((user) => [user.user_id, user.roles?.length ? user.roles : [user.role].filter(Boolean)])));
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not load users.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((user) => [user.name, user.email, user.role, ...(user.roles || [])].filter(Boolean).join(" ").toLowerCase().includes(q));
+  }, [search, users]);
+
+  const roleLabel = (roleName) => roles.find((role) => role.name === roleName)?.label || roleName;
+
+  const toggleRole = (userId, roleName) => {
+    setRoleDrafts((drafts) => {
+      const current = new Set(drafts[userId] || []);
+      if (current.has(roleName)) current.delete(roleName);
+      else current.add(roleName);
+      if (current.size === 0) current.add("alumno");
+      return { ...drafts, [userId]: Array.from(current) };
+    });
+  };
+
+  const saveRoles = async (user) => {
+    try {
+      await api.patch(`/admin/users/${user.user_id}/roles`, { roles: roleDrafts[user.user_id] || [user.role] });
+      toast.success(`Roles updated for ${user.name || user.email}.`);
+      await load();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not update roles.");
+    }
+  };
+
+  const updateActive = async (user, active) => {
+    try {
+      await api.patch(`/admin/users/${user.user_id}`, { active });
+      toast.success(active ? "User activated." : "User deactivated.");
+      await load();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not update user.");
+    }
+  };
+
+  const openUser = async (user) => {
+    setSelectedUser(user);
+    setAuditEvents([]);
+    setLoginHistory([]);
+    try {
+      const [auditResponse, loginResponse] = await Promise.all([
+        api.get(`/admin/users/${user.user_id}/audit-events`),
+        api.get(`/admin/users/${user.user_id}/login-history`),
+      ]);
+      setAuditEvents(auditResponse.data || []);
+      setLoginHistory(loginResponse.data || []);
+    } catch {
+      toast.error("Could not load user history.");
+    }
+  };
+
+  const counts = {
+    total: users.length,
+    active: users.filter((user) => user.active !== false).length,
+    admins: users.filter((user) => (user.roles || [user.role]).some((role) => role === "administrador_sitio" || role === "administrador_profesor")).length,
+  };
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard label="Users in database" value={counts.total} detail="Synced from auth and local accounts" icon={Users} />
+        <MetricCard label="Active users" value={counts.active} detail="Can access the platform" icon={UserCheck} color="#2DA89F" />
+        <MetricCard label="Admin users" value={counts.admins} detail="Administrative or technical roles" icon={ShieldCheck} color="#8B5BB8" />
+      </div>
+
+      <Card>
+        <SectionHeader eyebrow="People and roles" title="Manage real users from the database" action={<Button onClick={load} variant="outline" className="border-[#EFE4D0]">Refresh</Button>} />
+        <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="relative md:w-96">
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#5C6680]" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email, or role" className="w-full rounded-md border border-[#EFE4D0] bg-white py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" />
+          </div>
+          <p className="text-sm text-[#5C6680]">{filteredUsers.length} visible</p>
+        </div>
+
+        {loading ? (
+          <p className="mt-5 rounded-lg bg-[#FBF7EE] p-4 text-sm text-[#5C6680]">Loading users...</p>
+        ) : (
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left">
+              <thead className="text-xs uppercase tracking-[0.16em] text-[#5C6680]">
+                <tr className="border-b border-[#EFE4D0]">
+                  <th className="py-3 pr-4">User</th>
+                  <th className="px-4 py-3">Primary role</th>
+                  <th className="px-4 py-3">Assigned roles</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Bookings</th>
+                  <th className="py-3 pl-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EFE4D0] text-sm">
+                {filteredUsers.map((user) => (
+                  <tr key={user.user_id}>
+                    <td className="py-4 pr-4">
+                      <div className="flex items-center gap-3">
+                        {user.picture ? <img src={user.picture} alt="" className="h-10 w-10 rounded-full object-cover" /> : <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#FFF0E6] font-display text-[#E8704C]">{user.name?.[0] || "?"}</div>}
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold">{user.name || "Unnamed user"}</p>
+                          <p className="truncate text-xs text-[#5C6680]">{user.email}</p>
+                          <p className="truncate text-xs text-[#5C6680]">{user.profile_type || "client"} - {user.auth_provider || "auth"}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4"><span className="rounded-md bg-[#FBF7EE] px-3 py-1 text-sm text-[#1F3B6E]">{roleLabel(user.role)}</span></td>
+                    <td className="px-4 py-4">
+                      <div className="flex max-w-md flex-wrap gap-2">
+                        {roles.map((role) => (
+                          <label key={`${user.user_id}-${role.name}`} className={`rounded-md border px-3 py-1 text-xs ${roleDrafts[user.user_id]?.includes(role.name) ? "border-[#2DA89F] bg-[#E0F2F0] text-[#2DA89F]" : "border-[#EFE4D0] bg-white text-[#5C6680]"}`}>
+                            <input type="checkbox" checked={!!roleDrafts[user.user_id]?.includes(role.name)} onChange={() => toggleRole(user.user_id, role.name)} className="mr-2 accent-[#2DA89F]" />
+                            {role.label || role.name}
+                          </label>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={user.active !== false} onChange={(event) => updateActive(user, event.target.checked)} className="h-4 w-4 accent-[#2DA89F]" />
+                        {user.active !== false ? "Active" : "Inactive"}
+                      </label>
+                    </td>
+                    <td className="px-4 py-4 text-[#5C6680]">{user.booking_count || 0}</td>
+                    <td className="py-4 pl-4">
+                      <div className="flex justify-end gap-2">
+                        <Button onClick={() => saveRoles(user)} className="bg-[#E8704C] text-white hover:bg-[#C95630]">Save roles</Button>
+                        <Button onClick={() => openUser(user)} variant="outline" className="border-[#EFE4D0]">History</Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredUsers.length === 0 && <p className="py-8 text-center text-sm text-[#5C6680]">No users match your search.</p>}
+          </div>
+        )}
+      </Card>
+
+      {selectedUser && (
+        <Card>
+          <SectionHeader eyebrow="User history" title={`${selectedUser.name || selectedUser.email}`} action={<Button onClick={() => setSelectedUser(null)} variant="outline">Close</Button>} />
+          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+            <div>
+              <h3 className="font-semibold">Audit events</h3>
+              <div className="mt-3 grid max-h-96 gap-3 overflow-y-auto pr-1">
+                {auditEvents.length === 0 && <p className="rounded-lg bg-[#FBF7EE] p-4 text-sm text-[#5C6680]">No audit events yet.</p>}
+                {auditEvents.map((event) => (
+                  <div key={event.id} className="rounded-lg border border-[#EFE4D0] p-4">
+                    <p className="font-semibold">{event.event_type}</p>
+                    <p className="text-sm text-[#5C6680]">{event.entity_type} {event.entity_id ? `- ${event.entity_id}` : ""}</p>
+                    <p className="mt-1 text-xs text-[#5C6680]">{event.created_at}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h3 className="font-semibold">Login history</h3>
+              <div className="mt-3 grid max-h-96 gap-3 overflow-y-auto pr-1">
+                {loginHistory.length === 0 && <p className="rounded-lg bg-[#FBF7EE] p-4 text-sm text-[#5C6680]">No login history yet.</p>}
+                {loginHistory.map((login) => (
+                  <div key={login.id} className="rounded-lg border border-[#EFE4D0] p-4">
+                    <p className="font-semibold">{login.provider}</p>
+                    <p className="text-sm text-[#5C6680]">{login.email}</p>
+                    <p className="mt-1 text-xs text-[#5C6680]">{login.created_at}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+    </div>
   );
 }
 

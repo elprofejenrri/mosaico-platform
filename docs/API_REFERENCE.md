@@ -143,7 +143,7 @@ Returns counts for:
 
 ### GET `/admin/users`
 
-Lists users with booking counts.
+Lists users with booking counts and assigned roles.
 
 ### PATCH `/admin/users/{user_id}`
 
