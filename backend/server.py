@@ -8,7 +8,7 @@ import hashlib
 import secrets
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -413,11 +413,10 @@ def _public_user(user: User) -> dict:
 
 
 async def _effective_role_names(user: User) -> List[str]:
-    roles: Set[str] = {_normalize_role(user.role)}
     docs = await db.user_roles.find({"user_id": user.user_id}, {"_id": 0}).to_list(100)
-    for doc in docs:
-        if doc.get("active", True):
-            roles.add(_normalize_role(doc.get("role_name")))
+    roles = {_normalize_role(doc.get("role_name")) for doc in docs if doc.get("active", True)}
+    if not roles:
+        roles = {_normalize_role(user.role)}
     return sorted(roles, key=lambda role: ROLE_LEVELS.get(role, 0), reverse=True)
 
 
@@ -484,9 +483,10 @@ def _role_status(role: dict) -> str:
 
 async def _active_user_roles(user_id: str) -> List[str]:
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-    roles = {_normalize_role((user_doc or {}).get("role"))} if user_doc else set()
     docs = await db.user_roles.find({"user_id": user_id}, {"_id": 0}).to_list(100)
-    roles.update({_normalize_role(doc.get("role_name")) for doc in docs if doc.get("active", True)})
+    roles = {_normalize_role(doc.get("role_name")) for doc in docs if doc.get("active", True)}
+    if not roles and user_doc:
+        roles = {_normalize_role(user_doc.get("role"))}
     return sorted(roles, key=lambda role: ROLE_LEVELS.get(role, 0), reverse=True)
 
 
@@ -1579,12 +1579,7 @@ async def admin_list_users(_: User = Depends(require_admin)):
     for d in docs:
         d["booking_count"] = await db.bookings.count_documents({"user_id": d["user_id"]})
         d["role"] = _normalize_role(d.get("role"))
-        role_docs = await db.user_roles.find({"user_id": d["user_id"]}, {"_id": 0}).to_list(100)
-        d["roles"] = sorted(
-            {_normalize_role(r.get("role_name")) for r in role_docs if r.get("active", True)} | {d["role"]},
-            key=lambda role: ROLE_LEVELS.get(role, 0),
-            reverse=True,
-        )
+        d["roles"] = await _active_user_roles(d["user_id"])
     docs.sort(key=lambda u: str(u.get("created_at", "")), reverse=True)
     return docs
 

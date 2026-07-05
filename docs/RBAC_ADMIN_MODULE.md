@@ -46,6 +46,8 @@ The platform shell enforces RBAC access per portal, not only in the role switche
 - Admin portal requires an administrative role or sensitive administrative permission such as role, user, report, or platform management access.
 
 Student-only users can keep their learning permissions without receiving Teacher, Tutor, or Admin workspace access.
+
+Role assignments in `user_roles` are the source of truth once active assignments exist for a user. The legacy `users.role` column remains a fallback for unmigrated users only, so stale primary-role values cannot silently grant Teacher, Tutor, or Admin access.
 - Backend endpoints under `/api/admin/rbac/*`.
 - Server-side protections for required system roles and users without roles.
 
