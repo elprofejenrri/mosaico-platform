@@ -6,7 +6,10 @@ import { supabase } from "../lib/supabase";
 const AppContext = createContext(null);
 
 export const AppProvider = ({ children }) => {
-  const [lang, setLang] = useState(() => localStorage.getItem("lily_lang") || "en");
+  const [lang, setLang] = useState(() => {
+    const stored = localStorage.getItem("lily_lang");
+    return stored === "es" || stored === "en" ? stored : "en";
+  });
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [settings, setSettings] = useState({});
@@ -123,8 +126,10 @@ export const AppProvider = ({ children }) => {
 
   useEffect(() => {
     localStorage.setItem("lily_lang", lang);
+    document.documentElement.lang = lang;
   }, [lang]);
 
+  const setLanguage = (nextLang) => setLang(nextLang === "es" ? "es" : "en");
   const toggleLang = () => setLang((l) => (l === "en" ? "es" : "en"));
 
   const logout = async () => {
@@ -138,7 +143,7 @@ export const AppProvider = ({ children }) => {
 
   return (
     <AppContext.Provider value={{
-      lang, setLang, toggleLang, t, user, setUser, authLoading,
+      lang, setLang: setLanguage, toggleLang, t, user, setUser, authLoading,
       checkAuth, logout, settings, refreshSettings,
     }}>
       {children}

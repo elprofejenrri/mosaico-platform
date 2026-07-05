@@ -70,6 +70,20 @@ function Modal({ title, children, onClose }) {
   );
 }
 
+function SidePanel({ title, children, onClose }) {
+  return (
+    <div className="fixed inset-0 z-[85] bg-[#10213F]/35 p-4 backdrop-blur-sm">
+      <div className="ml-auto flex h-full w-full max-w-md flex-col rounded-lg bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-[#EFE4D0] px-5 py-4">
+          <h2 className="font-display text-2xl text-[#1F3B6E]">{title}</h2>
+          <button onClick={onClose} aria-label="Close" className="rounded-md p-2 text-[#5C6680] hover:bg-[#FFF0E6]"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 function Field({ label, children, error }) {
   return (
     <label className="block">
@@ -203,11 +217,12 @@ function CalendarToolbar({ view, setView, label, setLabel, openAvailability, ope
   );
 }
 
-function CalendarSlotCard({ session, onOpen, compact = false }) {
+function CalendarSlotCard({ session, onOpen, compact = false, highlighted = false }) {
   return (
     <button
+      id={`calendar-session-${session.id}`}
       onClick={() => onOpen(session)}
-      className={`min-w-0 w-full rounded-lg border text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${compact ? "p-2" : "p-3"} ${statusStyles[session.status] || statusStyles.empty}`}
+      className={`min-w-0 w-full rounded-lg border text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${compact ? "p-2" : "p-3"} ${highlighted ? "ring-4 ring-[#F4C13D] ring-offset-2" : ""} ${statusStyles[session.status] || statusStyles.empty}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -229,7 +244,7 @@ function CalendarSlotCard({ session, onOpen, compact = false }) {
   );
 }
 
-function DayView({ sessions, emptySlots, onOpen, onInvite }) {
+function DayView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId }) {
   const visibleEmptySlots = emptySlots.filter((slot) => slot.date === "2026-07-06");
   return (
     <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
@@ -244,7 +259,7 @@ function DayView({ sessions, emptySlots, onOpen, onInvite }) {
           return (
             <div key={hour} className="grid grid-cols-[72px_1fr] gap-3">
               <p className="py-3 text-sm text-[#5C6680]">{hour}</p>
-              {item ? <CalendarSlotCard session={item} onOpen={onOpen} /> : <EmptySlotPlaceholder date={emptySlot?.date || "2026-07-06"} start={hour} end={emptySlot?.end || addOneHour(hour)} onInvite={onInvite} />}
+              {item ? <CalendarSlotCard session={item} onOpen={onOpen} highlighted={item.id === highlightedSessionId} /> : <EmptySlotPlaceholder date={emptySlot?.date || "2026-07-06"} start={hour} end={emptySlot?.end || addOneHour(hour)} onInvite={onInvite} />}
             </div>
           );
         })}
@@ -253,14 +268,14 @@ function DayView({ sessions, emptySlots, onOpen, onInvite }) {
   );
 }
 
-function WeekView({ sessions, emptySlots, onOpen, onInvite }) {
+function WeekView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h2 className="font-display text-2xl text-[#1F3B6E]">Week view</h2>
         <CalendarLegend />
       </div>
-      <div className="mt-4 grid min-w-[1100px] grid-cols-7 gap-3">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
         {days.map((day) => {
           const daySessions = sessions.filter((session) => session.day === day);
           const dayEmptySlots = emptySlots.filter((slot) => slot.date === dayDates[day]);
@@ -273,7 +288,7 @@ function WeekView({ sessions, emptySlots, onOpen, onInvite }) {
                   const session = daySessions.find((item) => item.start === hour);
                   const emptySlot = dayEmptySlots.find((slot) => slot.start === hour);
                   return session ? (
-                    <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} />
+                    <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} highlighted={session.id === highlightedSessionId} />
                   ) : (
                     <EmptySlotPlaceholder key={`${day}-${hour}`} date={dayDates[day]} start={hour} end={emptySlot?.end || addOneHour(hour)} onInvite={onInvite} />
                   );
@@ -287,7 +302,7 @@ function WeekView({ sessions, emptySlots, onOpen, onInvite }) {
   );
 }
 
-function MonthView({ sessions, emptySlots, onOpen, onInvite }) {
+function MonthView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId }) {
   const dates = Array.from({ length: 30 }, (_, idx) => idx + 1);
   return (
     <div className="min-w-0 rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
@@ -304,7 +319,7 @@ function MonthView({ sessions, emptySlots, onOpen, onInvite }) {
             <div key={date} className="min-h-28 min-w-0 overflow-hidden rounded-lg border border-[#EFE4D0] bg-[#FBF7EE] p-3">
               <p className="font-semibold text-[#1F3B6E]">Jul {date}</p>
               <div className="mt-2 grid min-w-0 gap-1">
-                {daySessions.slice(0, 3).map((session) => <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} compact />)}
+                {daySessions.slice(0, 3).map((session) => <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} compact highlighted={session.id === highlightedSessionId} />)}
                 {daySessions.length < 3 && dayEmptySlots.slice(0, 3 - daySessions.length).map((slot) => <EmptySlotPlaceholder key={slot.id} date={slot.date} start={slot.start} end={slot.end} compact onInvite={onInvite} />)}
                 {daySessions.length + dayEmptySlots.length > 3 && <p className="text-xs font-semibold text-[#5C6680]">+{daySessions.length + dayEmptySlots.length - 3} more</p>}
                 {daySessions.length === 0 && dayEmptySlots.length === 0 && <EmptySlotPlaceholder date={key} start="empty" end="day" label="Empty day" compact onInvite={onInvite} />}
@@ -312,27 +327,6 @@ function MonthView({ sessions, emptySlots, onOpen, onInvite }) {
             </div>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-function UpcomingClassesPanel({ sessions, onOpen }) {
-  const booked = sessions.filter((item) => ["booked", "conflict"].includes(item.status));
-  const next = booked[0];
-  return (
-    <div className="grid gap-4">
-      <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
-        <h2 className="font-display text-xl text-[#1F3B6E]">Next class</h2>
-        {next ? <CalendarSlotCard session={next} onOpen={onOpen} /> : <p className="mt-3 text-sm text-[#5C6680]">No class scheduled. Open availability or invite students.</p>}
-      </div>
-      <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
-        <h2 className="font-display text-xl text-[#1F3B6E]">Today's classes</h2>
-        <div className="mt-3 grid gap-2">{booked.slice(0, 3).map((item) => <CalendarSlotCard key={item.id} session={item} onOpen={onOpen} />)}</div>
-      </div>
-      <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
-        <h2 className="font-display text-xl text-[#1F3B6E]">This week</h2>
-        <p className="mt-2 text-sm text-[#5C6680]">{booked.length} booked or conflict classes.</p>
       </div>
     </div>
   );
@@ -401,6 +395,28 @@ function SchedulingInsightsPanel({ insights }) {
       <Progress value={insights.occupancy} className="mt-4 h-2" />
       <div className="mt-4 grid gap-2">
         {insights.suggestions.map((suggestion) => <p key={suggestion} className="flex gap-2 text-sm text-[#5C6680]"><Sparkles size={15} className="text-[#F4C13D]" />{suggestion}</p>)}
+      </div>
+    </div>
+  );
+}
+
+function CalendarActionCenter({ integration, sessions, onOpenCalendar, onHighlightNext, onHighlightToday, onOpenInsights }) {
+  const booked = sessions.filter((item) => ["booked", "conflict"].includes(item.status));
+  const today = booked.filter((item) => item.date === "2026-07-06");
+  return (
+    <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">Calendar center</p>
+          <h2 className="mt-1 font-display text-2xl text-[#1F3B6E]">Calendar stays in focus</h2>
+          <p className="mt-1 text-sm text-[#5C6680]">Open side panels only when needed, or jump directly to the next class.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={onOpenCalendar} variant="outline" className="border-[#EFE4D0]"><LinkIcon size={16} className="mr-2" />{integration.status === "connected" ? "Calendar connected" : "Connect calendar"}</Button>
+          <Button disabled={!booked.length} onClick={onHighlightNext} className="bg-[#1F3B6E] text-white hover:bg-[#162B52]"><Video size={16} className="mr-2" />Next class</Button>
+          <Button disabled={!today.length} onClick={onHighlightToday} variant="outline" className="border-[#EFE4D0]"><CalendarDays size={16} className="mr-2" />Today's focus</Button>
+          <Button onClick={onOpenInsights} variant="outline" className="border-[#EFE4D0]"><Sparkles size={16} className="mr-2" />Insights</Button>
+        </div>
       </div>
     </div>
   );
@@ -638,6 +654,8 @@ export default function TeacherCalendarWorkspace() {
   const [blockOpen, setBlockOpen] = useState(false);
   const [inviteSlot, setInviteSlot] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
+  const [highlightedSessionId, setHighlightedSessionId] = useState("");
+  const [sidePanel, setSidePanel] = useState("");
 
   useEffect(() => {
     getTeacherCalendarWorkspace()
@@ -654,6 +672,14 @@ export default function TeacherCalendarWorkspace() {
 
   const selectedStudent = selectedSession?.studentId ? students.find((student) => student.id === selectedSession.studentId) : null;
   const updateSession = (nextSession) => setSessions((items) => items.map((item) => item.id === nextSession.id ? nextSession : item));
+  const bookedSessions = sessions.filter((item) => ["booked", "conflict"].includes(item.status));
+  const highlightSession = (session) => {
+    if (!session) return;
+    setHighlightedSessionId(session.id);
+    setTimeout(() => {
+      document.getElementById(`calendar-session-${session.id}`)?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    }, 50);
+  };
 
   if (loading || !insights) {
     return <div className="grid gap-4"><div className="h-32 animate-pulse rounded-lg bg-white" /><div className="h-96 animate-pulse rounded-lg bg-white" /></div>;
@@ -662,18 +688,19 @@ export default function TeacherCalendarWorkspace() {
   return (
     <div className="grid gap-5">
       <CalendarToolbar view={view} setView={setView} label={label} setLabel={setLabel} openAvailability={() => setAvailabilityOpen(true)} openBlock={() => setBlockOpen(true)} />
-      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="grid min-w-0 gap-5">
-          {view === "day" && <DayView sessions={sessions} emptySlots={emptySlots} onOpen={setSelectedSession} onInvite={setInviteSlot} />}
-          {view === "week" && <WeekView sessions={sessions} emptySlots={emptySlots} onOpen={setSelectedSession} onInvite={setInviteSlot} />}
-          {view === "month" && <MonthView sessions={sessions} emptySlots={emptySlots} onOpen={setSelectedSession} onInvite={setInviteSlot} />}
-          <EmptySlotsPanel slots={emptySlots} onInvite={setInviteSlot} />
-        </div>
-        <aside className="grid h-fit min-w-0 gap-5">
-          <GoogleCalendarCard integration={integration} setIntegration={setIntegration} />
-          <UpcomingClassesPanel sessions={sessions} onOpen={setSelectedSession} />
-          <SchedulingInsightsPanel insights={insights} />
-        </aside>
+      <CalendarActionCenter
+        integration={integration}
+        sessions={sessions}
+        onOpenCalendar={() => setSidePanel("calendar")}
+        onHighlightNext={() => highlightSession(bookedSessions[0])}
+        onHighlightToday={() => highlightSession(bookedSessions.find((item) => item.date === "2026-07-06") || bookedSessions[0])}
+        onOpenInsights={() => setSidePanel("insights")}
+      />
+      <div className="grid min-w-0 gap-5">
+        {view === "day" && <DayView sessions={sessions} emptySlots={emptySlots} onOpen={setSelectedSession} onInvite={setInviteSlot} highlightedSessionId={highlightedSessionId} />}
+        {view === "week" && <WeekView sessions={sessions} emptySlots={emptySlots} onOpen={setSelectedSession} onInvite={setInviteSlot} highlightedSessionId={highlightedSessionId} />}
+        {view === "month" && <MonthView sessions={sessions} emptySlots={emptySlots} onOpen={setSelectedSession} onInvite={setInviteSlot} highlightedSessionId={highlightedSessionId} />}
+        <EmptySlotsPanel slots={emptySlots} onInvite={setInviteSlot} />
       </div>
       <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-[#EFE4D0] bg-white p-3 shadow-lg md:hidden">
         <Button onClick={() => setAvailabilityOpen(true)} className="flex-1 bg-[#E8704C] text-white"><Plus size={16} className="mr-2" />Open</Button>
@@ -684,6 +711,8 @@ export default function TeacherCalendarWorkspace() {
       {blockOpen && <BlockTimeModal sessions={sessions} onClose={() => setBlockOpen(false)} onSaved={(block) => setSessions((items) => [...items, block])} />}
       {inviteSlot && <StudentInviteDrawer slot={inviteSlot} students={students} onClose={() => setInviteSlot(null)} />}
       {selectedSession && <StudentQuickViewDrawer session={selectedSession} student={selectedStudent} onClose={() => setSelectedSession(null)} onSessionUpdated={updateSession} />}
+      {sidePanel === "calendar" && <SidePanel title="Google Calendar" onClose={() => setSidePanel("")}><GoogleCalendarCard integration={integration} setIntegration={setIntegration} /></SidePanel>}
+      {sidePanel === "insights" && <SidePanel title="Scheduling Insights" onClose={() => setSidePanel("")}><SchedulingInsightsPanel insights={insights} /></SidePanel>}
     </div>
   );
 }

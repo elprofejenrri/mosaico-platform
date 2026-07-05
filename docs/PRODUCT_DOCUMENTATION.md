@@ -11,7 +11,7 @@ The application is designed for:
 - Editors who manage public content, blog posts, pages, and media.
 - Administrators who manage users, products, teachers, bookings, settings, and operations.
 
-Default UI language is Spanish-ready, with public content structured for Spanish and English.
+Default UI language is Spanish-ready, with public content structured for Spanish and English. The top navigation now uses explicit `EN` and `ES` language buttons instead of an ambiguous toggle; the selected language is stored in `localStorage` and applied to `document.documentElement.lang`. Public pages and the main portal header respond to the language setting, while deeper operational/admin module copy should be localized incrementally as those modules become production-backed.
 
 ## Core Capabilities
 

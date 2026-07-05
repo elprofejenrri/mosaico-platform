@@ -24,6 +24,8 @@ Implemented UI capabilities:
 - Responsive desktop, tablet, and mobile layouts.
 - Month view uses compact non-overflowing slot cards and stacks the operations sidebar below the calendar until wide desktop space is available.
 - Day, week, and month views show a shared status legend and explicit empty-slot placeholders, so teachers can distinguish booked classes from available openings and unfilled gaps.
+- The calendar is now the persistent center of the workspace. Google Calendar and scheduling insights open as lateral panels only when requested.
+- The former fixed "Next class" and "Today's classes" side modules are replaced by action buttons that highlight the relevant class directly inside the calendar.
 - Availability is modeled as a time window, not only a single class slot. A window can expose 30, 45, and/or 60 minute class options and applies a configurable cooldown gap between generated options.
 
 ## Product Behavior

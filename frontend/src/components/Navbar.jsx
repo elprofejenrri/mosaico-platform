@@ -6,12 +6,34 @@ import { Button } from "./ui/button";
 import { MosaicoLogo } from "./MosaicoLogo";
 import { isTechnicalUser } from "../lib/access";
 
+const navLabels = {
+  en: {
+    platform: "Platform",
+    client: "Client",
+    tutor: "Tutor",
+    teacher: "Teacher",
+    administrative: "Administrative",
+    wiki: "Wiki",
+    technicalWiki: "Technical wiki",
+  },
+  es: {
+    platform: "Plataforma",
+    client: "Cliente",
+    tutor: "Tutor",
+    teacher: "Profesor",
+    administrative: "Administrativo",
+    wiki: "Wiki",
+    technicalWiki: "Wiki tecnica",
+  },
+};
+
 export const Navbar = () => {
-  const { t, lang, toggleLang, user, logout } = useApp();
+  const { t, lang, setLang, user, logout } = useApp();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const loc = useLocation();
   const technicalUser = isTechnicalUser(user);
+  const labels = navLabels[lang] || navLabels.en;
 
   const navLink = (to, label, testid) => (
     <Link
@@ -25,6 +47,29 @@ export const Navbar = () => {
     </Link>
   );
 
+  const languageSwitch = (mobile = false) => (
+    <div className={`flex items-center gap-1 ${mobile ? "justify-start" : ""}`} aria-label="Language selector">
+      <Globe size={14} className="text-[#5C6680]" aria-hidden="true" />
+      {["en", "es"].map((item) => (
+        <button
+          key={item}
+          type="button"
+          data-testid={mobile ? `lang-${item}-m` : `lang-${item}`}
+          onClick={() => {
+            setLang(item);
+            if (mobile) setOpen(false);
+          }}
+          className={`rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition-colors ${
+            lang === item ? "bg-[#1F3B6E] text-white" : "text-[#5C6680] hover:bg-[#FFF0E6] hover:text-[#1F3B6E]"
+          }`}
+          aria-pressed={lang === item}
+        >
+          {item}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <header
       data-testid="navbar"
@@ -34,23 +79,15 @@ export const Navbar = () => {
         <MosaicoLogo size="text-2xl" />
 
         <nav className="hidden md:flex items-center gap-8">
-          {navLink("/", "Platform", "nav-home")}
-          {navLink("/student", "Client", "nav-student")}
-          {navLink("/tutor", "Tutor", "nav-tutor")}
-          {navLink("/teacher", "Teacher", "nav-teacher")}
-          {navLink("/admin", "Administrative", "nav-admin")}
+          {navLink("/", labels.platform, "nav-home")}
+          {navLink("/student", labels.client, "nav-student")}
+          {navLink("/tutor", labels.tutor, "nav-tutor")}
+          {navLink("/teacher", labels.teacher, "nav-teacher")}
+          {navLink("/admin", labels.administrative, "nav-admin")}
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
-          <button
-            data-testid="lang-toggle"
-            onClick={toggleLang}
-            className="flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-[#5C6680] hover:text-[#1F3B6E] transition-colors"
-            aria-label="Toggle language"
-          >
-            <Globe size={14} />
-            {lang === "en" ? "EN · ES" : "ES · EN"}
-          </button>
+          {languageSwitch()}
           {user ? (
             <>
               <Link to="/dashboard" data-testid="nav-dashboard">
@@ -64,7 +101,7 @@ export const Navbar = () => {
               {technicalUser && (
                 <Link to="/technical/wiki" data-testid="nav-technical-wiki">
                   <Button variant="ghost" className="text-[#1F3B6E] hover:bg-[#FFF0E6]">
-                    <BookOpen size={16} className="mr-2" />Wiki
+                    <BookOpen size={16} className="mr-2" />{labels.wiki}
                   </Button>
                 </Link>
               )}
@@ -83,7 +120,7 @@ export const Navbar = () => {
               data-testid="nav-signin-btn"
               className="bg-[#E8704C] text-[#FBF7EE] hover:bg-[#C95630] hover:text-[#FBF7EE] rounded-full px-5"
             >
-              Sign in
+              {t.nav.signIn}
             </Button>
           )}
         </div>
@@ -100,26 +137,24 @@ export const Navbar = () => {
 
       {open && (
         <div className="md:hidden border-t border-[#EFE4D0] bg-[#FBF7EE] px-6 py-6 flex flex-col gap-4">
-          {navLink("/", "Platform", "nav-home-m")}
-          <Link to="/student" onClick={() => setOpen(false)} className="flex items-center gap-2"><UserRound size={16} />Client</Link>
-          <Link to="/tutor" onClick={() => setOpen(false)} className="flex items-center gap-2"><Users size={16} />Tutor</Link>
-          <Link to="/teacher" onClick={() => setOpen(false)} className="flex items-center gap-2"><GraduationCap size={16} />Teacher</Link>
-          <Link to="/admin" onClick={() => setOpen(false)} className="flex items-center gap-2"><ShieldCheck size={16} />Administrative</Link>
-          <button onClick={toggleLang} data-testid="lang-toggle-m" className="text-left text-xs uppercase tracking-[0.2em] text-[#5C6680]">
-            {lang === "en" ? "EN · ES" : "ES · EN"}
-          </button>
+          {navLink("/", labels.platform, "nav-home-m")}
+          <Link to="/student" onClick={() => setOpen(false)} className="flex items-center gap-2"><UserRound size={16} />{labels.client}</Link>
+          <Link to="/tutor" onClick={() => setOpen(false)} className="flex items-center gap-2"><Users size={16} />{labels.tutor}</Link>
+          <Link to="/teacher" onClick={() => setOpen(false)} className="flex items-center gap-2"><GraduationCap size={16} />{labels.teacher}</Link>
+          <Link to="/admin" onClick={() => setOpen(false)} className="flex items-center gap-2"><ShieldCheck size={16} />{labels.administrative}</Link>
+          {languageSwitch(true)}
           {user ? (
             <>
               <Link to="/dashboard" onClick={() => setOpen(false)}>{t.nav.dashboard}</Link>
               {["admin", "administrador_sitio", "administrador_profesor", "editor_cms"].includes(user.role) && <Link to="/admin" onClick={() => setOpen(false)}>{t.nav.admin}</Link>}
-              {technicalUser && <Link to="/technical/wiki" onClick={() => setOpen(false)} className="flex items-center gap-2"><BookOpen size={16} />Technical wiki</Link>}
+              {technicalUser && <Link to="/technical/wiki" onClick={() => setOpen(false)} className="flex items-center gap-2"><BookOpen size={16} />{labels.technicalWiki}</Link>}
               <Button onClick={async () => { await logout(); setOpen(false); navigate("/"); }} variant="outline" data-testid="logout-btn-m">
                 {t.nav.signOut}
               </Button>
             </>
           ) : (
             <Button onClick={() => { setOpen(false); navigate("/login"); }} data-testid="nav-signin-btn-m" className="bg-[#E8704C] text-[#FBF7EE] hover:bg-[#C95630]">
-              Sign in
+              {t.nav.signIn}
             </Button>
           )}
         </div>

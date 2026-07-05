@@ -223,6 +223,69 @@ const roleMeta = {
   },
 };
 
+const roleMetaText = {
+  en: {
+    student: {
+      label: "Client",
+      title: "What should I do today?",
+      subtitle: "Your Spanish plan, live classes, practice prompts, and community moments in one place.",
+      portal: "portal",
+      pitchHome: "Pitch home",
+    },
+    tutor: {
+      label: "Tutor",
+      title: "Guide the learning journey",
+      subtitle: "Track students, credits, classes, feedback, and family communication without losing context.",
+      portal: "portal",
+      pitchHome: "Pitch home",
+    },
+    teacher: {
+      label: "Teacher",
+      title: "Teacher workspace",
+      subtitle: "Manage classes, availability, student invitations, calendar blocks, and scheduling health.",
+      portal: "workspace",
+      pitchHome: "Pitch home",
+    },
+    admin: {
+      label: "Administrative",
+      title: "School operations cockpit",
+      subtitle: "Operate approvals, people, credits, lessons, analytics, configuration, and access governance.",
+      portal: "portal",
+      pitchHome: "Pitch home",
+    },
+  },
+  es: {
+    student: {
+      label: "Cliente",
+      title: "¿Qué debo hacer hoy?",
+      subtitle: "Tu plan de español, clases en vivo, práctica y comunidad en un solo lugar.",
+      portal: "portal",
+      pitchHome: "Inicio",
+    },
+    tutor: {
+      label: "Tutor",
+      title: "Acompaña el camino de aprendizaje",
+      subtitle: "Da seguimiento a estudiantes, créditos, clases, retroalimentación y comunicación familiar sin perder contexto.",
+      portal: "portal",
+      pitchHome: "Inicio",
+    },
+    teacher: {
+      label: "Profesor",
+      title: "Espacio del profesor",
+      subtitle: "Administra clases, disponibilidad, invitaciones, bloqueos de calendario y salud de agenda.",
+      portal: "espacio",
+      pitchHome: "Inicio",
+    },
+    admin: {
+      label: "Administrativo",
+      title: "Centro de operaciones escolares",
+      subtitle: "Opera aprobaciones, personas, créditos, lecciones, analítica, configuración y gobierno de accesos.",
+      portal: "portal",
+      pitchHome: "Inicio",
+    },
+  },
+};
+
 const trendData = [
   { day: "Mon", lessons: 8, classes: 2, xp: 120 },
   { day: "Tue", lessons: 5, classes: 1, xp: 90 },
@@ -429,8 +492,8 @@ function SidebarNavGroup({ label, items, role, meta, location, expanded, onToggl
 
 function PlatformShell({ role, module = "dashboard", children }) {
   const location = useLocation();
-  const { user, authLoading } = useApp();
-  const meta = roleMeta[role];
+  const { user, authLoading, lang } = useApp();
+  const meta = { ...roleMeta[role], ...(roleMetaText[lang]?.[role] || roleMetaText.en[role]) };
   const navStorageKey = `mosaico_nav_groups_${role}`;
   const [expandedGroups, setExpandedGroups] = useState(() => {
     try {
@@ -505,13 +568,13 @@ function PlatformShell({ role, module = "dashboard", children }) {
           <div className="mb-6 rounded-lg bg-[#1F3B6E] p-6 text-white">
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-white/70">{meta.label} portal</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-white/70">{meta.label} {meta.portal}</p>
                 <h1 className="mt-3 font-display text-3xl md:text-4xl">{meta.title}</h1>
                 <p className="mt-3 max-w-2xl text-sm md:text-base text-white/75">{meta.subtitle}</p>
               </div>
               <Link to="/">
                 <Button className="bg-[#F4C13D] text-[#1F3B6E] hover:bg-white">
-                  Pitch home <ArrowRight size={16} className="ml-2" />
+                  {meta.pitchHome} <ArrowRight size={16} className="ml-2" />
                 </Button>
               </Link>
             </div>
