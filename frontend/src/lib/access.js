@@ -1,5 +1,10 @@
+function effectiveRoles(user) {
+  if (user?.roles?.length) return new Set(user.roles.filter(Boolean));
+  return new Set([user?.role].filter(Boolean));
+}
+
 export function isTechnicalUser(user) {
-  const roles = new Set([user?.role, ...(user?.roles || [])].filter(Boolean));
+  const roles = effectiveRoles(user);
   const permissions = user?.permissions || {};
   return roles.has("administrador_sitio") || roles.has("developer") || Number(permissions["*"] || 0) >= 100;
 }
@@ -10,7 +15,7 @@ export function hasPermission(user, permission, minLevel = 1) {
 }
 
 export function hasAnyRole(user, roleNames = []) {
-  const roles = new Set([user?.role, ...(user?.roles || [])].filter(Boolean));
+  const roles = effectiveRoles(user);
   return roleNames.some((role) => roles.has(role));
 }
 

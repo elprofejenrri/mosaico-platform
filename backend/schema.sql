@@ -399,14 +399,193 @@ CREATE TABLE IF NOT EXISTS local_auth_sessions (
 CREATE TABLE IF NOT EXISTS audit_events (
     id             TEXT PRIMARY KEY,
     actor_user_id  TEXT,
+    actor_name     TEXT,
     target_user_id TEXT,
     event_type     TEXT NOT NULL,
+    action         TEXT,
     entity_type    TEXT NOT NULL,
+    target_type    TEXT,
     entity_id      TEXT,
+    target_id      TEXT,
+    before_state   JSONB NOT NULL DEFAULT '{}',
+    after_state    JSONB NOT NULL DEFAULT '{}',
     metadata       JSONB NOT NULL DEFAULT '{}',
     ip_address     TEXT,
     user_agent     TEXT,
+    risk_level     TEXT NOT NULL DEFAULT 'low',
     created_at     TEXT NOT NULL
+);
+
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS actor_name TEXT;
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS action TEXT;
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS target_type TEXT;
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS target_id TEXT;
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS before_state JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS after_state JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS risk_level TEXT NOT NULL DEFAULT 'low';
+
+CREATE TABLE IF NOT EXISTS activity_logs (
+    id             TEXT PRIMARY KEY,
+    actor_user_id  TEXT,
+    actor_name     TEXT,
+    event_type     TEXT NOT NULL,
+    action         TEXT NOT NULL,
+    target_type    TEXT NOT NULL,
+    target_id      TEXT,
+    summary        TEXT NOT NULL,
+    metadata       JSONB NOT NULL DEFAULT '{}',
+    visibility     TEXT NOT NULL DEFAULT 'admin',
+    created_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS analytics_events (
+    id          TEXT PRIMARY KEY,
+    event_name  TEXT NOT NULL,
+    user_id     TEXT,
+    role        TEXT,
+    session_id  TEXT,
+    module      TEXT,
+    entity_type TEXT,
+    entity_id   TEXT,
+    metadata    JSONB NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS error_events (
+    id          TEXT PRIMARY KEY,
+    request_id  TEXT NOT NULL,
+    user_id     TEXT,
+    code        TEXT NOT NULL,
+    message     TEXT NOT NULL,
+    details     JSONB NOT NULL DEFAULT '{}',
+    path        TEXT,
+    method      TEXT,
+    status_code INTEGER,
+    ip_address  TEXT,
+    user_agent  TEXT,
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS atlas_volumes (
+    id                TEXT PRIMARY KEY,
+    number            INTEGER NOT NULL,
+    title             TEXT NOT NULL,
+    slug              TEXT NOT NULL UNIQUE,
+    description       TEXT NOT NULL DEFAULT '',
+    owner_user_id     TEXT,
+    owner_role        TEXT,
+    status            TEXT NOT NULL DEFAULT 'draft',
+    current_version   TEXT NOT NULL DEFAULT '0.1.0',
+    visibility        TEXT NOT NULL DEFAULT 'super_admin_only',
+    estimated_pages   INTEGER NOT NULL DEFAULT 0,
+    priority          TEXT NOT NULL DEFAULT 'medium',
+    tags              JSONB NOT NULL DEFAULT '[]',
+    linked_volume_ids JSONB NOT NULL DEFAULT '[]',
+    purpose           TEXT NOT NULL DEFAULT '',
+    suggested_sections JSONB NOT NULL DEFAULT '[]',
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL,
+    approved_at       TEXT,
+    deprecated_at     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS atlas_sections (
+    id                    TEXT PRIMARY KEY,
+    volume_id             TEXT NOT NULL,
+    parent_section_id     TEXT,
+    title                 TEXT NOT NULL,
+    slug                  TEXT NOT NULL,
+    order_index           INTEGER NOT NULL DEFAULT 0,
+    summary               TEXT NOT NULL DEFAULT '',
+    content_markdown      TEXT NOT NULL DEFAULT '',
+    status                TEXT NOT NULL DEFAULT 'draft',
+    tags                  JSONB NOT NULL DEFAULT '[]',
+    linked_decision_ids   JSONB NOT NULL DEFAULT '[]',
+    linked_glossary_terms JSONB NOT NULL DEFAULT '[]',
+    created_at            TEXT NOT NULL,
+    updated_at            TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS atlas_versions (
+    id                 TEXT PRIMARY KEY,
+    volume_id          TEXT NOT NULL,
+    version            TEXT NOT NULL,
+    version_type       TEXT NOT NULL DEFAULT 'minor',
+    change_summary     TEXT NOT NULL DEFAULT '',
+    content_snapshot   JSONB NOT NULL DEFAULT '{}',
+    created_by_user_id TEXT,
+    created_at         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS atlas_decision_logs (
+    id                       TEXT PRIMARY KEY,
+    title                    TEXT NOT NULL,
+    decision_type            TEXT NOT NULL DEFAULT 'product',
+    context                  TEXT NOT NULL DEFAULT '',
+    decision                 TEXT NOT NULL DEFAULT '',
+    alternatives_considered  TEXT NOT NULL DEFAULT '',
+    consequences             TEXT NOT NULL DEFAULT '',
+    owner_user_id            TEXT,
+    status                   TEXT NOT NULL DEFAULT 'proposed',
+    linked_volume_ids        JSONB NOT NULL DEFAULT '[]',
+    linked_section_ids       JSONB NOT NULL DEFAULT '[]',
+    created_at               TEXT NOT NULL,
+    updated_at               TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS atlas_reviews (
+    id               TEXT PRIMARY KEY,
+    volume_id        TEXT NOT NULL,
+    section_id       TEXT,
+    reviewer_user_id TEXT,
+    status           TEXT NOT NULL DEFAULT 'pending',
+    comments         TEXT NOT NULL DEFAULT '',
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS atlas_comments (
+    id             TEXT PRIMARY KEY,
+    volume_id      TEXT NOT NULL,
+    section_id     TEXT,
+    author_user_id TEXT,
+    body           TEXT NOT NULL,
+    resolved       BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS atlas_glossary_terms (
+    id                TEXT PRIMARY KEY,
+    term              TEXT NOT NULL UNIQUE,
+    definition        TEXT NOT NULL DEFAULT '',
+    related_terms     JSONB NOT NULL DEFAULT '[]',
+    linked_volume_ids JSONB NOT NULL DEFAULT '[]',
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS atlas_attachments (
+    id                  TEXT PRIMARY KEY,
+    volume_id           TEXT NOT NULL,
+    section_id          TEXT,
+    filename            TEXT NOT NULL,
+    file_url            TEXT NOT NULL,
+    mime_type           TEXT,
+    uploaded_by_user_id TEXT,
+    created_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS atlas_audit_logs (
+    id            TEXT PRIMARY KEY,
+    actor_user_id TEXT,
+    action        TEXT NOT NULL,
+    target_type   TEXT NOT NULL,
+    target_id     TEXT,
+    before_state  JSONB NOT NULL DEFAULT '{}',
+    after_state   JSONB NOT NULL DEFAULT '{}',
+    metadata      JSONB NOT NULL DEFAULT '{}',
+    created_at    TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_availability_date ON availability(date);
@@ -421,6 +600,25 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events(actor_user_id)
 CREATE INDEX IF NOT EXISTS idx_audit_events_target ON audit_events(target_user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_events_type ON audit_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_events_entity ON audit_events(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_events_risk ON audit_events(risk_level);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_actor ON activity_logs(actor_user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_type ON activity_logs(event_type);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_target ON activity_logs(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_name ON analytics_events(event_name);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_user ON analytics_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_module ON analytics_events(module);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_created ON analytics_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_error_events_request ON error_events(request_id);
+CREATE INDEX IF NOT EXISTS idx_error_events_code ON error_events(code);
+CREATE INDEX IF NOT EXISTS idx_error_events_created ON error_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_atlas_volumes_slug ON atlas_volumes(slug);
+CREATE INDEX IF NOT EXISTS idx_atlas_volumes_status ON atlas_volumes(status);
+CREATE INDEX IF NOT EXISTS idx_atlas_sections_volume ON atlas_sections(volume_id);
+CREATE INDEX IF NOT EXISTS idx_atlas_versions_volume ON atlas_versions(volume_id);
+CREATE INDEX IF NOT EXISTS idx_atlas_decisions_status ON atlas_decision_logs(status);
+CREATE INDEX IF NOT EXISTS idx_atlas_reviews_volume ON atlas_reviews(volume_id);
+CREATE INDEX IF NOT EXISTS idx_atlas_glossary_term ON atlas_glossary_terms(term);
+CREATE INDEX IF NOT EXISTS idx_atlas_audit_target ON atlas_audit_logs(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_auth_provider ON users(auth_provider);
 CREATE INDEX IF NOT EXISTS idx_users_profile_type ON users(profile_type);

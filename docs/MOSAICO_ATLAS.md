@@ -1,0 +1,108 @@
+# Mosaico Atlas
+
+## Purpose
+
+Mosaico Atlas is the internal, version-controlled source of truth for product, business, engineering, operations, UX, security, analytics, investor, and roadmap documentation.
+
+## Routes
+
+- `/admin/atlas`: Atlas workspace.
+- `/admin/atlas/volumes/:slug`: volume detail and section editor.
+
+## Permissions
+
+- `atlas.view`: read approved Atlas content.
+- `atlas.manage`: full Atlas management.
+- `atlas.create`: create volumes.
+- `atlas.edit`: edit volumes and sections.
+- `atlas.delete`: delete Atlas content.
+- `atlas.review`: send/review content.
+- `atlas.approve`: approve or deprecate content.
+- `atlas.export`: export Atlas content.
+- `atlas.settings.manage`: manage Atlas settings.
+- `atlas.decision_log.manage`: manage decisions.
+- `atlas.glossary.manage`: manage glossary terms.
+- `atlas.audit.view`: view Atlas audit trail.
+
+Super Admin retains full access through wildcard permission.
+
+## Data Model
+
+Atlas uses these persistent tables:
+
+- `atlas_volumes`
+- `atlas_sections`
+- `atlas_versions`
+- `atlas_decision_logs`
+- `atlas_reviews`
+- `atlas_comments`
+- `atlas_glossary_terms`
+- `atlas_attachments`
+- `atlas_audit_logs`
+
+The backend also writes sensitive Atlas actions into the global `audit_events` table.
+
+## Seed Data
+
+Startup seeds 25 core volumes:
+
+0. Master Index & Decision Log
+1. Company Vision
+2. Market Intelligence
+3. Product Strategy
+4. Product Bible
+5. UX Bible
+6. Learning Economy
+7. User Personas
+8. Business Operations
+9. Technical Architecture
+10. Security
+11. AI Strategy
+12. Analytics
+13. Financial Model
+14. Go-To-Market
+15. Sales Playbook
+16. Customer Success
+17. Marketing
+18. Engineering Handbook
+19. Design System
+20. API Documentation
+21. Database Bible
+22. Deployment & DevOps
+23. Investor Relations
+24. Future Vision
+
+Each volume includes starter sections and one seeded version.
+
+## API
+
+- `GET /api/admin/atlas`
+- `GET /api/admin/atlas/search`
+- `GET /api/admin/atlas/volumes/{slug}`
+- `POST /api/admin/atlas/volumes`
+- `PATCH /api/admin/atlas/volumes/{volume_id}`
+- `POST /api/admin/atlas/volumes/{volume_id}/workflow`
+- `POST /api/admin/atlas/volumes/{volume_id}/versions`
+- `POST /api/admin/atlas/sections`
+- `POST /api/admin/atlas/decisions`
+- `POST /api/admin/atlas/glossary`
+- `DELETE /api/admin/atlas/glossary/{term_id}`
+- `PATCH /api/admin/atlas/settings`
+- `GET /api/admin/atlas/export`
+
+## Current Export Support
+
+- Atlas index as JSON.
+- Volume as JSON.
+- Volume/index as Markdown.
+
+PDF export is intentionally left as a future backend job because there is no existing connected PDF pipeline for the web app.
+
+## Next Improvements
+
+- Rich Markdown editor with side-by-side preview.
+- Version diff and restore UI.
+- Attachment upload backed by Supabase Storage.
+- Review assignment notifications.
+- PDF export job.
+- Cross-reference graph visualization.

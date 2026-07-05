@@ -1,11 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Link, NavLink, useLocation } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, NavLink, useLocation, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { trackEvent } from "../lib/analytics";
 import TeacherCalendarWorkspace from "../components/teacher-calendar/TeacherCalendarWorkspace";
 import AdminRbacWorkspace from "../components/admin-rbac/AdminRbacWorkspace";
+import ActivityTimeline from "../components/ActivityTimeline";
 import { useApp } from "../context/AppContext";
-import { canAccessPortal } from "../lib/access";
+import { canAccessPortal, hasPermission } from "../lib/access";
 import {
   Area,
   AreaChart,
@@ -20,6 +22,7 @@ import {
 } from "recharts";
 import {
   ArrowRight,
+  AlertTriangle,
   Award,
   BadgeCheck,
   Bell,
@@ -34,6 +37,7 @@ import {
   Coins,
   Clock,
   CreditCard,
+  FileSearch,
   FilePlus2,
   FileText,
   GraduationCap,
@@ -150,9 +154,14 @@ const roleNav = {
     ["teachers", "Teachers", GraduationCap],
     ["bookings", "Bookings", CalendarDays],
     ["families", "Families", ShieldCheck],
+    ["analytics", "Analytics", LineChart],
+    ["atlas", "Mosaico Atlas", BookOpen],
     ["reports", "Reports", LineChart],
     ["roles-permissions", "Roles & Access", ShieldCheck],
-    ["settings", "School Setup", Settings],
+    ["configuration", "Configuration", Settings],
+    ["audit-logs", "Audit Logs", FileSearch],
+    ["activity-logs", "Activity Logs", ClipboardCheck],
+    ["system-settings", "System Health", ShieldCheck],
   ],
 };
 
@@ -193,6 +202,49 @@ const trendData = [
   { day: "Sun", lessons: 6, classes: 1, xp: 110 },
 ];
 
+const productionBackedModules = {
+  admin: new Set(["users", "roles", "roles-permissions", "analytics", "atlas", "atlas-volume", "configuration", "audit-logs", "activity-logs", "system-settings"]),
+};
+
+function isProductionBackedModule(role, module = "dashboard") {
+  return productionBackedModules[role]?.has(module) || false;
+}
+
+function canAccessNavItem(user, role, slug) {
+  if (role !== "admin") return true;
+  const permissionBySlug = {
+    users: "users.profile.view",
+    roles: "roles.management.view",
+    "roles-permissions": "roles.management.view",
+    analytics: "reports.analytics.view",
+    atlas: "atlas.view",
+    "atlas-volume": "atlas.view",
+    configuration: "settings.platform.view",
+    "audit-logs": "audit.logs.view",
+    "activity-logs": "logs.activity.view",
+    "system-settings": "settings.platform.view",
+  };
+  const permission = permissionBySlug[slug];
+  return permission ? hasPermission(user, permission, 1) : true;
+}
+
+function PreviewSurfaceNotice({ role, module }) {
+  if (isProductionBackedModule(role, module)) return null;
+  return (
+    <div className="mb-5 rounded-lg border border-[#F4C13D] bg-[#FFF9E8] p-4 text-sm text-[#7A5600]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="font-semibold text-[#1F3B6E]">Preview service</p>
+          <p className="mt-1">
+            This workspace is isolated behind mock data while the backend domain is built. Actions show feedback but do not persist after refresh.
+          </p>
+        </div>
+        <Link to="/technical/wiki" className="shrink-0 font-semibold text-[#1F3B6E] hover:text-[#E8704C]">Implementation plan</Link>
+      </div>
+    </div>
+  );
+}
+
 function ActionButton({ children, doneText, className = "", variant = "default", disabled = false }) {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -201,22 +253,23 @@ function ActionButton({ children, doneText, className = "", variant = "default",
       variant={variant}
       disabled={disabled || loading || done}
       className={className}
+      title={disabled ? undefined : "Preview action: backend persistence is pending."}
       onClick={() => {
         setLoading(true);
         setTimeout(() => {
           setLoading(false);
           setDone(true);
-          toast.success(doneText);
+          toast.info(`${doneText} Preview only; backend persistence is pending.`);
         }, 650);
       }}
     >
-      {loading ? "Working..." : done ? <><Check size={16} className="mr-2" />Done</> : children}
+      {loading ? "Working..." : done ? <><Check size={16} className="mr-2" />Previewed</> : children}
     </Button>
   );
 }
 
-function Card({ children, className = "" }) {
-  return <div className={`rounded-lg border border-[#EFE4D0] bg-white p-5 shadow-sm ${className}`}>{children}</div>;
+function Card({ children, className = "", ...props }) {
+  return <div {...props} className={`rounded-lg border border-[#EFE4D0] bg-white p-5 shadow-sm ${className}`}>{children}</div>;
 }
 
 function MetricCard({ label, value, detail, icon: Icon, color = "#E8704C" }) {
@@ -268,7 +321,7 @@ function RoleSwitcher({ current }) {
   );
 }
 
-function PlatformShell({ role, children }) {
+function PlatformShell({ role, module = "dashboard", children }) {
   const location = useLocation();
   const { user, authLoading } = useApp();
   const meta = roleMeta[role];
@@ -282,6 +335,11 @@ function PlatformShell({ role, children }) {
     teacher: "This account does not have a teacher role or teacher calendar permission. Student-only users can use the client portal, but cannot open teacher operations.",
     admin: "This account does not have administrative roles or permissions. Student-only users can use the client portal, but cannot open school operations.",
   };
+
+  useEffect(() => {
+    if (!user || module !== "dashboard") return;
+    trackEvent("dashboard_viewed", { module: role, metadata: { path: location.pathname } });
+  }, [location.pathname, module, role, user]);
 
   if (!authLoading && !canAccessPortal(user, role)) {
     return (
@@ -307,7 +365,7 @@ function PlatformShell({ role, children }) {
           <Card className="p-3">
             <RoleSwitcher current={role} />
             <nav className="mt-4 grid gap-1">
-              {roleNav[role].map(([slug, label, Icon]) => {
+              {roleNav[role].filter(([slug]) => canAccessNavItem(user, role, slug)).map(([slug, label, Icon]) => {
                 const to = slug ? `${meta.base}/${slug}` : meta.base;
                 const active = location.pathname === to;
                 return (
@@ -341,6 +399,7 @@ function PlatformShell({ role, children }) {
               </Link>
             </div>
           </div>
+          <PreviewSurfaceNotice role={role} module={module} />
           {children}
         </section>
       </div>
@@ -495,7 +554,7 @@ function CourseMini({ course }) {
 
 export function StudentPortal({ module = "dashboard" }) {
   return (
-    <PlatformShell role="student">
+    <PlatformShell role="student" module={module}>
       {module === "dashboard" && <StudentDashboard />}
       {module === "learn" && <LearningHub />}
       {module === "roadmap" && <ClientRoadmap />}
@@ -1120,7 +1179,7 @@ function useTutorState() {
 export function TutorPortal({ module = "dashboard" }) {
   const tutorState = useTutorState();
   return (
-    <PlatformShell role="tutor">
+    <PlatformShell role="tutor" module={module}>
       <TutorStudentBar {...tutorState} />
       {module === "dashboard" && <TutorDashboard {...tutorState} />}
       {module === "students" && <TutorStudents {...tutorState} />}
@@ -1662,14 +1721,14 @@ function TutorPayments() {
           </div>
         ))}
       </div>
-      <ActionButton doneText="Invoice placeholder opened." variant="outline" className="mt-5">View invoice</ActionButton>
+      <ActionButton doneText="Invoice preview opened." variant="outline" className="mt-5">View invoice</ActionButton>
     </Card>
   );
 }
 
 export function TeacherPortal({ module = "dashboard" }) {
   return (
-    <PlatformShell role="teacher">
+    <PlatformShell role="teacher" module={module}>
       {module === "dashboard" && <TeacherDashboard />}
       {module === "calendar" && <TeacherCalendarWorkspace />}
       {module === "students" && <TeacherStudents />}
@@ -1813,7 +1872,7 @@ function TeacherEarnings() {
 
 export function AdminPortal({ module = "dashboard" }) {
   return (
-    <PlatformShell role="admin">
+    <PlatformShell role="admin" module={module}>
       {module === "dashboard" && <AdminDashboard />}
       {module === "approvals" && <AdminApprovals />}
       {module === "users" && <AdminUsersReal />}
@@ -1824,7 +1883,14 @@ export function AdminPortal({ module = "dashboard" }) {
       {module === "bookings" && <AdminBookings />}
       {module === "families" && <AdminFamilies />}
       {module === "reports" && <AdminReports />}
+      {module === "analytics" && <AdminAnalyticsDashboard />}
+      {module === "atlas" && <MosaicoAtlas />}
+      {module === "atlas-volume" && <MosaicoAtlasVolumeDetail />}
       {(module === "roles" || module === "roles-permissions") && <AdminRbacWorkspace />}
+      {module === "configuration" && <SuperAdminConfigurationCenter />}
+      {module === "audit-logs" && <AdminAuditLogs />}
+      {module === "activity-logs" && <AdminActivityLogs />}
+      {module === "system-settings" && <SystemHealthPanel />}
       {module === "settings" && <AdminSettings />}
     </PlatformShell>
   );
@@ -2261,6 +2327,599 @@ function AdminFamilies() {
   );
 }
 
+const atlasTabs = ["Volumes", "Master Index", "Decision Log", "Glossary", "Reviews", "Audit Trail", "Settings"];
+const statusTone = {
+  draft: "bg-[#EEF4FF] text-[#1F3B6E]",
+  review: "bg-[#FFF7E6] text-[#B76E00]",
+  approved: "bg-[#E7F7F3] text-[#08746D]",
+  deprecated: "bg-[#F2F4F7] text-[#5C6680]",
+  proposed: "bg-[#EEF4FF] text-[#1F3B6E]",
+  rejected: "bg-[#FFE7E2] text-[#B42318]",
+};
+
+function AtlasBadge({ value }) {
+  return <span className={`rounded-md px-2 py-1 text-xs font-semibold ${statusTone[value] || "bg-[#FBF7EE] text-[#5C6680]"}`}>{value || "draft"}</span>;
+}
+
+function AtlasField({ label, children }) {
+  return <label className="block"><span className="text-sm font-semibold text-[#1F3B6E]">{label}</span><div className="mt-2">{children}</div></label>;
+}
+
+function AtlasModal({ title, children, onClose, onSubmit, loading, submitLabel = "Save" }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1F3B6E]/40 p-4" role="dialog" aria-modal="true">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="font-display text-2xl text-[#1F3B6E]">{title}</h2>
+          <button aria-label="Close" onClick={onClose} className="rounded-md px-2 py-1 text-[#5C6680] hover:bg-[#FBF7EE]">x</button>
+        </div>
+        <div className="mt-5 grid gap-4">{children}</div>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={loading} onClick={onSubmit} className="bg-[#E8704C] text-white disabled:opacity-50">{loading ? "Saving..." : submitLabel}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MosaicoAtlas() {
+  const { user } = useApp();
+  const [data, setData] = useState(null);
+  const [activeTab, setActiveTab] = useState("Volumes");
+  const [filters, setFilters] = useState({ q: "", status: "all", visibility: "all", priority: "all" });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const canManage = hasPermission(user, "atlas.manage", 5);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await api.get("/admin/atlas");
+      setData(res.data);
+    } catch (err) {
+      setError(err.appError?.message || "Could not load Mosaico Atlas.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const volumes = useMemo(() => {
+    const needle = filters.q.toLowerCase();
+    return (data?.volumes || []).filter((volume) => {
+      const haystack = `${volume.title} ${volume.description} ${(volume.tags || []).join(" ")}`.toLowerCase();
+      return (!needle || haystack.includes(needle)) &&
+        (filters.status === "all" || volume.status === filters.status) &&
+        (filters.visibility === "all" || volume.visibility === filters.visibility) &&
+        (filters.priority === "all" || volume.priority === filters.priority);
+    });
+  }, [data, filters]);
+
+  const openModal = (type, initial = {}) => {
+    setForm(initial);
+    setModal(type);
+  };
+
+  const saveVolume = async () => {
+    if (!form.title?.trim()) return toast.error("Title is required.");
+    setSaving(true);
+    try {
+      const payload = { ...form, tags: String(form.tags || "").split(",").map((item) => item.trim()).filter(Boolean), createDraft: true };
+      if (form.id && modal === "editVolume") {
+        await api.patch(`/admin/atlas/volumes/${form.id}`, payload);
+        toast.success("Atlas volume updated.");
+      } else {
+        const { id, slug, current_version, approved_at, deprecated_at, created_at, updated_at, ...createPayload } = payload;
+        await api.post("/admin/atlas/volumes", createPayload);
+        toast.success("Atlas volume created.");
+      }
+      setModal(null);
+      await load();
+    } catch (err) {
+      toast.error(err.appError?.message || "Could not save volume.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDecision = async () => {
+    if (!form.title?.trim()) return toast.error("Decision title is required.");
+    setSaving(true);
+    try {
+      await api.post("/admin/atlas/decisions", form);
+      toast.success("Decision saved.");
+      setModal(null);
+      await load();
+    } catch (err) {
+      toast.error(err.appError?.message || "Could not save decision.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveGlossary = async () => {
+    if (!form.term?.trim()) return toast.error("Term is required.");
+    setSaving(true);
+    try {
+      await api.post("/admin/atlas/glossary", form);
+      toast.success("Glossary term saved.");
+      setModal(null);
+      await load();
+    } catch (err) {
+      toast.error(err.appError?.message || "Could not save glossary term.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const workflow = async (volume, action, confirmCritical = false) => {
+    setSaving(true);
+    try {
+      await api.post(`/admin/atlas/volumes/${volume.id}/workflow`, { action, confirmCritical, critical: action === "approve" });
+      toast.success(`Atlas volume ${action.replace("_", " ")} complete.`);
+      await load();
+    } catch (err) {
+      toast.error(err.appError?.message || "Could not update workflow.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const newVersion = async (volume) => {
+    setSaving(true);
+    try {
+      await api.post(`/admin/atlas/volumes/${volume.id}/versions`, { version_type: "minor", change_summary: "New draft version from Atlas UI." });
+      toast.success("New draft version created.");
+      await load();
+    } catch (err) {
+      toast.error(err.appError?.message || "Could not create version.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportAtlas = async (format = "json") => {
+    try {
+      const res = await api.get("/admin/atlas/export", { params: { format }, responseType: format === "markdown" ? "text" : "json" });
+      const content = format === "markdown" ? res.data : JSON.stringify(res.data, null, 2);
+      const blob = new Blob([content], { type: format === "markdown" ? "text/markdown" : "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mosaico-atlas.${format === "markdown" ? "md" : "json"}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Atlas export prepared.");
+    } catch (err) {
+      toast.error(err.appError?.message || "Could not export Atlas.");
+    }
+  };
+
+  if (loading) return <Card><div className="h-40 animate-pulse rounded-lg bg-[#FBF7EE]" /><p className="mt-3 text-sm text-[#5C6680]">Loading Mosaico Atlas...</p></Card>;
+  if (error) return <Card><p className="text-sm text-[#B42318]" role="alert">{error}</p><Button onClick={load} className="mt-4">Retry</Button></Card>;
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">Super Admin System</p>
+            <h2 className="mt-2 font-display text-3xl text-[#1F3B6E]">Mosaico Atlas</h2>
+            <p className="mt-2 max-w-3xl text-sm text-[#5C6680]">Version-controlled operating documentation for the Mosaico company and platform.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={!canManage} onClick={() => openModal("volume", { visibility: "internal", priority: "medium" })} className="bg-[#E8704C] text-white disabled:opacity-50">New Volume</Button>
+            <Button disabled={!canManage} onClick={() => openModal("decision", { decision_type: "product", status: "proposed" })} variant="outline">New Decision</Button>
+            <Button disabled={!hasPermission(user, "atlas.export", 4)} onClick={() => exportAtlas("json")} variant="outline">Export Atlas</Button>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-[1fr_repeat(3,160px)]">
+          <input aria-label="Search Atlas" value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} placeholder="Search volumes, tags, decisions, glossary" className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" />
+          <select aria-label="Status filter" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm"><option value="all">All status</option><option value="draft">Draft</option><option value="review">Review</option><option value="approved">Approved</option><option value="deprecated">Deprecated</option></select>
+          <select aria-label="Visibility filter" value={filters.visibility} onChange={(e) => setFilters({ ...filters, visibility: e.target.value })} className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm"><option value="all">All visibility</option><option value="super_admin_only">Super Admin</option><option value="internal">Internal</option><option value="investor_ready">Investor</option><option value="public_ready">Public</option></select>
+          <select aria-label="Priority filter" value={filters.priority} onChange={(e) => setFilters({ ...filters, priority: e.target.value })} className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm"><option value="all">All priority</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+        </div>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-7">
+        {Object.entries(data?.metrics || {}).map(([key, value]) => <MetricCard key={key} label={key.replaceAll("_", " ")} value={value} icon={BookOpen} color={key.includes("approved") ? "#2DA89F" : "#E8704C"} />)}
+      </div>
+
+      <Card>
+        <div className="flex gap-2 overflow-x-auto pb-2">
+          {atlasTabs.map((tab) => <Button key={tab} onClick={() => setActiveTab(tab)} variant={activeTab === tab ? "default" : "outline"} className={activeTab === tab ? "bg-[#1F3B6E] text-white" : "border-[#EFE4D0]"}>{tab}</Button>)}
+        </div>
+
+        {activeTab === "Volumes" && (
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            {volumes.map((volume) => (
+              <div key={volume.id} className="rounded-lg border border-[#EFE4D0] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5C6680]">Volume {String(volume.number).padStart(2, "0")}</p>
+                    <h3 className="mt-1 font-display text-xl text-[#1F3B6E]">{volume.title}</h3>
+                    <p className="mt-2 text-sm text-[#5C6680]">{volume.description}</p>
+                  </div>
+                  <AtlasBadge value={volume.status} />
+                </div>
+                <div className="mt-4 grid gap-2 text-xs text-[#5C6680] sm:grid-cols-3">
+                  <span>v{volume.current_version}</span><span>{volume.owner_role}</span><span>{volume.visibility}</span><span>{volume.estimated_pages} pages</span><span>{volume.priority}</span><span>{volume.updated_at?.slice(0, 10)}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">{(volume.tags || []).map((tag) => <span key={tag} className="rounded-md bg-[#FBF7EE] px-2 py-1 text-xs text-[#1F3B6E]">{tag}</span>)}</div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link to={`/admin/atlas/volumes/${volume.slug}`}><Button size="sm" className="bg-[#1F3B6E] text-white">Open</Button></Link>
+                  <Button size="sm" variant="outline" disabled={!canManage} onClick={() => openModal("editVolume", { ...volume, tags: (volume.tags || []).join(", ") })}>Edit</Button>
+                  <Button size="sm" variant="outline" disabled={!canManage} onClick={() => openModal("volume", { ...volume, id: undefined, slug: undefined, number: undefined, title: `${volume.title} Copy`, tags: (volume.tags || []).join(", ") })}>Duplicate</Button>
+                  <Button size="sm" variant="outline" disabled={!canManage || saving} onClick={() => newVersion(volume)}>New version</Button>
+                  <Button size="sm" variant="outline" disabled={!canManage || saving} onClick={() => workflow(volume, "send_review")}>Send to review</Button>
+                  <Button size="sm" variant="outline" disabled={!hasPermission(user, "atlas.approve", 5) || saving} onClick={() => workflow(volume, "approve", true)}>Approve</Button>
+                  <Button size="sm" variant="outline" disabled={!hasPermission(user, "atlas.approve", 5) || saving} onClick={() => workflow(volume, "deprecate")}>Deprecate</Button>
+                </div>
+              </div>
+            ))}
+            {volumes.length === 0 && <p className="rounded-lg bg-[#FBF7EE] p-5 text-sm text-[#5C6680]">No Atlas volumes match these filters.</p>}
+          </div>
+        )}
+
+        {activeTab === "Master Index" && <div className="mt-5 grid gap-3">{(data?.volumes || []).map((volume) => <Link key={volume.id} to={`/admin/atlas/volumes/${volume.slug}`} className="rounded-lg border border-[#EFE4D0] p-3 text-sm font-semibold text-[#1F3B6E] hover:bg-[#FBF7EE]">Volume {String(volume.number).padStart(2, "0")} - {volume.title}</Link>)}</div>}
+
+        {activeTab === "Decision Log" && <AtlasList title="Decision Log" items={data?.decisions || []} empty="No decisions yet." render={(item) => <><div><p className="font-semibold text-[#1F3B6E]">{item.title}</p><p className="text-sm text-[#5C6680]">{item.decision || item.context}</p></div><AtlasBadge value={item.status} /></>} action={canManage && <Button onClick={() => openModal("decision", { decision_type: "product", status: "proposed" })}>New Decision</Button>} />}
+        {activeTab === "Glossary" && <AtlasList title="Glossary" items={data?.glossary || []} empty="No glossary terms yet." render={(item) => <><div><p className="font-semibold text-[#1F3B6E]">{item.term}</p><p className="text-sm text-[#5C6680]">{item.definition}</p></div><Button size="sm" disabled={!canManage} onClick={() => openModal("glossary", item)} variant="outline">Edit</Button></>} action={canManage && <Button onClick={() => openModal("glossary", {})}>New Term</Button>} />}
+        {activeTab === "Reviews" && <AtlasList title="Reviews" items={data?.reviews || []} empty="No pending reviews." render={(item) => <><div><p className="font-semibold text-[#1F3B6E]">{item.volume_id}</p><p className="text-sm text-[#5C6680]">{item.comments || "Review requested"}</p></div><AtlasBadge value={item.status} /></>} />}
+        {activeTab === "Audit Trail" && <div className="mt-5"><ActivityTimeline items={(data?.audit || []).map((item) => ({ ...item, summary: item.action }))} emptyText="No Atlas audit events yet." /></div>}
+        {activeTab === "Settings" && <AtlasSettings settings={data?.settings} canManage={canManage} onSaved={load} />}
+      </Card>
+
+      {(modal === "volume" || modal === "editVolume") && (
+        <AtlasModal title={modal === "editVolume" ? "Edit Atlas Volume" : "New Atlas Volume"} onClose={() => setModal(null)} onSubmit={saveVolume} loading={saving}>
+          <AtlasField label="Title"><input value={form.title || ""} onChange={(e) => setForm({ ...form, title: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3" /></AtlasField>
+          <AtlasField label="Description"><textarea value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} className="min-h-24 w-full rounded-md border border-[#EFE4D0] p-3" /></AtlasField>
+          <div className="grid gap-4 md:grid-cols-3">
+            <AtlasField label="Visibility"><select value={form.visibility || "internal"} onChange={(e) => setForm({ ...form, visibility: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3"><option value="super_admin_only">Super Admin</option><option value="internal">Internal</option><option value="investor_ready">Investor ready</option><option value="public_ready">Public ready</option></select></AtlasField>
+            <AtlasField label="Priority"><select value={form.priority || "medium"} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3"><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></AtlasField>
+            <AtlasField label="Tags"><input value={form.tags || ""} onChange={(e) => setForm({ ...form, tags: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3" placeholder="product, strategy" /></AtlasField>
+          </div>
+        </AtlasModal>
+      )}
+      {modal === "decision" && (
+        <AtlasModal title="Atlas Decision" onClose={() => setModal(null)} onSubmit={saveDecision} loading={saving}>
+          <AtlasField label="Title"><input value={form.title || ""} onChange={(e) => setForm({ ...form, title: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3" /></AtlasField>
+          <div className="grid gap-4 md:grid-cols-2">
+            <AtlasField label="Type"><select value={form.decision_type || "product"} onChange={(e) => setForm({ ...form, decision_type: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3"><option value="product">Product</option><option value="technical">Technical</option><option value="business">Business</option><option value="security">Security</option><option value="UX">UX</option><option value="operations">Operations</option><option value="finance">Finance</option><option value="GTM">GTM</option></select></AtlasField>
+            <AtlasField label="Status"><select value={form.status || "proposed"} onChange={(e) => setForm({ ...form, status: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3"><option value="proposed">Proposed</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="superseded">Superseded</option></select></AtlasField>
+          </div>
+          <AtlasField label="Context"><textarea value={form.context || ""} onChange={(e) => setForm({ ...form, context: e.target.value })} className="min-h-20 w-full rounded-md border border-[#EFE4D0] p-3" /></AtlasField>
+          <AtlasField label="Decision"><textarea value={form.decision || ""} onChange={(e) => setForm({ ...form, decision: e.target.value })} className="min-h-20 w-full rounded-md border border-[#EFE4D0] p-3" /></AtlasField>
+        </AtlasModal>
+      )}
+      {modal === "glossary" && (
+        <AtlasModal title="Glossary Term" onClose={() => setModal(null)} onSubmit={saveGlossary} loading={saving}>
+          <AtlasField label="Term"><input value={form.term || ""} onChange={(e) => setForm({ ...form, term: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3" /></AtlasField>
+          <AtlasField label="Definition"><textarea value={form.definition || ""} onChange={(e) => setForm({ ...form, definition: e.target.value })} className="min-h-24 w-full rounded-md border border-[#EFE4D0] p-3" /></AtlasField>
+        </AtlasModal>
+      )}
+    </div>
+  );
+}
+
+function AtlasList({ title, items, empty, render, action }) {
+  return (
+    <div className="mt-5">
+      <div className="flex items-center justify-between gap-3"><h3 className="font-display text-xl text-[#1F3B6E]">{title}</h3>{action}</div>
+      <div className="mt-4 grid gap-3">
+        {items.map((item) => <div key={item.id} className="flex items-start justify-between gap-4 rounded-lg border border-[#EFE4D0] p-4">{render(item)}</div>)}
+        {items.length === 0 && <p className="rounded-lg bg-[#FBF7EE] p-4 text-sm text-[#5C6680]">{empty}</p>}
+      </div>
+    </div>
+  );
+}
+
+function AtlasSettings({ settings = {}, canManage, onSaved }) {
+  const [draft, setDraft] = useState(settings || {});
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.patch("/admin/atlas/settings", draft);
+      toast.success("Atlas settings saved.");
+      await onSaved();
+    } catch (err) {
+      toast.error(err.appError?.message || "Could not save Atlas settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="mt-5 grid gap-4 md:grid-cols-2">
+      <AtlasField label="Default visibility"><select disabled={!canManage} value={draft.default_visibility || "internal"} onChange={(e) => setDraft({ ...draft, default_visibility: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3"><option value="super_admin_only">Super Admin</option><option value="internal">Internal</option><option value="investor_ready">Investor ready</option><option value="public_ready">Public ready</option></select></AtlasField>
+      <AtlasField label="Required approvers"><input disabled={!canManage} type="number" value={draft.required_approvers || 1} onChange={(e) => setDraft({ ...draft, required_approvers: Number(e.target.value) })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3" /></AtlasField>
+      <AtlasField label="Versioning policy"><input disabled={!canManage} value={draft.versioning_policy || "semantic"} onChange={(e) => setDraft({ ...draft, versioning_policy: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3" /></AtlasField>
+      <AtlasField label="Export formats"><input disabled={!canManage} value={(draft.export_formats_enabled || ["markdown", "json"]).join(", ")} onChange={(e) => setDraft({ ...draft, export_formats_enabled: e.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3" /></AtlasField>
+      <div className="md:col-span-2 flex justify-end"><Button disabled={!canManage || saving} onClick={save} className="bg-[#E8704C] text-white disabled:opacity-50">{saving ? "Saving..." : "Save settings"}</Button></div>
+    </div>
+  );
+}
+
+function MarkdownPreview({ content }) {
+  const lines = String(content || "No content yet.").split("\n");
+  return (
+    <div className="space-y-2 rounded-lg bg-[#FBF7EE] p-4 text-sm leading-6 text-[#1F3B6E]">
+      {lines.map((line, index) => {
+        if (line.startsWith("### ")) return <h4 key={index} className="font-display text-lg">{line.slice(4)}</h4>;
+        if (line.startsWith("## ")) return <h3 key={index} className="font-display text-xl">{line.slice(3)}</h3>;
+        if (line.startsWith("# ")) return <h2 key={index} className="font-display text-2xl">{line.slice(2)}</h2>;
+        if (line.startsWith("- ")) return <p key={index} className="pl-4">- {line.slice(2)}</p>;
+        if (!line.trim()) return <div key={index} className="h-1" />;
+        return <p key={index}>{line.replaceAll("**", "")}</p>;
+      })}
+    </div>
+  );
+}
+
+function MosaicoAtlasVolumeDetail() {
+  const { slug } = useParams();
+  const { user } = useApp();
+  const [volume, setVolume] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const canEdit = hasPermission(user, "atlas.edit", 5);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await api.get(`/admin/atlas/volumes/${slug}`);
+      setVolume(res.data);
+    } catch (err) {
+      setError(err.appError?.message || "Could not load Atlas volume.");
+    } finally {
+      setLoading(false);
+    }
+  }, [slug]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const saveSection = async () => {
+    if (!form.title?.trim()) return toast.error("Section title is required.");
+    setSaving(true);
+    try {
+      await api.post("/admin/atlas/sections", { ...form, volume_id: volume.id });
+      toast.success("Section saved.");
+      setModal(null);
+      await load();
+    } catch (err) {
+      toast.error(err.appError?.message || "Could not save section.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportVolume = async (format) => {
+    try {
+      const res = await api.get("/admin/atlas/export", { params: { format, volume_id: volume.id }, responseType: format === "markdown" ? "text" : "json" });
+      const content = format === "markdown" ? res.data : JSON.stringify(res.data, null, 2);
+      const blob = new Blob([content], { type: format === "markdown" ? "text/markdown" : "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${volume.slug}.${format === "markdown" ? "md" : "json"}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Volume export prepared.");
+    } catch (err) {
+      toast.error(err.appError?.message || "Could not export volume.");
+    }
+  };
+
+  if (loading) return <Card><div className="h-40 animate-pulse rounded-lg bg-[#FBF7EE]" /></Card>;
+  if (error) return <Card><p className="text-sm text-[#B42318]" role="alert">{error}</p><Button onClick={load} className="mt-4">Retry</Button></Card>;
+  if (!volume) return <Card><p>No volume found.</p></Card>;
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <Link to="/admin/atlas" className="text-sm font-semibold text-[#E8704C]">Back to Atlas</Link>
+            <h2 className="mt-2 font-display text-3xl text-[#1F3B6E]">Volume {String(volume.number).padStart(2, "0")} - {volume.title}</h2>
+            <p className="mt-2 text-sm text-[#5C6680]">{volume.description}</p>
+            <div className="mt-3 flex flex-wrap gap-2"><AtlasBadge value={volume.status} /><span className="rounded-md bg-[#FBF7EE] px-2 py-1 text-xs">v{volume.current_version}</span><span className="rounded-md bg-[#FBF7EE] px-2 py-1 text-xs">{volume.visibility}</span></div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={!canEdit} onClick={() => { setForm({ status: "draft", order_index: (volume.sections || []).length + 1 }); setModal("section"); }} className="bg-[#E8704C] text-white disabled:opacity-50">Add Section</Button>
+            <Button variant="outline" onClick={() => exportVolume("markdown")}>Export Markdown</Button>
+            <Button variant="outline" onClick={() => exportVolume("json")}>Export JSON</Button>
+          </div>
+        </div>
+      </Card>
+
+      <div className="grid gap-5 xl:grid-cols-[260px_1fr_320px]">
+        <Card>
+          <h3 className="font-display text-xl text-[#1F3B6E]">Table of contents</h3>
+          <div className="mt-4 grid gap-2">{(volume.sections || []).map((section) => <a key={section.id} href={`#${section.slug}`} className="rounded-md px-2 py-1 text-sm text-[#1F3B6E] hover:bg-[#FBF7EE]">{section.title}</a>)}</div>
+          <h3 className="mt-6 font-display text-lg text-[#1F3B6E]">Linked volumes</h3>
+          <p className="mt-2 text-sm text-[#5C6680]">{(volume.linked_volume_ids || []).length || 0} linked volumes</p>
+        </Card>
+        <div className="space-y-4">
+          {(volume.sections || []).map((section) => (
+            <Card key={section.id} id={section.slug}>
+              <div className="flex items-start justify-between gap-3">
+                <div><h3 className="font-display text-2xl text-[#1F3B6E]">{section.title}</h3><p className="mt-1 text-sm text-[#5C6680]">{section.summary}</p></div>
+                <Button variant="outline" disabled={!canEdit || volume.status === "approved"} onClick={() => { setForm(section); setModal("section"); }}>Edit</Button>
+              </div>
+              <div className="mt-4"><MarkdownPreview content={section.content_markdown} /></div>
+            </Card>
+          ))}
+          {(volume.sections || []).length === 0 && <Card><p className="text-sm text-[#5C6680]">No sections yet. Add the first section to start this volume.</p></Card>}
+        </div>
+        <div className="space-y-5">
+          <Card><h3 className="font-display text-xl text-[#1F3B6E]">Metadata</h3><div className="mt-3 grid gap-2 text-sm text-[#5C6680]"><p>Owner: {volume.owner_role}</p><p>Priority: {volume.priority}</p><p>Estimated pages: {volume.estimated_pages}</p><p>Updated: {volume.updated_at}</p></div></Card>
+          <Card><h3 className="font-display text-xl text-[#1F3B6E]">Version history</h3><div className="mt-3 grid gap-2">{(volume.versions || []).map((version) => <div key={version.id} className="rounded-md bg-[#FBF7EE] p-3 text-sm"><p className="font-semibold">v{version.version}</p><p className="text-[#5C6680]">{version.change_summary}</p></div>)}</div></Card>
+          <Card><h3 className="font-display text-xl text-[#1F3B6E]">Audit summary</h3><ActivityTimeline items={(volume.audit || []).slice(0, 5).map((item) => ({ ...item, summary: item.action }))} emptyText="No audit events yet." /></Card>
+        </div>
+      </div>
+
+      {modal === "section" && (
+        <AtlasModal title="Atlas Section" onClose={() => setModal(null)} onSubmit={saveSection} loading={saving}>
+          <AtlasField label="Title"><input value={form.title || ""} onChange={(e) => setForm({ ...form, title: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3" /></AtlasField>
+          <div className="grid gap-4 md:grid-cols-2">
+            <AtlasField label="Status"><select value={form.status || "draft"} onChange={(e) => setForm({ ...form, status: e.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3"><option value="draft">Draft</option><option value="review">Review</option><option value="approved">Approved</option><option value="deprecated">Deprecated</option></select></AtlasField>
+            <AtlasField label="Order"><input type="number" value={form.order_index || 0} onChange={(e) => setForm({ ...form, order_index: Number(e.target.value) })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3" /></AtlasField>
+          </div>
+          <AtlasField label="Summary"><textarea value={form.summary || ""} onChange={(e) => setForm({ ...form, summary: e.target.value })} className="min-h-20 w-full rounded-md border border-[#EFE4D0] p-3" /></AtlasField>
+          <AtlasField label="Markdown content"><textarea value={form.content_markdown || ""} onChange={(e) => setForm({ ...form, content_markdown: e.target.value })} className="min-h-56 w-full rounded-md border border-[#EFE4D0] p-3 font-mono text-sm" /></AtlasField>
+        </AtlasModal>
+      )}
+    </div>
+  );
+}
+
+const analyticsMetricLabels = {
+  active_users: "Active users",
+  classes_booked: "Classes booked",
+  classes_completed: "Classes completed",
+  cancellation_rate: "Cancellation rate",
+  no_show_rate: "No-show rate",
+  credits_purchased: "Credits purchased",
+  credits_used: "Credits used",
+  teacher_utilization: "Teacher utilization",
+  student_engagement: "Student engagement",
+  empty_slots: "Empty slots",
+  booking_conversion: "Booking conversion",
+};
+
+function AdminAnalyticsDashboard() {
+  const [data, setData] = useState(null);
+  const [filters, setFilters] = useState({ date_from: "", date_to: "", role: "all", status: "all", module: "all" });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const params = Object.fromEntries(Object.entries(filters).filter(([, value]) => value && value !== "all"));
+      const res = await api.get("/admin/analytics/overview", { params });
+      setData(res.data);
+    } catch (err) {
+      setError(err.appError?.message || err.response?.data?.detail || "Could not load analytics.");
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const metrics = data?.metrics || {};
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <SectionHeader eyebrow="Product analytics" title="Platform Analytics" action={<Button onClick={load} disabled={loading} variant="outline" className="border-[#EFE4D0]">{loading ? "Refreshing..." : "Refresh"}</Button>} />
+        <div className="mt-5 grid gap-3 md:grid-cols-5">
+          <input aria-label="Date from" type="date" value={filters.date_from} onChange={(e) => setFilters({ ...filters, date_from: e.target.value })} className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" />
+          <input aria-label="Date to" type="date" value={filters.date_to} onChange={(e) => setFilters({ ...filters, date_to: e.target.value })} className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" />
+          <select aria-label="Role filter" value={filters.role} onChange={(e) => setFilters({ ...filters, role: e.target.value })} className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]">
+            <option value="all">All roles</option>
+            <option value="alumno">Student</option>
+            <option value="tutor_padre">Tutor / Parent</option>
+            <option value="profesor">Teacher</option>
+            <option value="administrador_profesor">Admin</option>
+          </select>
+          <select aria-label="Status filter" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]">
+            <option value="all">All statuses</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="no_show">No-show</option>
+          </select>
+          <select aria-label="Module filter" value={filters.module} onChange={(e) => setFilters({ ...filters, module: e.target.value })} className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]">
+            <option value="all">All modules</option>
+            <option value="student">Student</option>
+            <option value="teacher">Teacher</option>
+            <option value="booking">Booking</option>
+            <option value="credits">Credits</option>
+            <option value="rbac">RBAC</option>
+            <option value="settings">Settings</option>
+          </select>
+        </div>
+        {error && <p className="mt-4 rounded-lg bg-[#FFE7E2] p-4 text-sm text-[#B42318]" role="alert">{error}</p>}
+      </Card>
+
+      {loading && <div className="grid gap-4 md:grid-cols-4">{[0, 1, 2, 3].map((item) => <div key={item} className="h-28 animate-pulse rounded-lg bg-white" />)}</div>}
+
+      {!loading && !error && (
+        <>
+          <div className="grid gap-4 md:grid-cols-4">
+            {Object.entries(analyticsMetricLabels).map(([key, label]) => (
+              <MetricCard key={key} label={label} value={`${metrics[key] ?? 0}${key.includes("rate") || key.includes("utilization") || key.includes("engagement") || key.includes("conversion") ? "%" : ""}`} detail="Current filter window" icon={LineChart} color={key.includes("rate") ? "#E8704C" : "#2DA89F"} />
+            ))}
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Card>
+              <h3 className="font-display text-xl text-[#1F3B6E]">Feature usage</h3>
+              <div className="mt-4 space-y-3">
+                {(data?.feature_usage || []).slice(0, 8).map((item) => (
+                  <div key={item.name} className="flex items-center justify-between rounded-lg bg-[#FBF7EE] px-3 py-2 text-sm">
+                    <span className="font-semibold text-[#1F3B6E]">{item.name}</span>
+                    <span className="text-[#5C6680]">{item.count}</span>
+                  </div>
+                ))}
+                {(data?.feature_usage || []).length === 0 && <p className="rounded-lg bg-[#FBF7EE] p-4 text-sm text-[#5C6680]">No analytics events match these filters.</p>}
+              </div>
+            </Card>
+
+            <Card>
+              <h3 className="font-display text-xl text-[#1F3B6E]">Top teachers</h3>
+              <div className="mt-4 space-y-3">
+                {(data?.top_teachers || []).map((teacher) => (
+                  <div key={teacher.teacher_id} className="flex items-center justify-between rounded-lg border border-[#EFE4D0] px-3 py-2 text-sm">
+                    <span className="font-semibold text-[#1F3B6E]">{teacher.teacher_name}</span>
+                    <span className="text-[#5C6680]">{teacher.classes} classes · {teacher.completed} completed</span>
+                  </div>
+                ))}
+                {(data?.top_teachers || []).length === 0 && <p className="rounded-lg bg-[#FBF7EE] p-4 text-sm text-[#5C6680]">No teacher activity yet.</p>}
+              </div>
+            </Card>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Card>
+              <h3 className="font-display text-xl text-[#1F3B6E]">Students with unused credits</h3>
+              <div className="mt-4 space-y-3">
+                {(data?.students_with_unused_credits || []).map((student) => (
+                  <div key={student.user_id} className="flex items-center justify-between rounded-lg bg-[#FBF7EE] px-3 py-2 text-sm">
+                    <span className="font-semibold text-[#1F3B6E]">{student.name || student.email}</span>
+                    <span className="text-[#5C6680]">{student.estimated_unused_credits} credits</span>
+                  </div>
+                ))}
+                {(data?.students_with_unused_credits || []).length === 0 && <p className="rounded-lg bg-[#FBF7EE] p-4 text-sm text-[#5C6680]">No unused credit balances detected.</p>}
+              </div>
+            </Card>
+
+            <Card>
+              <h3 className="font-display text-xl text-[#1F3B6E]">Recent activity</h3>
+              <div className="mt-4">
+                <ActivityTimeline items={data?.recent_activity || []} emptyText="No recent activity recorded." />
+              </div>
+            </Card>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AdminReports({ compact = false }) {
   const chartData = useMemo(() => schoolReports.map((item) => ({ ...item, chartValue: item.value })), []);
   return (
@@ -2405,6 +3064,309 @@ function AdminRolesAccess() {
   );
 }
 
+function ConfirmDialog({ title, body, confirmLabel = "Confirm", onConfirm, onClose }) {
+  return (
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-[#10213F]/45 p-4">
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-[#FFF0E6] p-2 text-[#E8704C]"><AlertTriangle size={20} /></div>
+          <div>
+            <h2 className="font-display text-2xl text-[#1F3B6E]">{title}</h2>
+            <p className="mt-2 text-sm text-[#5C6680]">{body}</p>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={onConfirm} className="bg-[#E8704C] text-white hover:bg-[#C95630]">{confirmLabel}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const configSections = [
+  ["general", "General platform"],
+  ["feature_flags", "Feature flags"],
+  ["booking_rules", "Booking rules"],
+  ["credit_rules", "Credit rules"],
+  ["cancellation_policy", "Cancellation policy"],
+  ["teacher_availability_rules", "Teacher availability"],
+  ["student_scheduling_rules", "Student scheduling"],
+  ["notification_settings", "Notifications"],
+  ["role_defaults", "Role defaults"],
+];
+
+function parseConfigValue(value, raw) {
+  if (Array.isArray(value)) return raw.split(",").map((item) => Number(item.trim())).filter((item) => !Number.isNaN(item));
+  if (typeof value === "number") return Number(raw);
+  if (typeof value === "boolean") return raw === true || raw === "true";
+  return raw;
+}
+
+function SuperAdminConfigurationCenter() {
+  const [data, setData] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [health, setHealth] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [confirm, setConfirm] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [settingsRes, healthRes] = await Promise.all([
+        api.get("/admin/configuration/settings"),
+        api.get("/admin/system-health"),
+      ]);
+      setData(settingsRes.data);
+      setDraft(settingsRes.data);
+      setHealth(healthRes.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Could not load platform configuration.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const updateConfig = (section, key, value) => {
+    setDraft((current) => ({
+      ...current,
+      platform_config: {
+        ...current.platform_config,
+        [section]: { ...current.platform_config[section], [key]: value },
+      },
+    }));
+  };
+
+  const updateBranding = (key, value) => {
+    setDraft((current) => ({ ...current, public_branding: { ...current.public_branding, [key]: value } }));
+  };
+
+  const validate = () => {
+    const config = draft?.platform_config || {};
+    if (!config.general?.platform_name?.trim()) return "Platform name is required.";
+    if (Number(config.booking_rules?.max_days_ahead || 0) < 1) return "Max days ahead must be at least 1.";
+    if (!config.teacher_availability_rules?.allowed_durations?.length) return "At least one class duration is required.";
+    return "";
+  };
+
+  const persist = async () => {
+    const validation = validate();
+    if (validation) {
+      toast.error(validation);
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.patch("/admin/configuration/settings", draft);
+      setData(res.data);
+      setDraft(res.data);
+      toast.success("Platform configuration saved.");
+      await load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not save configuration.");
+    } finally {
+      setSaving(false);
+      setConfirm(null);
+    }
+  };
+
+  if (loading) return <Card><div className="h-40 animate-pulse rounded-lg bg-[#FBF7EE]" /><p className="mt-3 text-sm text-[#5C6680]">Loading configuration...</p></Card>;
+  if (error) return <Card><p className="text-sm text-[#B42318]">{error}</p><Button onClick={load} className="mt-4">Retry</Button></Card>;
+  if (!draft) return <Card><p className="text-sm text-[#5C6680]">No configuration found.</p></Card>;
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard label="Maintenance" value={draft.platform_config.general.maintenance_mode ? "On" : "Off"} detail="Controls public operational mode" icon={Settings} />
+        <MetricCard label="Active flags" value={Object.values(draft.platform_config.feature_flags || {}).filter(Boolean).length} detail="Enabled platform features" icon={ShieldCheck} color="#2DA89F" />
+        <MetricCard label="Environment" value={draft.platform_config.general.environment_badge || "Production"} detail={health?.version?.commit || "local"} icon={School} color="#8B5BB8" />
+      </div>
+
+      <Card>
+        <SectionHeader
+          eyebrow="Super Admin"
+          title="Configuration Center"
+          action={<Button disabled={saving} onClick={() => setConfirm({ title: "Save platform configuration", body: "This changes platform-wide behavior and will be written to the audit log.", confirmLabel: "Save configuration" })} className="bg-[#E8704C] text-white hover:bg-[#C95630]">{saving ? "Saving..." : "Save changes"}</Button>}
+        />
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          {Object.entries(draft.public_branding || {}).map(([key, value]) => (
+            <label key={key} className="block">
+              <span className="text-sm font-semibold capitalize text-[#1F3B6E]">{key.replaceAll("_", " ")}</span>
+              <input value={value || ""} onChange={(event) => updateBranding(key, event.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#EFE4D0] px-3 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" />
+            </label>
+          ))}
+        </div>
+      </Card>
+
+      {configSections.map(([section, label]) => (
+        <Card key={section}>
+          <SectionHeader eyebrow="Settings" title={label} />
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {Object.entries(draft.platform_config[section] || {}).map(([key, value]) => (
+              <label key={`${section}-${key}`} className="block rounded-lg border border-[#EFE4D0] p-4">
+                <span className="text-sm font-semibold capitalize text-[#1F3B6E]">{key.replaceAll("_", " ")}</span>
+                {typeof value === "boolean" ? (
+                  <select value={String(value)} onChange={(event) => updateConfig(section, key, event.target.value === "true")} className="mt-2 h-10 w-full rounded-md border border-[#EFE4D0] px-3 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]">
+                    <option value="true">Enabled</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                ) : (
+                  <input
+                    value={Array.isArray(value) ? value.join(", ") : value ?? ""}
+                    onChange={(event) => updateConfig(section, key, parseConfigValue(value, event.target.value))}
+                    className="mt-2 h-10 w-full rounded-md border border-[#EFE4D0] px-3 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]"
+                  />
+                )}
+              </label>
+            ))}
+          </div>
+        </Card>
+      ))}
+      {confirm && <ConfirmDialog {...confirm} onClose={() => setConfirm(null)} onConfirm={persist} />}
+    </div>
+  );
+}
+
+function LogsWorkspace({ type }) {
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [filters, setFilters] = useState({ q: "", risk: "all", actor: "", action: "", target_type: "all" });
+  const [debouncedFilters, setDebouncedFilters] = useState(filters);
+  const [page, setPage] = useState(0);
+  const isAudit = type === "audit";
+  const endpoint = isAudit ? "/admin/audit-logs" : "/admin/activity-logs";
+  const pageSize = 25;
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setPage(0);
+      setDebouncedFilters(filters);
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [filters]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const params = Object.fromEntries(Object.entries(debouncedFilters).filter(([, value]) => value && value !== "all"));
+      const res = await api.get(endpoint, { params: { ...params, limit: pageSize, offset: page * pageSize } });
+      setRows(res.data.items || []);
+      setTotal(res.data.total || 0);
+    } catch (err) {
+      setError(err.appError?.message || err.response?.data?.detail || "Could not load logs.");
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedFilters, endpoint, page]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const exportCsv = () => {
+    const csv = rows.map((row) => JSON.stringify(row).replaceAll("\n", " ")).join("\n");
+    const blob = new Blob([csv], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${type}-logs.jsonl`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Log export prepared.");
+  };
+
+  return (
+    <Card>
+      <SectionHeader
+        eyebrow={isAudit ? "Security" : "Operations"}
+        title={isAudit ? "Audit Logs" : "Activity Logs"}
+        action={<div className="flex gap-2"><Button variant="outline" onClick={load} disabled={loading}>Refresh</Button><Button onClick={exportCsv} disabled={!rows.length} className="bg-[#1F3B6E] text-white disabled:opacity-50">Export</Button></div>}
+      />
+      <div className="mt-5 grid gap-3 md:grid-cols-5">
+        <input aria-label="Search logs" value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} placeholder="Search logs" className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" />
+        <input aria-label="Actor filter" value={filters.actor} onChange={(e) => setFilters({ ...filters, actor: e.target.value })} placeholder="Actor" className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" />
+        <input aria-label="Action filter" value={filters.action} onChange={(e) => setFilters({ ...filters, action: e.target.value })} placeholder="Action" className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" />
+        {isAudit ? (
+          <select aria-label="Risk filter" value={filters.risk} onChange={(e) => setFilters({ ...filters, risk: e.target.value })} className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm"><option value="all">All risk</option><option value="low">Low</option><option value="high">High</option><option value="critical">Critical</option></select>
+        ) : (
+          <select aria-label="Target filter" value={filters.target_type} onChange={(e) => setFilters({ ...filters, target_type: e.target.value })} className="rounded-md border border-[#EFE4D0] px-3 py-2 text-sm"><option value="all">All targets</option><option value="booking">Booking</option><option value="credits">Credits</option><option value="platform_settings">Settings</option><option value="user">User</option></select>
+        )}
+        <Button onClick={load} disabled={loading} className="bg-[#E8704C] text-white disabled:opacity-50">Apply filters</Button>
+      </div>
+      {loading && <div className="mt-5"><ActivityTimeline loading /></div>}
+      {error && <p className="mt-5 rounded-lg bg-[#FFE7E2] p-4 text-sm text-[#B42318]" role="alert">{error}</p>}
+      {!loading && !error && rows.length === 0 && <p className="mt-5 rounded-lg bg-[#FBF7EE] p-5 text-sm text-[#5C6680]">No logs match these filters.</p>}
+      {!loading && !error && rows.length > 0 && (
+        <div className="mt-5">
+          <ActivityTimeline items={rows.map((row) => ({ ...row, summary: row.summary || row.event_type || row.action }))} />
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-[#5C6680]">Showing {page * pageSize + 1}-{Math.min((page + 1) * pageSize, total)} of {total} logs.</p>
+            <div className="flex gap-2">
+              <Button variant="outline" disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}>Previous</Button>
+              <Button variant="outline" disabled={(page + 1) * pageSize >= total} onClick={() => setPage((value) => value + 1)}>Next</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function AdminAuditLogs() {
+  return <LogsWorkspace type="audit" />;
+}
+
+function AdminActivityLogs() {
+  return <LogsWorkspace type="activity" />;
+}
+
+function SystemHealthPanel() {
+  const [health, setHealth] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setHealth((await api.get("/admin/system-health")).data);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Could not load system health.");
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { load(); }, []);
+  if (loading) return <Card><div className="h-40 animate-pulse rounded-lg bg-[#FBF7EE]" /></Card>;
+  if (error) return <Card><p className="text-sm text-[#B42318]">{error}</p><Button onClick={load} className="mt-4">Retry</Button></Card>;
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-4">
+        <MetricCard label="Database" value={health.database.ok ? "Healthy" : "Down"} detail={`${health.database.users} users`} icon={ShieldCheck} />
+        <MetricCard label="Storage" value={health.storage.configured ? "Configured" : "Missing"} detail={health.storage.bucket} icon={FileText} color="#2DA89F" />
+        <MetricCard label="Maintenance" value={health.maintenance_mode ? "On" : "Off"} detail="Platform mode" icon={Settings} color="#8B5BB8" />
+        <MetricCard label="Version" value={health.version.commit.slice(0, 7)} detail={health.app} icon={School} color="#4A90D9" />
+      </div>
+      <Card>
+        <SectionHeader eyebrow="System status" title="Feature flags and auth controls" action={<Button onClick={load} variant="outline">Refresh</Button>} />
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {Object.entries(health.features || {}).map(([key, enabled]) => (
+            <div key={key} className="flex items-center justify-between rounded-lg border border-[#EFE4D0] p-4">
+              <span className="font-semibold capitalize">{key.replaceAll("_", " ")}</span>
+              <span className={`rounded-md px-2 py-1 text-xs ${enabled ? "bg-[#E0F2F0] text-[#1B6F68]" : "bg-[#F3EEE3] text-[#5C6680]"}`}>{enabled ? "Enabled" : "Disabled"}</span>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function AdminSettings() {
   const settings = ["School name", "Academic levels", "Credit policy", "Approval rules", "Lesson review flow", "Teacher standards", "Family communication", "Class cancellation policy", "Certificate wording"];
   return (
@@ -2414,7 +3376,7 @@ function AdminSettings() {
         {settings.map((setting) => (
           <label key={setting} className="rounded-lg border border-[#EFE4D0] p-4">
             <span className="font-semibold">{setting}</span>
-            <input className="mt-3 w-full rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" placeholder="Administrative placeholder" />
+            <input className="mt-3 w-full rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" placeholder="Configuration value" />
           </label>
         ))}
       </div>

@@ -1,5 +1,65 @@
 # Deployment Guide
 
+## Environment Strategy
+
+### Local
+
+Purpose: developer work and fast iteration.
+
+- Uses `.env` files.
+- Can use dev auth only when explicitly enabled.
+- Data can be disposable.
+- No production secrets.
+
+### Alpha
+
+Purpose: internal validation by product and technical users.
+
+- Seeded test data.
+- Limited admin access.
+- Feature flags can expose incomplete modules.
+- Deploy from main or release branch after build/test pass.
+
+### Beta
+
+Purpose: invited real users and teachers.
+
+- Production-like data rules.
+- Real auth.
+- Real payment sandbox or controlled live payments.
+- Support process and request IDs required.
+- Feature flags hide unfinished workflows.
+
+### Production
+
+Purpose: real users, real payments, real operations.
+
+- Real Supabase project and backups.
+- `REACT_APP_DEV_AUTH=false`.
+- `MOSAICO_ENV=production` or `APP_ENV=production`.
+- Locked `CORS_ORIGINS`.
+- Rollback plan documented before release.
+
+## Deployment Flow
+
+1. Run backend compile, backend tests, frontend tests, and frontend build.
+2. Review database/schema changes.
+3. Deploy Alpha.
+4. Smoke test.
+5. Promote to Beta or Production.
+6. Monitor logs, audit events, analytics, and support requests.
+
+## Feature Flags
+
+Use platform configuration feature flags to hide modules that are not production-backed. Do not expose mock workflows to real users without a clear preview label.
+
+## Rollback
+
+- Use Render deploy rollback for frontend/backend.
+- If schema changed, confirm rollback compatibility before reverting.
+- Disable risky features through configuration if code rollback is slower.
+- Record incident notes and follow-up tasks.
+
 ## Production Target
 
 MOSAICO is deployed on Render using:
@@ -205,4 +265,3 @@ Expected backend logs:
 PostgreSQL pool ready (Supabase)
 Application startup complete
 ```
-

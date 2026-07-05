@@ -54,7 +54,19 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
     "media_assets": ["id", "file_name", "url", "type", "alt_text", "uploaded_by", "created_at", "updated_at"],
     "login_history": ["id", "user_id", "email", "provider", "ip_address", "user_agent", "created_at"],
     "local_auth_sessions": ["id", "user_id", "token_hash", "expires_at", "revoked_at", "created_at", "last_seen_at", "ip_address", "user_agent"],
-    "audit_events": ["id", "actor_user_id", "target_user_id", "event_type", "entity_type", "entity_id", "metadata", "ip_address", "user_agent", "created_at"],
+    "audit_events": ["id", "actor_user_id", "actor_name", "target_user_id", "event_type", "action", "entity_type", "target_type", "entity_id", "target_id", "before_state", "after_state", "metadata", "ip_address", "user_agent", "risk_level", "created_at"],
+    "activity_logs": ["id", "actor_user_id", "actor_name", "event_type", "action", "target_type", "target_id", "summary", "metadata", "visibility", "created_at"],
+    "analytics_events": ["id", "event_name", "user_id", "role", "session_id", "module", "entity_type", "entity_id", "metadata", "created_at"],
+    "error_events": ["id", "request_id", "user_id", "code", "message", "details", "path", "method", "status_code", "ip_address", "user_agent", "created_at"],
+    "atlas_volumes": ["id", "number", "title", "slug", "description", "owner_user_id", "owner_role", "status", "current_version", "visibility", "estimated_pages", "priority", "tags", "linked_volume_ids", "purpose", "suggested_sections", "created_at", "updated_at", "approved_at", "deprecated_at"],
+    "atlas_sections": ["id", "volume_id", "parent_section_id", "title", "slug", "order_index", "summary", "content_markdown", "status", "tags", "linked_decision_ids", "linked_glossary_terms", "created_at", "updated_at"],
+    "atlas_versions": ["id", "volume_id", "version", "version_type", "change_summary", "content_snapshot", "created_by_user_id", "created_at"],
+    "atlas_decision_logs": ["id", "title", "decision_type", "context", "decision", "alternatives_considered", "consequences", "owner_user_id", "status", "linked_volume_ids", "linked_section_ids", "created_at", "updated_at"],
+    "atlas_reviews": ["id", "volume_id", "section_id", "reviewer_user_id", "status", "comments", "created_at", "updated_at"],
+    "atlas_comments": ["id", "volume_id", "section_id", "author_user_id", "body", "resolved", "created_at", "updated_at"],
+    "atlas_glossary_terms": ["id", "term", "definition", "related_terms", "linked_volume_ids", "created_at", "updated_at"],
+    "atlas_attachments": ["id", "volume_id", "section_id", "filename", "file_url", "mime_type", "uploaded_by_user_id", "created_at"],
+    "atlas_audit_logs": ["id", "actor_user_id", "action", "target_type", "target_id", "before_state", "after_state", "metadata", "created_at"],
 }
 
 JSONB_COLUMNS = {
@@ -63,7 +75,16 @@ JSONB_COLUMNS = {
     "teacher_profiles": {"specialties", "assigned_products"},
     "student_profiles": {"enrolled_products"},
     "pages": {"content_blocks"},
-    "audit_events": {"metadata"},
+    "audit_events": {"before_state", "after_state", "metadata"},
+    "activity_logs": {"metadata"},
+    "analytics_events": {"metadata"},
+    "error_events": {"details"},
+    "atlas_volumes": {"tags", "linked_volume_ids", "suggested_sections"},
+    "atlas_sections": {"tags", "linked_decision_ids", "linked_glossary_terms"},
+    "atlas_versions": {"content_snapshot"},
+    "atlas_decision_logs": {"linked_volume_ids", "linked_section_ids"},
+    "atlas_glossary_terms": {"related_terms", "linked_volume_ids"},
+    "atlas_audit_logs": {"before_state", "after_state", "metadata"},
 }
 
 BOOL_COLUMNS = {
@@ -77,6 +98,7 @@ BOOL_COLUMNS = {
     "roles": {"active"},
     "permissions": {"active"},
     "user_roles": {"active"},
+    "atlas_comments": {"resolved"},
 }
 
 
@@ -406,6 +428,18 @@ class Database:
         self.login_history = Collection("login_history", pool)
         self.local_auth_sessions = Collection("local_auth_sessions", pool)
         self.audit_events = Collection("audit_events", pool)
+        self.activity_logs = Collection("activity_logs", pool)
+        self.analytics_events = Collection("analytics_events", pool)
+        self.error_events = Collection("error_events", pool)
+        self.atlas_volumes = Collection("atlas_volumes", pool)
+        self.atlas_sections = Collection("atlas_sections", pool)
+        self.atlas_versions = Collection("atlas_versions", pool)
+        self.atlas_decision_logs = Collection("atlas_decision_logs", pool)
+        self.atlas_reviews = Collection("atlas_reviews", pool)
+        self.atlas_comments = Collection("atlas_comments", pool)
+        self.atlas_glossary_terms = Collection("atlas_glossary_terms", pool)
+        self.atlas_attachments = Collection("atlas_attachments", pool)
+        self.atlas_audit_logs = Collection("atlas_audit_logs", pool)
 
 
 _db: Optional[Database] = None

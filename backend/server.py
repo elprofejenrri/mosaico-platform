@@ -5,6 +5,7 @@ import logging
 import mimetypes
 import json
 import hashlib
+import re
 import secrets
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -15,7 +16,7 @@ import httpx
 import jwt
 import stripe
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Header, Depends, UploadFile, File
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -60,6 +61,28 @@ def _is_placeholder(value: str) -> bool:
 
 def _dev_auth_enabled() -> bool:
     return os.environ.get("DEV_AUTH", "").lower() in ("1", "true", "yes") or _is_placeholder(SUPABASE_JWT_SECRET)
+
+
+def _strict_production_guards_enabled() -> bool:
+    return os.environ.get("MOSAICO_ENV", "").lower() == "production" or os.environ.get("APP_ENV", "").lower() == "production"
+
+
+def _validate_production_config() -> None:
+    if not _strict_production_guards_enabled():
+        return
+    if os.environ.get("DEV_AUTH", "").lower() in ("1", "true", "yes"):
+        raise RuntimeError("DEV_AUTH cannot be enabled in production")
+    if _is_placeholder(SUPABASE_JWT_SECRET) or _is_placeholder(SUPABASE_URL) or _is_placeholder(SUPABASE_ANON_KEY):
+        raise RuntimeError("Supabase production configuration contains placeholder values")
+    if not os.environ.get("CORS_ORIGINS"):
+        raise RuntimeError("CORS_ORIGINS is required in production")
+
+
+def _cors_origins() -> List[str]:
+    configured = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", "").split(",") if origin.strip()]
+    if configured:
+        return configured
+    return ["http://localhost:3000", "http://localhost:3001"]
 
 
 def _require_supabase_storage() -> None:
@@ -124,6 +147,77 @@ app = FastAPI(title="Lily Spanish API")
 api = APIRouter(prefix="/api")
 logger = logging.getLogger("lily")
 logging.basicConfig(level=logging.INFO)
+
+ANALYTICS_EVENT_NAMES = {
+    "user_logged_in",
+    "dashboard_viewed",
+    "class_booked",
+    "class_cancelled",
+    "class_rescheduled",
+    "class_completed",
+    "feedback_added",
+    "credits_purchased",
+    "credits_granted",
+    "credits_used",
+    "availability_created",
+    "availability_blocked",
+    "invitation_sent",
+    "student_profile_viewed",
+    "teacher_profile_viewed",
+    "calendar_synced",
+    "role_assigned",
+    "permission_modified",
+    "settings_updated",
+    "report_exported",
+}
+
+
+def _error_payload(code: str, message: str, request_id: str, details: Optional[dict] = None) -> dict:
+    return {
+        "code": code,
+        "message": message,
+        "details": details or {},
+        "requestId": request_id,
+        "timestamp": _now_iso(),
+    }
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex}"
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    request_id = getattr(request.state, "request_id", f"req_{uuid.uuid4().hex}")
+    message = exc.detail if isinstance(exc.detail, str) else "Request could not be completed."
+    code = "http_error"
+    if exc.status_code == 401:
+        code = "unauthorized"
+    elif exc.status_code == 403:
+        code = "forbidden"
+    elif exc.status_code == 404:
+        code = "not_found"
+    elif exc.status_code >= 500:
+        code = "server_error"
+    if exc.status_code >= 500:
+        await _record_error_event(request, request_id, code, message, exc.status_code)
+    return JSONResponse(status_code=exc.status_code, content=_error_payload(code, message, request_id))
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    request_id = getattr(request.state, "request_id", f"req_{uuid.uuid4().hex}")
+    logger.exception("Unhandled request error %s %s", request_id, exc)
+    await _record_error_event(request, request_id, "unhandled_exception", str(exc), 500)
+    return JSONResponse(
+        status_code=500,
+        content=_error_payload("server_error", "Something went wrong. Please try again.", request_id),
+    )
 
 # ---------- Models ----------
 class User(BaseModel):
@@ -303,9 +397,26 @@ DOT_PERMISSION_CATALOG = [
     _dot_permission("credits.wallet.refund", "Refund credits.", 5),
     _dot_permission("reports.analytics.view", "View analytics reports."),
     _dot_permission("reports.analytics.export", "Export analytics reports.", 4),
+    _dot_permission("logs.activity.view", "View operational activity logs.", 4),
     _dot_permission("settings.platform.view", "View platform settings.", 4),
     _dot_permission("settings.platform.edit", "Edit platform settings.", 5),
     _dot_permission("audit.logs.view", "View audit logs.", 5),
+    _dot_permission("settings.view", "View platform configuration.", 4),
+    _dot_permission("settings.edit", "Edit platform configuration.", 5),
+    _dot_permission("audit.view", "View security audit logs.", 5),
+    _dot_permission("logs.view", "View activity logs.", 4),
+    _dot_permission("atlas.view", "View approved Atlas documentation.", 3),
+    _dot_permission("atlas.manage", "Manage all Atlas documentation.", 5),
+    _dot_permission("atlas.create", "Create Atlas volumes and records.", 5),
+    _dot_permission("atlas.edit", "Edit Atlas content.", 5),
+    _dot_permission("atlas.delete", "Delete Atlas content.", 5),
+    _dot_permission("atlas.review", "Review Atlas content.", 5),
+    _dot_permission("atlas.approve", "Approve Atlas content.", 5),
+    _dot_permission("atlas.export", "Export Atlas content.", 4),
+    _dot_permission("atlas.settings.manage", "Manage Atlas settings.", 5),
+    _dot_permission("atlas.decision_log.manage", "Manage Atlas decision log.", 5),
+    _dot_permission("atlas.glossary.manage", "Manage Atlas glossary.", 5),
+    _dot_permission("atlas.audit.view", "View Atlas audit trail.", 5),
 ]
 PERMISSION_CATALOG = [
     {"name": "*", "label": "Acceso total", "catalog": "system", "feature": "all", "action": "manage", "level": 100},
@@ -339,7 +450,8 @@ ROLE_PERMISSION_LEVELS: Dict[str, Dict[str, int]] = {
         "classes.sessions.edit": 4, "students.profile.view": 4, "students.progress.view": 4,
         "teachers.profile.view": 4, "credits.wallet.view": 4, "credits.wallet.grant": 4,
         "reports.analytics.view": 4, "reports.analytics.export": 4, "settings.platform.view": 4,
-        "audit.logs.view": 5,
+        "settings.view": 4, "logs.activity.view": 4, "logs.view": 4, "audit.logs.view": 5, "audit.view": 5,
+        "atlas.view": 4, "atlas.export": 4,
     },
     "coordinador": {
         "dashboard.general.view": 3, "users.profile.view": 3, "calendar.teacher.view": 3,
@@ -348,7 +460,7 @@ ROLE_PERMISSION_LEVELS: Dict[str, Dict[str, int]] = {
         "classes.sessions.cancel": 3, "students.profile.view": 3, "students.profile.edit": 3,
         "students.progress.view": 3, "students.credits.view": 3, "teachers.profile.view": 3,
         "teachers.profile.edit": 3, "teachers.availability.view": 3, "teachers.availability.manage": 3,
-        "credits.wallet.view": 3, "reports.analytics.view": 3,
+        "credits.wallet.view": 3, "reports.analytics.view": 3, "logs.activity.view": 3, "logs.view": 3,
     },
     "profesor": {
         "dashboard:view": 1, "teachers:own": 2, "students:view": 2,
@@ -369,6 +481,11 @@ ROLE_PERMISSIONS = {role: set(perms) for role, perms in ROLE_PERMISSION_LEVELS.i
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
+    return slug or f"item-{uuid.uuid4().hex[:8]}"
 
 
 def _normalize_role(role: Optional[str]) -> str:
@@ -539,22 +656,150 @@ async def _record_audit_event(
     entity_type: str,
     entity_id: Optional[str] = None,
     actor_user_id: Optional[str] = None,
+    actor_name: Optional[str] = None,
     target_user_id: Optional[str] = None,
     metadata: Optional[dict] = None,
+    before: Optional[dict] = None,
+    after: Optional[dict] = None,
+    risk_level: str = "low",
     request: Optional[Request] = None,
 ) -> None:
     await db.audit_events.insert_one({
         "id": str(uuid.uuid4()),
         "actor_user_id": actor_user_id,
+        "actor_name": actor_name,
         "target_user_id": target_user_id,
         "event_type": event_type,
+        "action": event_type,
         "entity_type": entity_type,
+        "target_type": entity_type,
         "entity_id": entity_id,
+        "target_id": entity_id,
+        "before_state": before or {},
+        "after_state": after or {},
         "metadata": metadata or {},
         "ip_address": request.client.host if request and request.client else None,
         "user_agent": request.headers.get("user-agent") if request else None,
+        "risk_level": risk_level,
         "created_at": _now_iso(),
     })
+
+
+async def _record_activity_log(
+    event_type: str,
+    action: str,
+    target_type: str,
+    summary: str,
+    actor_user_id: Optional[str] = None,
+    actor_name: Optional[str] = None,
+    target_id: Optional[str] = None,
+    metadata: Optional[dict] = None,
+    visibility: str = "admin",
+) -> None:
+    await db.activity_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "actor_user_id": actor_user_id,
+        "actor_name": actor_name,
+        "event_type": event_type,
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "summary": summary,
+        "metadata": metadata or {},
+        "visibility": visibility,
+        "created_at": _now_iso(),
+    })
+
+
+async def _record_atlas_audit(
+    action: str,
+    target_type: str,
+    target_id: Optional[str],
+    actor_user_id: Optional[str],
+    before: Optional[dict] = None,
+    after: Optional[dict] = None,
+    metadata: Optional[dict] = None,
+    request: Optional[Request] = None,
+) -> None:
+    await db.atlas_audit_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "actor_user_id": actor_user_id,
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "before_state": before or {},
+        "after_state": after or {},
+        "metadata": metadata or {},
+        "created_at": _now_iso(),
+    })
+    await _record_audit_event(
+        f"atlas.{action}",
+        target_type,
+        entity_id=target_id,
+        actor_user_id=actor_user_id,
+        metadata=metadata or {},
+        before=before,
+        after=after,
+        risk_level="high" if action in {"approve", "deprecate", "delete", "settings.update"} else "low",
+        request=request,
+    )
+
+
+async def _record_analytics_event(
+    event_name: str,
+    user: Optional[User] = None,
+    user_id: Optional[str] = None,
+    role: Optional[str] = None,
+    module: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    entity_id: Optional[str] = None,
+    metadata: Optional[dict] = None,
+    session_id: Optional[str] = None,
+) -> None:
+    if event_name not in ANALYTICS_EVENT_NAMES:
+        logger.warning("Unknown analytics event ignored: %s", event_name)
+        return
+    await db.analytics_events.insert_one({
+        "id": str(uuid.uuid4()),
+        "event_name": event_name,
+        "user_id": user.user_id if user else user_id,
+        "role": _normalize_role(user.role) if user else role,
+        "session_id": session_id,
+        "module": module,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "metadata": metadata or {},
+        "created_at": _now_iso(),
+    })
+
+
+async def _record_error_event(
+    request: Request,
+    request_id: str,
+    code: str,
+    message: str,
+    status_code: int,
+    details: Optional[dict] = None,
+) -> None:
+    if not db:
+        return
+    try:
+        await db.error_events.insert_one({
+            "id": str(uuid.uuid4()),
+            "request_id": request_id,
+            "user_id": getattr(getattr(request, "state", None), "user_id", None),
+            "code": code,
+            "message": message,
+            "details": details or {},
+            "path": request.url.path,
+            "method": request.method,
+            "status_code": status_code,
+            "ip_address": request.client.host if request.client else None,
+            "user_agent": request.headers.get("user-agent"),
+            "created_at": _now_iso(),
+        })
+    except Exception as exc:
+        logger.warning("Could not persist error event: %s", exc)
 
 
 async def _create_local_session(user: User, request: Optional[Request] = None) -> dict:
@@ -690,7 +935,9 @@ async def get_current_user(
 
     token = authorization.split(" ", 1)[1].strip()
     if token.startswith(LOCAL_AUTH_TOKEN_PREFIX):
-        return await _get_user_from_local_session(token)
+        user = await _get_user_from_local_session(token)
+        request.state.user_id = user.user_id
+        return user
 
     if _dev_auth_enabled() and token == "dev-admin":
         now = _now_iso()
@@ -713,10 +960,14 @@ async def get_current_user(
         else:
             await db.users.update_one({"user_id": user_id}, {"$set": {"last_login_at": now, "active": True, "role": "administrador_sitio"}})
         doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-        return User(**doc)
+        user = User(**doc)
+        request.state.user_id = user.user_id
+        return user
 
     payload = await _get_supabase_user_payload(token)
-    return await _get_or_create_user_from_supabase(payload, request)
+    user = await _get_or_create_user_from_supabase(payload, request)
+    request.state.user_id = user.user_id
+    return user
 
 async def require_admin(user: User = Depends(get_current_user)) -> User:
     roles = await _effective_role_names(user)
@@ -741,11 +992,35 @@ async def require_technical(user: User = Depends(get_current_user)) -> User:
 
 
 TECHNICAL_DOCS = {
+    "product-overview": {"title": "Product Overview", "path": "docs/product-overview.md", "section": "roadmap"},
+    "roadmap": {"title": "Roadmap", "path": "docs/roadmap.md", "section": "roadmap"},
+    "business-structure": {"title": "Business Structure", "path": "docs/business-structure.md", "section": "roadmap"},
+    "final-production-report": {"title": "Final Production Report", "path": "docs/final-production-report.md", "section": "roadmap"},
+    "user-roles": {"title": "User Roles", "path": "docs/user-roles.md", "section": "configuration"},
+    "rbac-permissions": {"title": "RBAC Permissions", "path": "docs/rbac-permissions.md", "section": "configuration"},
+    "admin-guide": {"title": "Admin Guide", "path": "docs/admin-guide.md", "section": "configuration"},
+    "teacher-guide": {"title": "Teacher Guide", "path": "docs/teacher-guide.md", "section": "configuration"},
+    "student-guide": {"title": "Student Guide", "path": "docs/student-guide.md", "section": "configuration"},
+    "tutor-parent-guide": {"title": "Tutor And Parent Guide", "path": "docs/tutor-parent-guide.md", "section": "configuration"},
+    "coordinator-guide": {"title": "Coordinator Guide", "path": "docs/coordinator-guide.md", "section": "configuration"},
+    "api-overview": {"title": "API Overview", "path": "docs/api-overview.md", "section": "data"},
+    "audit-logs": {"title": "Audit Logs", "path": "docs/audit-logs.md", "section": "data"},
+    "analytics-events": {"title": "Analytics Events", "path": "docs/analytics-events.md", "section": "data"},
+    "environment-setup": {"title": "Environment Setup", "path": "docs/environment-setup.md", "section": "configuration"},
+    "testing-guide": {"title": "Testing Guide", "path": "docs/testing-guide.md", "section": "architecture"},
+    "production-readiness-checklist": {"title": "Production Readiness Checklist", "path": "docs/production-readiness-checklist.md", "section": "architecture"},
+    "security-checklist": {"title": "Security Checklist", "path": "docs/security-checklist.md", "section": "architecture"},
+    "release-process": {"title": "Release Process", "path": "docs/release-process.md", "section": "architecture"},
     "platform-roadmap": {"title": "Platform Roadmap", "path": "docs/PLATFORM_ROADMAP.md", "section": "roadmap"},
     "phase-1-execution-plan": {"title": "Phase 1 Execution Plan", "path": "docs/PHASE_1_EXECUTION_PLAN.md", "section": "roadmap"},
     "product-documentation": {"title": "Product Documentation", "path": "docs/PRODUCT_DOCUMENTATION.md", "section": "roadmap"},
     "teacher-calendar-workspace": {"title": "Teacher Calendar Workspace", "path": "docs/TEACHER_CALENDAR_WORKSPACE.md", "section": "roadmap"},
+    "production-readiness-audit": {"title": "Production Readiness Audit", "path": "docs/production-readiness-audit.md", "section": "roadmap"},
+    "production-execution-plan": {"title": "Production Execution Plan", "path": "docs/production-execution-plan.md", "section": "roadmap"},
     "rbac-admin-module": {"title": "RBAC Admin Module", "path": "docs/RBAC_ADMIN_MODULE.md", "section": "roadmap"},
+    "super-admin-configuration-center": {"title": "Super Admin Configuration Center", "path": "docs/SUPER_ADMIN_CONFIGURATION_CENTER.md", "section": "architecture"},
+    "analytics-observability": {"title": "Analytics and Observability", "path": "docs/ANALYTICS_OBSERVABILITY.md", "section": "architecture"},
+    "mosaico-atlas": {"title": "Mosaico Atlas", "path": "docs/MOSAICO_ATLAS.md", "section": "architecture"},
     "architecture": {"title": "Architecture", "path": "docs/ARCHITECTURE.md", "section": "architecture"},
     "deployment-guide": {"title": "Deployment Guide", "path": "docs/DEPLOYMENT_GUIDE.md", "section": "architecture"},
     "operations-runbook": {"title": "Operations Runbook", "path": "docs/OPERATIONS_RUNBOOK.md", "section": "architecture"},
@@ -805,6 +1080,50 @@ DEFAULT_PRODUCTS = [
      "duration_min": 60, "sessions_included": 8, "price_usd": 240.00, "type": "subscription", "popular": False},
 ]
 
+ATLAS_VOLUME_SEEDS = [
+    (0, "Master Index & Decision Log", "Navigation layer for the entire Atlas.", "Super Admin", 40, "critical", ["index", "decisions", "standards"], [1, 3, 9], ["Executive Summary", "Glossary", "Acronyms", "Product Taxonomy", "Decision Log", "Cross-Reference Map", "Documentation Standards", "Review Cadence", "Ownership Matrix"]),
+    (1, "Company Vision", "Company mission, values, operating principles, and long-term purpose.", "Founder", 30, "high", ["vision", "company", "strategy"], [3, 24], ["Mission", "Vision", "Values", "Principles", "Long-Term Strategy", "Brand Promise"]),
+    (2, "Market Intelligence", "Market research, competitors, ICPs, and education category signals.", "Product Strategy", 45, "high", ["market", "competitors", "research"], [3, 14], ["Market Map", "Competitor Landscape", "Customer Segments", "Trends", "Opportunities", "Risks"]),
+    (3, "Product Strategy", "Product direction, bets, sequencing, and platform evolution.", "Product", 60, "critical", ["product", "strategy", "roadmap"], [1, 4, 24], ["North Star", "Product Principles", "Roadmap", "Prioritization", "Launch Scope", "Metrics"]),
+    (4, "Product Bible", "Canonical product behavior, modules, workflows, and domain model.", "Product", 90, "critical", ["product", "modules", "workflows"], [3, 5, 9, 12], ["Purpose", "Modules", "Student Platform", "Tutor Platform", "Teacher Platform", "Admin Platform", "Learning Economy", "Roadmap", "AI", "Analytics", "RBAC"]),
+    (5, "UX Bible", "Experience principles, flows, navigation, interaction patterns, and accessibility.", "Design", 75, "high", ["ux", "flows", "accessibility"], [4, 19], ["UX Principles", "Navigation", "States", "Forms", "Modals", "Accessibility", "Responsive Rules"]),
+    (6, "Learning Economy", "Credits, wallets, rewards, marketplace incentives, and anti-fraud rules.", "Product", 60, "critical", ["credits", "wallet", "economy"], [4, 13], ["Wallet", "Learning Credits", "Mosaic Coins", "Rewards", "Marketplace", "Referrals", "Coupons", "Anti-fraud"]),
+    (7, "User Personas", "Detailed user profiles, jobs-to-be-done, needs, and permissions expectations.", "Product", 45, "high", ["personas", "students", "teachers"], [4, 5], ["Student", "Tutor Parent", "Teacher", "Coordinator", "Admin", "Super Admin", "Investor"]),
+    (8, "Business Operations", "Operating model for school administration, support, and service delivery.", "Operations", 70, "high", ["operations", "support", "school"], [6, 13, 16], ["Operating Cadence", "Support", "Scheduling", "Teacher Ops", "Student Success", "Escalations"]),
+    (9, "Technical Architecture", "System architecture, services, data flow, integration decisions, and constraints.", "Engineering", 85, "critical", ["architecture", "backend", "frontend"], [10, 20, 21, 22], ["System Map", "Frontend", "Backend", "Database", "Auth", "Storage", "Integrations", "Observability"]),
+    (10, "Security", "Security model, auth, RBAC, audit, privacy, and incident response.", "Security", 70, "critical", ["security", "rbac", "audit"], [9, 21, 22], ["Threat Model", "Auth", "RBAC", "Audit Logs", "Data Protection", "Incident Response"]),
+    (11, "AI Strategy", "AI tutor, internal copilots, safety model, prompts, and evaluation plan.", "Product", 45, "medium", ["ai", "tutor", "automation"], [3, 4, 10], ["AI Tutor", "Admin Copilots", "Prompt Standards", "Safety", "Evaluation", "Roadmap"]),
+    (12, "Analytics", "Product analytics, operational metrics, dashboards, event taxonomy, and KPIs.", "Data", 55, "high", ["analytics", "metrics", "events"], [3, 8, 13], ["Event Catalog", "Dashboards", "KPIs", "Funnels", "Retention", "Data Quality"]),
+    (13, "Financial Model", "Pricing, credits, revenue, costs, unit economics, and projections.", "Finance", 60, "high", ["finance", "pricing", "credits"], [6, 14, 23], ["Pricing", "Credit Economics", "Revenue", "Costs", "Teacher Payouts", "Forecasts"]),
+    (14, "Go-To-Market", "Launch strategy, positioning, audiences, campaigns, and channels.", "Growth", 55, "high", ["gtm", "launch", "growth"], [2, 15, 17], ["Positioning", "Launch Plan", "Channels", "Campaigns", "Partnerships", "Metrics"]),
+    (15, "Sales Playbook", "Sales process, scripts, objections, demos, and pipeline management.", "Sales", 40, "medium", ["sales", "pipeline", "playbook"], [14, 16], ["ICP", "Demo Script", "Objections", "Follow-up", "Pipeline", "Close Plan"]),
+    (16, "Customer Success", "Onboarding, activation, retention, support, and learner success playbooks.", "Customer Success", 50, "high", ["success", "support", "retention"], [7, 8, 12], ["Onboarding", "Activation", "Retention", "Support", "Health Scores", "Escalations"]),
+    (17, "Marketing", "Brand campaigns, content, email, social, and performance marketing.", "Marketing", 45, "medium", ["marketing", "content", "brand"], [14, 15], ["Brand Voice", "Content", "Email", "Social", "Paid", "SEO"]),
+    (18, "Engineering Handbook", "Engineering standards, workflow, quality bar, code review, and releases.", "Engineering", 65, "high", ["engineering", "standards", "quality"], [9, 20, 22], ["Workflow", "Code Review", "Testing", "Frontend Standards", "Backend Standards", "Release Rules"]),
+    (19, "Design System", "Design tokens, components, layout rules, visual standards, and accessibility.", "Design", 70, "high", ["design", "components", "ui"], [5, 18], ["Tokens", "Components", "Forms", "Tables", "Charts", "Accessibility", "Responsive"]),
+    (20, "API Documentation", "API standards, endpoints, auth, errors, webhooks, and integration contracts.", "Engineering", 75, "high", ["api", "contracts", "backend"], [9, 18, 21], ["API Standards", "Auth", "Errors", "Admin API", "Webhooks", "Versioning"]),
+    (21, "Database Bible", "Schema, data ownership, migrations, backfills, lineage, and data quality.", "Data", 80, "critical", ["database", "schema", "data"], [9, 10, 20], ["Schema", "Migrations", "Backfills", "Indexes", "Data Quality", "Access Rules"]),
+    (22, "Deployment & DevOps", "Environment strategy, CI/CD, Render, Supabase, rollback, and operations.", "DevOps", 60, "critical", ["deployment", "devops", "render"], [9, 10, 18], ["Environments", "Render", "Supabase", "Secrets", "Deploy Flow", "Rollback", "Monitoring"]),
+    (23, "Investor Relations", "Investor-ready story, metrics, financial narrative, and data room index.", "Founder", 45, "medium", ["investor", "fundraising", "data-room"], [1, 13, 24], ["Narrative", "Market", "Product", "Traction", "Financials", "Data Room"]),
+    (24, "Future Vision", "Long-term platform vision, expansion bets, marketplace, AI, and ecosystem.", "Founder", 55, "medium", ["future", "vision", "strategy"], [1, 3, 11], ["10-Year Vision", "Marketplace", "AI", "Credentials", "Partnerships", "Expansion"]),
+]
+
+ATLAS_GLOSSARY_SEEDS = [
+    ("Learning OS", "The operating system for organizing learning goals, credits, classes, feedback, and progress."),
+    ("Learning Credits", "Spendable units used to book learning experiences inside MOSAICO."),
+    ("Mosaic Coins", "Potential reward currency for engagement, referrals, or achievements."),
+    ("Wallet", "The learner or family credit balance and transaction history."),
+    ("Roadmap", "A structured learning path with milestones, levels, tests, and badges."),
+    ("RBAC", "Role-Based Access Control with additive permissions."),
+    ("Super Admin", "Technical governance role with full platform control."),
+    ("Teacher Utilization", "Percentage of teacher availability converted into booked or completed classes."),
+    ("Student Retention", "The rate at which students continue learning across time windows."),
+    ("Learning Economy", "The credits, rewards, pricing, marketplace, and incentive model."),
+    ("Marketplace", "Supply and demand layer connecting students with teachers or learning products."),
+    ("Audit Log", "Immutable record of sensitive platform changes."),
+    ("Activity Log", "Operational timeline for user-facing and support events."),
+]
+
 DEFAULT_POSTS = [
     {"slug": "ser-vs-estar", "title_en": "Ser vs Estar: a kind, practical map",
      "title_es": "Ser vs Estar: un mapa amable y práctico",
@@ -832,6 +1151,7 @@ DEFAULT_POSTS = [
 @app.on_event("startup")
 async def startup_database():
     global db
+    _validate_production_config()
     db = await get_database()
 
 
@@ -973,11 +1293,104 @@ async def seed_data():
                 "created_at": now, "updated_at": now,
             })
         logger.info("Seeded bookings")
+    if await db.atlas_volumes.count_documents({}) == 0:
+        number_to_id = {}
+        for number, title, description, owner_role, estimated_pages, priority, tags, linked_numbers, sections in ATLAS_VOLUME_SEEDS:
+            volume_id = f"atlas-volume-{number:02d}"
+            number_to_id[number] = volume_id
+            await db.atlas_volumes.insert_one({
+                "id": volume_id,
+                "number": number,
+                "title": title,
+                "slug": f"{number:02d}-{_slugify(title)}",
+                "description": description,
+                "owner_user_id": "seed-admin",
+                "owner_role": owner_role,
+                "status": "draft",
+                "current_version": "0.1.0",
+                "visibility": "super_admin_only" if number in {0, 10, 13, 23} else "internal",
+                "estimated_pages": estimated_pages,
+                "priority": priority,
+                "tags": tags,
+                "linked_volume_ids": [f"atlas-volume-{item:02d}" for item in linked_numbers],
+                "purpose": description,
+                "suggested_sections": sections,
+                "created_at": now,
+                "updated_at": now,
+                "approved_at": None,
+                "deprecated_at": None,
+            })
+            starter_sections = sections[:4]
+            for order, section_title in enumerate(starter_sections, start=1):
+                await db.atlas_sections.insert_one({
+                    "id": f"atlas-section-{number:02d}-{order:02d}",
+                    "volume_id": volume_id,
+                    "parent_section_id": None,
+                    "title": section_title,
+                    "slug": _slugify(section_title),
+                    "order_index": order,
+                    "summary": f"Starter section for {section_title}.",
+                    "content_markdown": f"## {section_title}\n\nThis section defines how **{title}** treats {section_title.lower()} for MOSAICO. Replace this starter content as decisions become approved in Atlas.",
+                    "status": "draft",
+                    "tags": tags[:2],
+                    "linked_decision_ids": [],
+                    "linked_glossary_terms": [],
+                    "created_at": now,
+                    "updated_at": now,
+                })
+            await db.atlas_versions.insert_one({
+                "id": f"atlas-version-{number:02d}-010",
+                "volume_id": volume_id,
+                "version": "0.1.0",
+                "version_type": "minor",
+                "change_summary": "Initial seeded Atlas starter volume.",
+                "content_snapshot": {"title": title, "description": description, "suggested_sections": sections},
+                "created_by_user_id": "seed-admin",
+                "created_at": now,
+            })
+        logger.info("Seeded Mosaico Atlas volumes")
+    if await db.atlas_glossary_terms.count_documents({}) == 0:
+        for term, definition in ATLAS_GLOSSARY_SEEDS:
+            await db.atlas_glossary_terms.insert_one({
+                "id": f"atlas-term-{_slugify(term)}",
+                "term": term,
+                "definition": definition,
+                "related_terms": [],
+                "linked_volume_ids": [],
+                "created_at": now,
+                "updated_at": now,
+            })
+        logger.info("Seeded Mosaico Atlas glossary")
 
 # ---------- Routes ----------
 @api.get("/")
 async def root():
     return {"app": "Lily Spanish", "ok": True}
+
+
+@api.get("/health")
+async def health():
+    checks = {
+        "database": False,
+        "storage_configured": _has_real_supabase_storage_config(),
+        "strict_production_guards": _strict_production_guards_enabled(),
+        "dev_auth_enabled": _dev_auth_enabled(),
+    }
+    try:
+        await db.users.count_documents({})
+        checks["database"] = True
+    except Exception:
+        checks["database"] = False
+    return {"app": APP_NAME, "ok": checks["database"], "checks": checks}
+
+
+@api.get("/version")
+async def version():
+    return {
+        "app": APP_NAME,
+        "commit": os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_COMMIT") or "unknown",
+        "build": os.environ.get("RENDER_SERVICE_NAME") or os.environ.get("APP_ENV") or "local",
+    }
 
 
 @api.post("/auth/register")
@@ -1068,6 +1481,7 @@ async def auth_login(payload: LocalAuthPayload, request: Request):
         metadata={"provider": "local"},
         request=request,
     )
+    await _record_analytics_event("user_logged_in", user=user, module="auth", entity_type="session", entity_id=session.get("session_id"), session_id=session.get("session_id"))
     public = _public_user(user)
     public["roles"] = await _effective_role_names(user)
     public["permissions"] = await _effective_permission_levels(user)
@@ -1138,6 +1552,8 @@ async def add_availability(payload: dict, _: User = Depends(require_permission("
         "teacher_id": payload.get("teacher_id") or None,
     }
     await db.availability.insert_one(dict(slot))
+    await _record_analytics_event("availability_created", user=_, module="calendar", entity_type="availability", entity_id=slot["id"], metadata={"date": slot["date"], "start_time": slot["start_time"], "teacher_id": slot.get("teacher_id")})
+    await _record_activity_log("availability.created", "availability_created", "availability", "Availability slot opened.", actor_user_id=_.user_id, actor_name=_.name, target_id=slot["id"], metadata=slot)
     return slot
 
 @api.delete("/admin/availability/{slot_id}")
@@ -1285,6 +1701,9 @@ async def payment_status(session_id: str, request: Request):
             await db.payment_transactions.update_one(
                 {"session_id": session_id}, {"$set": {"booking_created": True}}
             )
+            await _record_analytics_event("credits_purchased", user_id=user["user_id"], role=user.get("role"), module="credits", entity_type="payment", entity_id=session_id, metadata={"product_id": product["id"], "amount": txn.get("amount")})
+            await _record_analytics_event("class_booked", user_id=user["user_id"], role=user.get("role"), module="booking", entity_type="booking", entity_id=doc["id"], metadata={"product_id": product["id"], "teacher_id": doc.get("teacher_id")})
+            await _record_activity_log("class.booked", "class_booked", "booking", f"{user.get('name') or user.get('email')} booked {product['name_en']}.", actor_user_id=user["user_id"], actor_name=user.get("name") or user.get("email"), target_id=doc["id"], metadata={"product_id": product["id"], "teacher_id": doc.get("teacher_id")}, visibility="student")
 
     return {"payment_status": payment_state, "status": checkout_state,
             "amount_total": session.amount_total, "currency": session.currency}
@@ -1324,8 +1743,21 @@ async def all_bookings(_: User = Depends(require_permission("bookings:manage")))
 @api.patch("/admin/bookings/{booking_id}")
 async def update_booking(booking_id: str, payload: dict, _: User = Depends(require_permission("bookings:manage"))):
     allowed = {k: v for k, v in payload.items() if k in ("status", "meeting_link", "notes")}
+    before = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
     await db.bookings.update_one({"id": booking_id}, {"$set": allowed})
-    return await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    after = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if before and allowed.get("status") and allowed.get("status") != before.get("status"):
+        status_event = {
+            "cancelled": "class_cancelled",
+            "canceled": "class_cancelled",
+            "completed": "class_completed",
+            "complete": "class_completed",
+            "rescheduled": "class_rescheduled",
+        }.get(allowed.get("status"))
+        if status_event:
+            await _record_analytics_event(status_event, user=_, module="classes", entity_type="booking", entity_id=booking_id, metadata={"before_status": before.get("status"), "after_status": allowed.get("status")})
+            await _record_activity_log(f"class.{allowed.get('status')}", status_event, "booking", f"Class status changed to {allowed.get('status')}.", actor_user_id=_.user_id, actor_name=_.name, target_id=booking_id, metadata={"before_status": before.get("status"), "after_status": allowed.get("status")}, visibility="admin")
+    return after
 
 @api.get("/admin/students")
 async def all_students(_: User = Depends(require_permission("students:manage"))):
@@ -1687,6 +2119,7 @@ async def admin_update_role_permissions(role_name: str, payload: dict, request: 
         metadata={"permissions": sorted(requested_names)},
         request=request,
     )
+    await _record_analytics_event("permission_modified", user=user, module="rbac", entity_type="role", entity_id=role_name, metadata={"permissions": sorted(requested_names)})
     return {"ok": True, "updated_by": user.user_id}
 
 
@@ -1726,6 +2159,7 @@ async def admin_update_user_roles(user_id: str, payload: dict, request: Request,
         metadata={"roles": updated["roles"], "primary_role": updated.get("role")},
         request=request,
     )
+    await _record_analytics_event("role_assigned", user=user, module="rbac", entity_type="user", entity_id=user_id, metadata={"roles": updated["roles"], "primary_role": updated.get("role")})
     return updated
 
 
@@ -1946,6 +2380,524 @@ async def admin_rbac_audit_logs(_: User = Depends(require_permission("audit.logs
     return events[:200]
 
 
+@api.get("/admin/audit-logs")
+async def admin_audit_logs(
+    q: Optional[str] = None,
+    risk: Optional[str] = None,
+    actor: Optional[str] = None,
+    action: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 100,
+    _: User = Depends(require_permission("audit.logs.view")),
+):
+    rows = await db.audit_events.find({}, {"_id": 0}).to_list(1000)
+    if risk and risk != "all":
+        rows = [row for row in rows if row.get("risk_level") == risk]
+    if actor:
+        rows = [row for row in rows if actor.lower() in str(row.get("actor_name") or row.get("actor_user_id") or "").lower()]
+    if action:
+        rows = [row for row in rows if action.lower() in str(row.get("action") or row.get("event_type") or "").lower()]
+    if date_from:
+        rows = [row for row in rows if str(row.get("created_at", "")) >= date_from]
+    if date_to:
+        rows = [row for row in rows if str(row.get("created_at", "")) <= date_to]
+    if q:
+        needle = q.lower()
+        rows = [row for row in rows if needle in " ".join(str(row.get(key, "")) for key in ("event_type", "action", "entity_type", "entity_id", "target_id", "actor_name", "actor_user_id")).lower()]
+    rows.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+    total = len(rows)
+    start = max(0, offset)
+    end = start + max(1, min(limit, 500))
+    return {"items": rows[start:end], "total": total, "offset": start, "limit": max(1, min(limit, 500))}
+
+
+@api.get("/admin/activity-logs")
+async def admin_activity_logs(
+    q: Optional[str] = None,
+    actor: Optional[str] = None,
+    action: Optional[str] = None,
+    target_type: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 100,
+    user: User = Depends(require_permission("logs.activity.view", 4)),
+):
+    rows = await db.activity_logs.find({}, {"_id": 0}).to_list(1000)
+    roles = await _effective_role_names(user)
+    if "administrador_sitio" not in roles and "administrador_profesor" not in roles:
+        rows = [row for row in rows if row.get("actor_user_id") == user.user_id or row.get("visibility") in {"teacher", "student", "tutor"}]
+    if actor:
+        rows = [row for row in rows if actor.lower() in str(row.get("actor_name") or row.get("actor_user_id") or "").lower()]
+    if action:
+        rows = [row for row in rows if action.lower() in str(row.get("action") or row.get("event_type") or "").lower()]
+    if target_type and target_type != "all":
+        rows = [row for row in rows if row.get("target_type") == target_type]
+    if date_from:
+        rows = [row for row in rows if str(row.get("created_at", "")) >= date_from]
+    if date_to:
+        rows = [row for row in rows if str(row.get("created_at", "")) <= date_to]
+    if q:
+        needle = q.lower()
+        rows = [row for row in rows if needle in " ".join(str(row.get(key, "")) for key in ("event_type", "action", "target_type", "target_id", "summary", "actor_name")).lower()]
+    rows.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+    total = len(rows)
+    start = max(0, offset)
+    end = start + max(1, min(limit, 500))
+    return {"items": rows[start:end], "total": total, "offset": start, "limit": max(1, min(limit, 500))}
+
+
+class AnalyticsEventPayload(BaseModel):
+    eventName: str
+    module: Optional[str] = None
+    entityType: Optional[str] = None
+    entityId: Optional[str] = None
+    metadata: dict = Field(default_factory=dict)
+    sessionId: Optional[str] = None
+
+
+@api.post("/analytics/events")
+async def create_analytics_event(payload: AnalyticsEventPayload, user: User = Depends(get_current_user)):
+    await _record_analytics_event(
+        payload.eventName,
+        user=user,
+        module=payload.module,
+        entity_type=payload.entityType,
+        entity_id=payload.entityId,
+        metadata=payload.metadata,
+        session_id=payload.sessionId,
+    )
+    return {"ok": True}
+
+
+@api.get("/admin/analytics/overview")
+async def admin_analytics_overview(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    role: Optional[str] = None,
+    teacher_id: Optional[str] = None,
+    student_id: Optional[str] = None,
+    status: Optional[str] = None,
+    module: Optional[str] = None,
+    _: User = Depends(require_permission("reports.analytics.view")),
+):
+    def in_range(item: dict, field: str = "created_at") -> bool:
+        value = str(item.get(field) or "")
+        return (not date_from or value >= date_from) and (not date_to or value <= date_to)
+
+    bookings = [b for b in await db.bookings.find({}, {"_id": 0}).to_list(5000) if in_range(b)]
+    if teacher_id and teacher_id != "all":
+        bookings = [b for b in bookings if b.get("teacher_id") == teacher_id]
+    if student_id and student_id != "all":
+        bookings = [b for b in bookings if b.get("user_id") == student_id]
+    if status and status != "all":
+        bookings = [b for b in bookings if b.get("status") == status]
+
+    events = [e for e in await db.analytics_events.find({}, {"_id": 0}).to_list(5000) if in_range(e)]
+    if role and role != "all":
+        events = [e for e in events if e.get("role") == role]
+    if module and module != "all":
+        events = [e for e in events if e.get("module") == module]
+
+    payments = [p for p in await db.payment_transactions.find({"payment_status": "paid"}, {"_id": 0}).to_list(5000) if in_range(p)]
+    availability = await db.availability.find({}, {"_id": 0}).to_list(5000)
+    availability = [s for s in availability if (not date_from or str(s.get("date") or "") >= date_from) and (not date_to or str(s.get("date") or "") <= date_to)]
+    if teacher_id and teacher_id != "all":
+        availability = [s for s in availability if s.get("teacher_id") == teacher_id]
+
+    completed = [b for b in bookings if b.get("status") in {"completed", "complete"}]
+    cancelled = [b for b in bookings if b.get("status") in {"cancelled", "canceled"}]
+    no_show = [b for b in bookings if b.get("status") in {"no_show", "no-show"}]
+    active_users = len({e.get("user_id") for e in events if e.get("user_id")})
+    empty_slots = len([s for s in availability if s.get("available") is True])
+    booked_slots = max(0, len(availability) - empty_slots)
+    teacher_utilization = round((booked_slots / len(availability)) * 100, 1) if availability else 0
+
+    event_counts: Dict[str, int] = {}
+    module_counts: Dict[str, int] = {}
+    for event in events:
+        event_name = event.get("event_name") or "unknown"
+        module_name = event.get("module") or "unknown"
+        event_counts[event_name] = event_counts.get(event_name, 0) + 1
+        module_counts[module_name] = module_counts.get(module_name, 0) + 1
+
+    teacher_counts: Dict[str, dict] = {}
+    for booking in bookings:
+        key = booking.get("teacher_id") or "unassigned"
+        item = teacher_counts.setdefault(key, {"teacher_id": key, "teacher_name": booking.get("teacher_name") or "Unassigned", "classes": 0, "completed": 0})
+        item["classes"] += 1
+        if booking.get("status") in {"completed", "complete"}:
+            item["completed"] += 1
+
+    users = await db.users.find({}, {"_id": 0}).to_list(5000)
+    students_with_unused_credits = [
+        {"user_id": u.get("user_id"), "name": u.get("name"), "email": u.get("email"), "estimated_unused_credits": max(0, int(u.get("credits", 0) or 0))}
+        for u in users
+        if _normalize_role(u.get("role")) in {"alumno", "tutor_padre"} and int(u.get("credits", 0) or 0) > 0
+    ][:20]
+
+    recent_activity = await db.activity_logs.find({}, {"_id": 0}).to_list(20)
+    recent_activity.sort(key=lambda row: str(row.get("created_at", "")), reverse=True)
+
+    return {
+        "metrics": {
+            "active_users": active_users,
+            "classes_booked": len(bookings),
+            "classes_completed": len(completed),
+            "cancellation_rate": round((len(cancelled) / len(bookings)) * 100, 1) if bookings else 0,
+            "no_show_rate": round((len(no_show) / len(bookings)) * 100, 1) if bookings else 0,
+            "credits_purchased": sum(int(p.get("metadata", {}).get("credits") or 0) for p in payments),
+            "credits_used": len(bookings) * 2,
+            "teacher_utilization": teacher_utilization,
+            "student_engagement": round((len(events) / max(1, len(users))) * 100, 1),
+            "empty_slots": empty_slots,
+            "booking_conversion": round((event_counts.get("class_booked", 0) / max(1, event_counts.get("dashboard_viewed", 0))) * 100, 1),
+        },
+        "feature_usage": sorted([{"name": k, "count": v} for k, v in event_counts.items()], key=lambda item: item["count"], reverse=True),
+        "module_usage": sorted([{"name": k, "count": v} for k, v in module_counts.items()], key=lambda item: item["count"], reverse=True),
+        "top_teachers": sorted(teacher_counts.values(), key=lambda item: item["classes"], reverse=True)[:10],
+        "students_with_unused_credits": students_with_unused_credits,
+        "recent_activity": recent_activity,
+    }
+
+
+def _next_semver(version: str, version_type: str) -> str:
+    try:
+        major, minor, patch = [int(item) for item in (version or "0.1.0").split(".")[:3]]
+    except ValueError:
+        major, minor, patch = 0, 1, 0
+    if version_type == "major":
+        return f"{major + 1}.0.0"
+    if version_type == "patch":
+        return f"{major}.{minor}.{patch + 1}"
+    return f"{major}.{minor + 1}.0"
+
+
+async def _atlas_volume_payload(volume: dict) -> dict:
+    sections = await db.atlas_sections.find({"volume_id": volume["id"]}, {"_id": 0}).to_list(500)
+    versions = await db.atlas_versions.find({"volume_id": volume["id"]}, {"_id": 0}).to_list(100)
+    reviews = await db.atlas_reviews.find({"volume_id": volume["id"]}, {"_id": 0}).to_list(100)
+    comments = await db.atlas_comments.find({"volume_id": volume["id"]}, {"_id": 0}).to_list(100)
+    audit = await db.atlas_audit_logs.find({"target_id": volume["id"]}, {"_id": 0}).to_list(50)
+    sections.sort(key=lambda item: int(item.get("order_index") or 0))
+    versions.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+    audit.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+    return {**volume, "sections": sections, "versions": versions, "reviews": reviews, "comments": comments, "audit": audit}
+
+
+async def _atlas_can_manage(user: User) -> bool:
+    return await _has_permission(user, "atlas.manage", 5)
+
+
+@api.get("/admin/atlas")
+async def admin_atlas_index(user: User = Depends(require_permission("atlas.view", 3))):
+    volumes = await db.atlas_volumes.find({}, {"_id": 0}).to_list(500)
+    can_manage = await _atlas_can_manage(user)
+    if not can_manage:
+        volumes = [volume for volume in volumes if volume.get("status") == "approved"]
+    decisions = await db.atlas_decision_logs.find({}, {"_id": 0}).to_list(500)
+    reviews = await db.atlas_reviews.find({}, {"_id": 0}).to_list(500)
+    glossary = await db.atlas_glossary_terms.find({}, {"_id": 0}).to_list(500)
+    audit = await db.atlas_audit_logs.find({}, {"_id": 0}).to_list(200)
+    settings = (await _get_settings()).get("atlas_settings") or {
+        "default_visibility": "internal",
+        "review_required": True,
+        "required_approvers": 1,
+        "versioning_policy": "semantic",
+        "export_formats_enabled": ["markdown", "json"],
+        "investor_export_mode": "approved_only",
+        "auto_generate_toc": True,
+        "require_decision_log_for_major_changes": True,
+        "owner_matrix": {},
+    }
+    volumes.sort(key=lambda item: int(item.get("number") or 0))
+    audit.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+    metrics = {
+        "total_volumes": len(volumes),
+        "approved_volumes": len([item for item in volumes if item.get("status") == "approved"]),
+        "in_review": len([item for item in volumes if item.get("status") == "review"]),
+        "drafts": len([item for item in volumes if item.get("status") == "draft"]),
+        "deprecated": len([item for item in volumes if item.get("status") == "deprecated"]),
+        "open_decisions": len([item for item in decisions if item.get("status") in {"proposed", "approved"}]),
+        "pending_reviews": len([item for item in reviews if item.get("status") == "pending"]),
+    }
+    return {"volumes": volumes, "decisions": decisions, "reviews": reviews, "glossary": glossary, "audit": audit[:100], "settings": settings, "metrics": metrics, "canManage": can_manage}
+
+
+@api.get("/admin/atlas/search")
+async def admin_atlas_search(q: str = "", user: User = Depends(require_permission("atlas.view", 3))):
+    needle = q.lower().strip()
+    payload = await admin_atlas_index(user)
+    results = []
+    for volume in payload["volumes"]:
+        haystack = " ".join([volume.get("title", ""), volume.get("description", ""), " ".join(volume.get("tags") or [])]).lower()
+        if needle and needle in haystack:
+            results.append({"type": "volume", "title": volume["title"], "snippet": volume.get("description"), "volume": volume["title"], "slug": volume["slug"], "status": volume.get("status"), "updated_at": volume.get("updated_at")})
+    sections = await db.atlas_sections.find({}, {"_id": 0}).to_list(1000)
+    for section in sections:
+        haystack = " ".join([section.get("title", ""), section.get("summary", ""), section.get("content_markdown", "")]).lower()
+        if needle and needle in haystack:
+            results.append({"type": "section", "title": section["title"], "snippet": section.get("summary"), "volumeId": section.get("volume_id"), "status": section.get("status"), "updated_at": section.get("updated_at")})
+    for decision in payload["decisions"]:
+        haystack = " ".join([decision.get("title", ""), decision.get("context", ""), decision.get("decision", "")]).lower()
+        if needle and needle in haystack:
+            results.append({"type": "decision", "title": decision["title"], "snippet": decision.get("decision"), "status": decision.get("status"), "updated_at": decision.get("updated_at")})
+    for term in payload["glossary"]:
+        haystack = " ".join([term.get("term", ""), term.get("definition", "")]).lower()
+        if needle and needle in haystack:
+            results.append({"type": "glossary", "title": term["term"], "snippet": term.get("definition"), "updated_at": term.get("updated_at")})
+    return {"items": results[:100], "total": len(results)}
+
+
+@api.get("/admin/atlas/volumes/{slug}")
+async def admin_atlas_volume(slug: str, user: User = Depends(require_permission("atlas.view", 3))):
+    volume = await db.atlas_volumes.find_one({"slug": slug}, {"_id": 0})
+    if not volume:
+        raise HTTPException(404, "Atlas volume not found")
+    if volume.get("status") != "approved" and not await _atlas_can_manage(user):
+        raise HTTPException(403, "Atlas volume is not approved for read-only access")
+    return await _atlas_volume_payload(volume)
+
+
+@api.post("/admin/atlas/volumes")
+async def admin_atlas_create_volume(payload: dict, request: Request, user: User = Depends(require_permission("atlas.create", 5))):
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "Title is required")
+    now = _now_iso()
+    number = int(payload.get("number") or await db.atlas_volumes.count_documents({}))
+    doc = {
+        "id": str(uuid.uuid4()),
+        "number": number,
+        "title": title,
+        "slug": payload.get("slug") or f"{number:02d}-{_slugify(title)}",
+        "description": payload.get("description") or "",
+        "owner_user_id": payload.get("owner_user_id") or user.user_id,
+        "owner_role": payload.get("owner_role") or "Super Admin",
+        "status": "draft",
+        "current_version": "0.1.0",
+        "visibility": payload.get("visibility") or "internal",
+        "estimated_pages": int(payload.get("estimated_pages") or 0),
+        "priority": payload.get("priority") or "medium",
+        "tags": payload.get("tags") or [],
+        "linked_volume_ids": payload.get("linked_volume_ids") or [],
+        "purpose": payload.get("purpose") or payload.get("description") or "",
+        "suggested_sections": payload.get("suggested_sections") or [],
+        "created_at": now,
+        "updated_at": now,
+        "approved_at": None,
+        "deprecated_at": None,
+    }
+    await db.atlas_volumes.insert_one(doc)
+    await _record_atlas_audit("volume.created", "volume", doc["id"], user.user_id, after=doc, request=request)
+    return doc
+
+
+@api.patch("/admin/atlas/volumes/{volume_id}")
+async def admin_atlas_update_volume(volume_id: str, payload: dict, request: Request, user: User = Depends(require_permission("atlas.edit", 5))):
+    before = await db.atlas_volumes.find_one({"id": volume_id}, {"_id": 0})
+    if not before:
+        raise HTTPException(404, "Atlas volume not found")
+    if before.get("status") in {"approved", "deprecated"} and not payload.get("createDraft"):
+        raise HTTPException(400, "Approved or deprecated volumes require a new draft version before editing")
+    allowed = {key: payload[key] for key in ("title", "description", "owner_user_id", "owner_role", "visibility", "estimated_pages", "priority", "tags", "linked_volume_ids", "purpose", "suggested_sections") if key in payload}
+    if "title" in allowed:
+        allowed["slug"] = payload.get("slug") or before.get("slug") or _slugify(allowed["title"])
+    allowed["updated_at"] = _now_iso()
+    await db.atlas_volumes.update_one({"id": volume_id}, {"$set": allowed})
+    after = await db.atlas_volumes.find_one({"id": volume_id}, {"_id": 0})
+    await _record_atlas_audit("volume.edited", "volume", volume_id, user.user_id, before=before, after=after, request=request)
+    return after
+
+
+@api.post("/admin/atlas/volumes/{volume_id}/workflow")
+async def admin_atlas_volume_workflow(volume_id: str, payload: dict, request: Request, user: User = Depends(require_permission("atlas.review", 5))):
+    action = payload.get("action")
+    before = await db.atlas_volumes.find_one({"id": volume_id}, {"_id": 0})
+    if not before:
+        raise HTTPException(404, "Atlas volume not found")
+    now = _now_iso()
+    updates = {"updated_at": now}
+    if action == "send_review":
+        updates["status"] = "review"
+        await db.atlas_reviews.insert_one({"id": str(uuid.uuid4()), "volume_id": volume_id, "section_id": None, "reviewer_user_id": payload.get("reviewer_user_id") or user.user_id, "status": "pending", "comments": payload.get("comments") or "", "created_at": now, "updated_at": now})
+    elif action == "approve":
+        if not await _has_permission(user, "atlas.approve", 5):
+            raise HTTPException(403, "Insufficient permissions")
+        if payload.get("critical") and not payload.get("confirmCritical"):
+            raise HTTPException(400, "Critical Atlas approvals require confirmation")
+        updates["status"] = "approved"
+        updates["approved_at"] = now
+    elif action == "deprecate":
+        if not await _has_permission(user, "atlas.approve", 5):
+            raise HTTPException(403, "Insufficient permissions")
+        updates["status"] = "deprecated"
+        updates["deprecated_at"] = now
+    else:
+        raise HTTPException(400, "Unsupported workflow action")
+    await db.atlas_volumes.update_one({"id": volume_id}, {"$set": updates})
+    after = await db.atlas_volumes.find_one({"id": volume_id}, {"_id": 0})
+    await _record_atlas_audit(action, "volume", volume_id, user.user_id, before=before, after=after, metadata={"comments": payload.get("comments")}, request=request)
+    return after
+
+
+@api.post("/admin/atlas/volumes/{volume_id}/versions")
+async def admin_atlas_create_version(volume_id: str, payload: dict, request: Request, user: User = Depends(require_permission("atlas.edit", 5))):
+    volume = await db.atlas_volumes.find_one({"id": volume_id}, {"_id": 0})
+    if not volume:
+        raise HTTPException(404, "Atlas volume not found")
+    sections = await db.atlas_sections.find({"volume_id": volume_id}, {"_id": 0}).to_list(500)
+    version_type = payload.get("version_type") or "minor"
+    version = payload.get("version") or _next_semver(volume.get("current_version"), version_type)
+    now = _now_iso()
+    doc = {"id": str(uuid.uuid4()), "volume_id": volume_id, "version": version, "version_type": version_type, "change_summary": payload.get("change_summary") or "", "content_snapshot": {"volume": volume, "sections": sections}, "created_by_user_id": user.user_id, "created_at": now}
+    await db.atlas_versions.insert_one(doc)
+    await db.atlas_volumes.update_one({"id": volume_id}, {"$set": {"current_version": version, "status": "draft", "updated_at": now}})
+    await _record_atlas_audit("version.created", "version", doc["id"], user.user_id, after=doc, request=request)
+    return doc
+
+
+@api.post("/admin/atlas/sections")
+async def admin_atlas_save_section(payload: dict, request: Request, user: User = Depends(require_permission("atlas.edit", 5))):
+    title = str(payload.get("title") or "").strip()
+    volume_id = payload.get("volume_id")
+    if not title or not volume_id:
+        raise HTTPException(400, "Volume and title are required")
+    now = _now_iso()
+    section_id = payload.get("id") or str(uuid.uuid4())
+    before = await db.atlas_sections.find_one({"id": section_id}, {"_id": 0})
+    doc = {
+        "id": section_id,
+        "volume_id": volume_id,
+        "parent_section_id": payload.get("parent_section_id"),
+        "title": title,
+        "slug": payload.get("slug") or _slugify(title),
+        "order_index": int(payload.get("order_index") or payload.get("order") or 0),
+        "summary": payload.get("summary") or "",
+        "content_markdown": payload.get("content_markdown") or "",
+        "status": payload.get("status") or "draft",
+        "tags": payload.get("tags") or [],
+        "linked_decision_ids": payload.get("linked_decision_ids") or [],
+        "linked_glossary_terms": payload.get("linked_glossary_terms") or [],
+        "created_at": before.get("created_at") if before else now,
+        "updated_at": now,
+    }
+    if before:
+        await db.atlas_sections.update_one({"id": section_id}, {"$set": doc})
+    else:
+        await db.atlas_sections.insert_one(doc)
+    await db.atlas_volumes.update_one({"id": volume_id}, {"$set": {"updated_at": now}})
+    await _record_atlas_audit("section.edited" if before else "section.created", "section", section_id, user.user_id, before=before, after=doc, request=request)
+    return doc
+
+
+@api.post("/admin/atlas/decisions")
+async def admin_atlas_save_decision(payload: dict, request: Request, user: User = Depends(require_permission("atlas.decision_log.manage", 5))):
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "Decision title is required")
+    now = _now_iso()
+    decision_id = payload.get("id") or str(uuid.uuid4())
+    before = await db.atlas_decision_logs.find_one({"id": decision_id}, {"_id": 0})
+    if payload.get("status") == "approved" and payload.get("critical") and not payload.get("confirmCritical"):
+        raise HTTPException(400, "Critical decisions require confirmation before approval")
+    doc = {
+        "id": decision_id,
+        "title": title,
+        "decision_type": payload.get("decision_type") or "product",
+        "context": payload.get("context") or "",
+        "decision": payload.get("decision") or "",
+        "alternatives_considered": payload.get("alternatives_considered") or "",
+        "consequences": payload.get("consequences") or "",
+        "owner_user_id": payload.get("owner_user_id") or user.user_id,
+        "status": payload.get("status") or "proposed",
+        "linked_volume_ids": payload.get("linked_volume_ids") or [],
+        "linked_section_ids": payload.get("linked_section_ids") or [],
+        "created_at": before.get("created_at") if before else now,
+        "updated_at": now,
+    }
+    if before:
+        await db.atlas_decision_logs.update_one({"id": decision_id}, {"$set": doc})
+    else:
+        await db.atlas_decision_logs.insert_one(doc)
+    await _record_atlas_audit("decision.edited" if before else "decision.created", "decision", decision_id, user.user_id, before=before, after=doc, request=request)
+    return doc
+
+
+@api.post("/admin/atlas/glossary")
+async def admin_atlas_save_glossary(payload: dict, request: Request, user: User = Depends(require_permission("atlas.glossary.manage", 5))):
+    term = str(payload.get("term") or "").strip()
+    if not term:
+        raise HTTPException(400, "Term is required")
+    now = _now_iso()
+    term_id = payload.get("id") or f"atlas-term-{_slugify(term)}"
+    before = await db.atlas_glossary_terms.find_one({"id": term_id}, {"_id": 0})
+    doc = {"id": term_id, "term": term, "definition": payload.get("definition") or "", "related_terms": payload.get("related_terms") or [], "linked_volume_ids": payload.get("linked_volume_ids") or [], "created_at": before.get("created_at") if before else now, "updated_at": now}
+    if before:
+        await db.atlas_glossary_terms.update_one({"id": term_id}, {"$set": doc})
+    else:
+        await db.atlas_glossary_terms.insert_one(doc)
+    await _record_atlas_audit("glossary.edited" if before else "glossary.created", "glossary", term_id, user.user_id, before=before, after=doc, request=request)
+    return doc
+
+
+@api.delete("/admin/atlas/glossary/{term_id}")
+async def admin_atlas_delete_glossary(term_id: str, request: Request, user: User = Depends(require_permission("atlas.glossary.manage", 5))):
+    before = await db.atlas_glossary_terms.find_one({"id": term_id}, {"_id": 0})
+    if not before:
+        raise HTTPException(404, "Glossary term not found")
+    await db.atlas_glossary_terms.delete_one({"id": term_id})
+    await _record_atlas_audit("glossary.deleted", "glossary", term_id, user.user_id, before=before, request=request)
+    return {"ok": True}
+
+
+@api.patch("/admin/atlas/settings")
+async def admin_atlas_settings(payload: dict, request: Request, user: User = Depends(require_permission("atlas.settings.manage", 5))):
+    settings = await _get_settings()
+    before = settings.get("atlas_settings") or {}
+    after = _deep_merge_settings(before, payload)
+    await db.site_settings.update_one({"id": "main"}, {"$set": {"atlas_settings": after}}, upsert=True)
+    await _record_atlas_audit("settings.update", "settings", "atlas", user.user_id, before=before, after=after, request=request)
+    return after
+
+
+@api.get("/admin/atlas/export")
+async def admin_atlas_export(format: str = "json", volume_id: Optional[str] = None, user: User = Depends(require_permission("atlas.export", 4))):
+    if volume_id:
+        volume = await db.atlas_volumes.find_one({"id": volume_id}, {"_id": 0})
+        if not volume:
+            raise HTTPException(404, "Atlas volume not found")
+        payload = await _atlas_volume_payload(volume)
+    else:
+        payload = await admin_atlas_index(user)
+    if format == "markdown":
+        volumes = [payload] if volume_id else payload["volumes"]
+        lines = ["# Mosaico Atlas Export", ""]
+        for volume in volumes:
+            lines.extend([f"## Volume {int(volume.get('number', 0)):02d} - {volume.get('title')}", "", volume.get("description") or "", ""])
+            for section in volume.get("sections", []):
+                lines.extend([f"### {section.get('title')}", "", section.get("content_markdown") or section.get("summary") or "", ""])
+        return Response("\n".join(lines), media_type="text/markdown")
+    return payload
+
+
+@api.get("/admin/system-health")
+async def admin_system_health(_: User = Depends(require_permission("settings.platform.view", 4))):
+    settings = await _get_settings()
+    platform_config = settings.get("platform_config") or DEFAULT_SETTINGS["platform_config"]
+    return {
+        "app": APP_NAME,
+        "database": {"ok": True, "users": await db.users.count_documents({}), "roles": await db.roles.count_documents({})},
+        "storage": {"configured": _has_real_supabase_storage_config(), "bucket": SUPABASE_STORAGE_BUCKET},
+        "auth": {"dev_auth_enabled": _dev_auth_enabled(), "local_session_minutes": LOCAL_AUTH_SESSION_MINUTES},
+        "features": platform_config.get("feature_flags", {}),
+        "maintenance_mode": (platform_config.get("general") or {}).get("maintenance_mode", False),
+        "version": {"commit": os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_COMMIT") or "unknown"},
+    }
+
+
 @api.get("/admin/users/{user_id}/login-history")
 async def admin_user_login_history(user_id: str, _: User = Depends(require_admin)):
     docs = await db.login_history.find({"user_id": user_id}, {"_id": 0}).to_list(100)
@@ -2151,6 +3103,55 @@ DEFAULT_SETTINGS = {
         "calendar_id": "primary",
         "auto_create_meet": True,
     },
+    "platform_config": {
+        "general": {
+            "platform_name": "MOSAICO",
+            "environment_badge": "Production",
+            "support_email": "",
+            "support_phone": "",
+            "maintenance_mode": False,
+        },
+        "feature_flags": {
+            "student_roadmap": True,
+            "teacher_calendar": True,
+            "credits_wallet": False,
+            "ai_tutor": False,
+            "community": False,
+        },
+        "booking_rules": {
+            "min_notice_hours": 12,
+            "max_days_ahead": 45,
+            "allow_reschedule": True,
+        },
+        "credit_rules": {
+            "default_class_cost": 2,
+            "allow_negative_balance": False,
+            "grant_requires_reason": True,
+        },
+        "cancellation_policy": {
+            "free_cancel_hours": 12,
+            "late_cancel_credit_penalty": 1,
+        },
+        "teacher_availability_rules": {
+            "allowed_durations": [30, 45, 60],
+            "default_cooldown_minutes": 0,
+            "max_daily_classes": 8,
+        },
+        "student_scheduling_rules": {
+            "max_active_bookings": 6,
+            "require_active_credits": True,
+        },
+        "notification_settings": {
+            "email_enabled": True,
+            "booking_reminders": True,
+            "credit_alerts": True,
+        },
+        "role_defaults": {
+            "new_user_role": "alumno",
+            "teacher_default_role": "profesor",
+            "guardian_default_role": "tutor_padre",
+        },
+    },
     "content": {
         "hero": {
             "tag_en": "", "tag_es": "",
@@ -2186,6 +3187,40 @@ async def _get_settings() -> dict:
         if k not in doc:
             doc[k] = v
     return doc
+
+
+def _deep_merge_settings(base: dict, patch: dict) -> dict:
+    merged = dict(base)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_settings(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _validate_platform_config(config: dict) -> None:
+    general = config.get("general") or {}
+    if not str(general.get("platform_name") or "").strip():
+        raise HTTPException(400, "platform name is required")
+    booking = config.get("booking_rules") or {}
+    min_notice = int(booking.get("min_notice_hours", 0))
+    max_days = int(booking.get("max_days_ahead", 0))
+    if min_notice < 0 or max_days < 1 or max_days > 365:
+        raise HTTPException(400, "booking rule values are out of range")
+    credit = config.get("credit_rules") or {}
+    if int(credit.get("default_class_cost", 1)) < 0:
+        raise HTTPException(400, "default class cost cannot be negative")
+    availability = config.get("teacher_availability_rules") or {}
+    durations = availability.get("allowed_durations") or []
+    if not durations or any(int(item) not in (30, 45, 60) for item in durations):
+        raise HTTPException(400, "allowed durations must contain 30, 45, or 60 minutes")
+    if int(availability.get("default_cooldown_minutes", 0)) < 0:
+        raise HTTPException(400, "cooldown cannot be negative")
+    role_defaults = config.get("role_defaults") or {}
+    for key in ("new_user_role", "teacher_default_role", "guardian_default_role"):
+        if role_defaults.get(key) and _normalize_role(role_defaults[key]) not in ROLE_LABELS:
+            raise HTTPException(400, f"invalid default role: {role_defaults[key]}")
 
 
 async def _get_stripe_key() -> str:
@@ -2278,6 +3313,60 @@ async def get_public_settings():
     return {k: s.get(k, "") for k in PUBLIC_SETTINGS_FIELDS}
 
 
+@api.get("/admin/configuration/settings")
+async def admin_configuration_settings(_: User = Depends(require_permission("settings.platform.view", 4))):
+    settings = await _get_settings()
+    return {
+        "platform_config": settings.get("platform_config") or DEFAULT_SETTINGS["platform_config"],
+        "public_branding": {key: settings.get(key, "") for key in ("brand_name", "tagline_en", "tagline_es", "logo_url", "favicon_url", "hero_image_url", "contact_email", "social_instagram", "social_twitter")},
+        "safe_defaults": DEFAULT_SETTINGS["platform_config"],
+    }
+
+
+@api.patch("/admin/configuration/settings")
+async def admin_update_configuration_settings(payload: dict, request: Request, user: User = Depends(require_permission("settings.platform.edit", 5))):
+    existing = await _get_settings()
+    before = {
+        "platform_config": existing.get("platform_config") or DEFAULT_SETTINGS["platform_config"],
+        "public_branding": {key: existing.get(key, "") for key in ("brand_name", "tagline_en", "tagline_es", "logo_url", "favicon_url", "hero_image_url", "contact_email", "social_instagram", "social_twitter")},
+    }
+    next_config = _deep_merge_settings(before["platform_config"], payload.get("platform_config") or {})
+    _validate_platform_config(next_config)
+    branding_payload = payload.get("public_branding") or {}
+    allowed_branding = {key: branding_payload[key] for key in ("brand_name", "tagline_en", "tagline_es", "logo_url", "favicon_url", "hero_image_url", "contact_email", "social_instagram", "social_twitter") if key in branding_payload}
+    update_doc = {**allowed_branding, "platform_config": next_config}
+    await db.site_settings.update_one({"id": "main"}, {"$set": update_doc}, upsert=True)
+    after_settings = await _get_settings()
+    after = {
+        "platform_config": after_settings.get("platform_config") or DEFAULT_SETTINGS["platform_config"],
+        "public_branding": {key: after_settings.get(key, "") for key in before["public_branding"]},
+    }
+    await _record_audit_event(
+        "settings.platform.update",
+        "platform_settings",
+        entity_id="main",
+        actor_user_id=user.user_id,
+        actor_name=user.name,
+        metadata={"changed_keys": sorted(update_doc.keys())},
+        before=before,
+        after=after,
+        risk_level="critical" if next_config.get("general", {}).get("maintenance_mode") else "high",
+        request=request,
+    )
+    await _record_activity_log(
+        "platform.settings.updated",
+        "settings.platform.update",
+        "platform_settings",
+        "Platform configuration updated.",
+        actor_user_id=user.user_id,
+        actor_name=user.name,
+        target_id="main",
+        metadata={"changed_keys": sorted(update_doc.keys())},
+    )
+    await _record_analytics_event("settings_updated", user=user, module="settings", entity_type="platform_settings", entity_id="main", metadata={"changed_keys": sorted(update_doc.keys())})
+    return after
+
+
 @api.get("/admin/settings")
 async def admin_get_settings(_: User = Depends(require_admin)):
     return await _get_settings()
@@ -2336,7 +3425,7 @@ app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_origins=_cors_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -1,5 +1,18 @@
 # Database Schema
 
+## Production Notes
+
+The schema is defined in `backend/schema.sql` and applied on backend startup. It is written to be idempotent with `CREATE TABLE IF NOT EXISTS`, additive `ALTER TABLE`, and safe indexes.
+
+Current production platform tables include:
+
+- Identity and access: `users`, `roles`, `permissions`, `role_permissions`, `user_roles`, `local_auth_sessions`, `login_history`.
+- Education commerce: `products`, `payment_transactions`, `bookings`, `availability`, `teachers`, `teacher_profiles`, `student_profiles`.
+- Content: `pages`, `blog_posts`, `media_assets`, `files`, `site_settings`.
+- Operations: `audit_events`, `activity_logs`, `analytics_events`, `error_events`.
+
+Before launch, add ledger-grade credit tables and tutor/student relationship tables.
+
 The authoritative schema is:
 
 ```text

@@ -17,6 +17,7 @@ import PaymentSuccess from "./pages/PaymentSuccess";
 import AuthCallback from "./pages/AuthCallback";
 import { Toaster } from "sonner";
 import { StickyBookCta } from "./components/StickyBookCta";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 function AppRouter() {
   const location = useLocation();
@@ -69,9 +70,15 @@ function AppRouter() {
           <Route path="/admin/reports" element={<AdminPortal module="reports" />} />
           <Route path="/admin/roles" element={<AdminPortal module="roles" />} />
           <Route path="/admin/roles-permissions" element={<AdminPortal module="roles-permissions" />} />
+          <Route path="/admin/configuration" element={<AdminPortal module="configuration" />} />
+          <Route path="/admin/audit-logs" element={<AdminPortal module="audit-logs" />} />
+          <Route path="/admin/activity-logs" element={<AdminPortal module="activity-logs" />} />
+          <Route path="/admin/system-settings" element={<AdminPortal module="system-settings" />} />
           <Route path="/admin/payments" element={<AdminPortal module="credits" />} />
           <Route path="/admin/community" element={<AdminPortal module="families" />} />
-          <Route path="/admin/analytics" element={<AdminPortal module="reports" />} />
+          <Route path="/admin/analytics" element={<AdminPortal module="analytics" />} />
+          <Route path="/admin/atlas" element={<AdminPortal module="atlas" />} />
+          <Route path="/admin/atlas/volumes/:slug" element={<AdminPortal module="atlas-volume" />} />
           <Route path="/admin/settings" element={<AdminPortal module="settings" />} />
           <Route path="/technical/wiki" element={<TechnicalWiki />} />
           <Route path="/login" element={<Login />} />
@@ -96,11 +103,13 @@ function AppRouter() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <BrowserRouter>
-        <Toaster position="top-center" richColors />
-        <AppRouter />
-      </BrowserRouter>
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <BrowserRouter>
+          <Toaster position="top-center" richColors />
+          <AppRouter />
+        </BrowserRouter>
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

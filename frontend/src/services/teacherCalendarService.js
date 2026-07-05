@@ -1,3 +1,5 @@
+// TODO: Replace this isolated preview service with the production teacher schedule API.
+// Expected backend endpoints are documented in docs/production-execution-plan.md under P4.
 const delay = (ms = 350) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const toMinutes = (time) => {
