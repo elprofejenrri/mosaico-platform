@@ -28,6 +28,7 @@ Implemented in this phase:
 - Permissions matrix grouped by module and section.
 - Critical permission confirmation flow in the UI and backend.
 - Scalable IAM users table with role chips instead of inline role checkboxes.
+- Users view uses a responsive grid/list instead of a wide table, prioritizing User, Access, Status, Activity, and Actions to avoid horizontal scroll.
 - Debounced search, filters, sorting, pagination, density control, and active filter chips.
 - User detail drawer with General, Roles, Effective Permissions, Activity, Audit History, Login Sessions, and Notes sections.
 - Role assignment happens from the drawer or bulk role modal.

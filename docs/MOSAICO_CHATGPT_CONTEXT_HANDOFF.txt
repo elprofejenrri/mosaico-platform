@@ -1,0 +1,879 @@
+MOSAICO PLATFORM - CHATGPT CONTEXT HANDOFF
+Date: 2026-07-05
+Repository: mosaico-platform
+Local path: C:\Users\ezara\OneDrive\Documentos\Proyectos\lilyespanol-clon-20260625-152123
+Current branch: main
+Latest pushed commit at time of this handoff: 1396904 Upgrade admin RBAC to IAM workspace
+
+Purpose of this document
+========================
+
+This TXT file is intended to be uploaded or pasted into ChatGPT to give full working context for building prompts, following the roadmap, and continuing product/engineering planning for Mosaico.
+
+Mosaico is being evolved from a polished MVP/mockup into a real production-grade education platform. The operating rule is to build phase by phase, avoid fake actions, preserve production safety, keep documentation updated with every change, and use the in-app technical wiki / Mosaico Atlas as a visible source of truth for technical roles.
+
+
+Product Summary
+===============
+
+Mosaico is an online Spanish learning platform with multiple user personas:
+
+1. Client / Student
+   - The learner.
+   - Needs a roadmap of learning, badges, levels, tests, practice tests, credits, unlocked progress, classes, AI/practice support, community moments, and progress visibility.
+
+2. Tutor / Parent
+   - A guardian, parent, or tutor who can manage one or more students.
+   - Needs family wallet/credits, student progress, bookings, feedback, alerts, reports, communication with teachers, and visibility into learning milestones.
+
+3. Teacher
+   - Delivers classes and manages availability.
+   - Needs calendar, availability, blocked time, booked/empty slots, class outcomes, students, materials, evaluations, feedback, earnings, and Google Calendar integration.
+
+4. Administrative / Principal
+   - Non-technical school administrator.
+   - Can approve users, give credits, create lessons, review teachers, operate bookings and reports, manage school-side processes.
+
+5. Super Admin / Technical Admin
+   - Technical and governance profile.
+   - Can manage platform configuration, IAM/RBAC, audit logs, activity logs, technical wiki, Mosaico Atlas, system health, analytics, and sensitive settings.
+
+
+Current Technical Architecture
+==============================
+
+Frontend:
+- React app.
+- Main platform shell: frontend/src/pages/Platform.jsx
+- Router: frontend/src/App.js
+- API client: frontend/src/lib/api
+- Access helpers: frontend/src/lib/access
+- Main IAM/RBAC component: frontend/src/components/admin-rbac/AdminRbacWorkspace.jsx
+- Teacher calendar workspace: frontend/src/components/teacher-calendar/TeacherCalendarWorkspace.jsx
+
+Backend:
+- FastAPI backend.
+- Main server file: backend/server.py
+- Database abstraction: backend/database.py
+- Schema: backend/schema.sql
+- Startup applies schema idempotently with CREATE TABLE IF NOT EXISTS and additive ALTER TABLE statements.
+- PostgreSQL/Supabase is the intended database target.
+
+Integrations / target services:
+- Supabase Auth and database.
+- Render deployment.
+- Stripe for payments/credits checkout.
+- Google Calendar for teacher calendar sync.
+- Supabase Storage for files/media.
+
+Important production URL docs:
+- docs/API_REFERENCE.md
+- docs/DEPLOYMENT_GUIDE.md
+- docs/ENVIRONMENT_VARIABLES.md
+- docs/OPERATIONS_RUNBOOK.md
+
+
+Recent Git History
+==================
+
+Latest commits on main:
+
+- 1396904 Upgrade admin RBAC to IAM workspace
+- 996eac7 Harden preview actions and Atlas docs
+- a45baf0 Build Mosaico platform admin foundation
+- 92e6e65 Prefer RBAC assignments over legacy role
+- 6cdb8d5 Guard portals with RBAC access
+- af10c46 Clarify student RBAC access
+- 7280fe6 Show RBAC user save actions only on changes
+- b41dd94 Model teacher availability windows
+- e1c4bf7 Clarify teacher calendar slot states
+- 9caebc9 Add RBAC admin module
+- 058eec5 Fix teacher calendar month layout
+- aa74e6e Add teacher calendar workspace
+
+The working tree was clean after the latest "turn the lights on" cycle.
+
+
+Operating Rules Established With User
+=====================================
+
+1. "Turn the lights on"
+   This phrase means:
+   - commit
+   - merge if needed
+   - push
+   - backfill if needed
+   - verify safety
+   - do not break production
+
+2. With every change:
+   - update or create documentation
+   - keep docs visible in the platform when relevant
+   - avoid fake actions
+   - preserve production
+   - run build/tests when appropriate
+
+3. The user does not want documentation only in external apps.
+   - Documentation should be available inside the app through the Technical Wiki and/or Mosaico Atlas.
+
+4. Product principle:
+   - A visible button should either perform a real persisted action, be explicitly disabled with a clear reason, or be isolated behind a named service/mock abstraction with TODO/backend dependency documented.
+
+
+Production-Backed Foundations Already Implemented
+=================================================
+
+These areas are production-backed or partially production-backed:
+
+1. Authentication foundation
+   - Supabase/social login target.
+   - Local username/password session support was added earlier.
+   - Session duration is configurable via environment/configuration patterns.
+   - Dev auth has production guardrails documented and partially enforced.
+
+2. RBAC / IAM
+   - Users can have multiple roles.
+   - Permissions are additive.
+   - Roles have permissions with levels.
+   - Backend enforces sensitive permission checks.
+   - Super Admin/Admin protections exist.
+   - Users cannot be left without roles.
+   - Users cannot remove their own last admin access.
+   - System roles cannot be deleted.
+   - Critical permission changes require confirmation.
+   - Role changes and permission changes create audit events.
+
+3. IAM workspace
+   - Main route: /admin/iam
+   - Compatibility routes:
+     - /admin/users
+     - /admin/roles
+     - /admin/roles-permissions
+   - Renamed module from "Manage Users" / "Roles & Permissions" to "Identity & Access Management".
+   - Scalable IAM table replaces inline role checkboxes.
+   - Search, filters, sorting, pagination, density toggle.
+   - Role chips instead of checkbox overload.
+   - User drawer with General, Roles, Effective Permissions, Activity, Audit History, Login Sessions, Notes.
+   - Role assignment happens through drawer or bulk modal.
+   - Bulk role assign/remove/replace uses backend endpoint.
+   - Invite/export/notes/activity are visible but disabled where backend model is not ready.
+
+4. Admin/Super Admin configuration center
+   - Platform settings exist.
+   - Feature flags/settings structure exists.
+   - Audit and activity log surfaces exist.
+   - System health/status page exists.
+
+5. Audit logs
+   - Sensitive changes create audit entries.
+   - IAM/RBAC changes are recorded.
+   - Admin audit log screens exist.
+
+6. Activity logs
+   - Operational activity log foundation exists.
+   - Activity log UI exists.
+
+7. Analytics and observability
+   - Analytics event model/foundation exists.
+   - Admin analytics overview exists.
+   - Error/event handling standards have been started.
+
+8. Technical Wiki
+   - Technical docs registry exists in backend/server.py.
+   - /technical/wiki route exists.
+   - Technical roles can view documentation in the platform.
+
+9. Mosaico Atlas
+   - In-app documentation/product knowledge base.
+   - Routes:
+     - /admin/atlas
+     - /admin/atlas/volumes/:slug
+   - Backend endpoints under /api/admin/atlas.
+   - Atlas volumes/sections/versions/decisions/glossary/audit tables exist.
+   - Atlas content was enriched from placeholder text into Mosaico-specific operating guidance.
+   - Startup backfill is idempotent and preserves manually edited content.
+
+10. Teacher calendar workspace
+   - Advanced calendar UI exists.
+   - Shows day/week/month views.
+   - Shows booked classes and empty slots/placeholders.
+   - Supports class durations 30, 45, 60 minutes in availability UI.
+   - Supports cooldown gap in availability UI.
+   - Shows Google Calendar card as mock/service abstraction.
+   - Some actions persist only in isolated frontend service pending backend scheduling tables.
+
+11. Production safety
+   - Mock/high-risk actions no longer pretend success.
+   - Generic preview ActionButton is disabled unless it has a real action handler.
+   - High-risk credit/booking local mutations were blocked.
+   - Preview Action Audit document exists.
+
+
+Important Routes
+================
+
+Public / common:
+- /
+- /login
+- /pricing
+- /faq
+- /blog
+- /book
+
+Student/client:
+- /student
+- /student/learn
+- /student/roadmap
+- /student/classes
+- /student/ai-tutor
+- /student/community
+- /student/progress
+
+Tutor/parent:
+- /tutor
+- /tutor/students
+- /tutor/classes
+- /tutor/credits
+- /tutor/progress
+- /tutor/roadmap
+- /tutor/tests
+- /tutor/feedback
+- /tutor/messages
+- /tutor/alerts
+- /tutor/badges
+- /tutor/payments
+
+Teacher:
+- /teacher
+- /teacher/calendar
+- /teacher/students
+- /teacher/classes
+- /teacher/materials
+- /teacher/evaluations
+- /teacher/earnings
+
+Admin:
+- /admin
+- /admin/iam
+- /admin/users
+- /admin/roles
+- /admin/roles-permissions
+- /admin/approvals
+- /admin/credits
+- /admin/lessons
+- /admin/teachers
+- /admin/bookings
+- /admin/families
+- /admin/reports
+- /admin/analytics
+- /admin/configuration
+- /admin/audit-logs
+- /admin/activity-logs
+- /admin/system-settings
+- /admin/atlas
+- /admin/atlas/volumes/:slug
+
+Technical:
+- /technical/wiki
+
+
+Backend IAM / RBAC Endpoints
+============================
+
+IAM/RBAC endpoints already exist:
+
+- GET /api/admin/rbac/roles
+- GET /api/admin/rbac/roles/{role_name}
+- POST /api/admin/rbac/roles
+- PATCH /api/admin/rbac/roles/{role_name}
+- POST /api/admin/rbac/roles/{role_name}/duplicate
+- PATCH /api/admin/rbac/roles/{role_name}/status
+- DELETE /api/admin/rbac/roles/{role_name}
+- GET /api/admin/rbac/permissions
+- PATCH /api/admin/rbac/roles/{role_name}/permissions
+- GET /api/admin/rbac/users
+- PATCH /api/admin/rbac/users/{user_id}/roles
+- POST /api/admin/rbac/users/bulk-roles
+- GET /api/admin/rbac/audit-logs
+
+Legacy/admin user endpoints:
+
+- GET /api/admin/users
+- PATCH /api/admin/users/{user_id}
+- PATCH /api/admin/users/{user_id}/roles
+- GET /api/admin/users/{user_id}/audit-events
+- GET /api/admin/users/{user_id}/login-history
+
+
+Current IAM Details
+===================
+
+File:
+- frontend/src/components/admin-rbac/AdminRbacWorkspace.jsx
+
+Main UX:
+- Header title: Identity & Access Management
+- Subtitle: Manage users, roles, access, and security across Mosaico.
+- Actions:
+  - Invite User: disabled until invite token/email service exists.
+  - Bulk Actions: enabled when users are selected.
+  - Export: disabled until backend export endpoint exists.
+  - Refresh: loads IAM data.
+
+Summary cards:
+- Total users
+- Active
+- Inactive
+- Teachers
+- Students
+- Tutors/Parents
+- Admins
+- Pending invites
+
+Users table:
+- Scalable table designed for 100+ users.
+- Columns:
+  - select
+  - user identity
+  - primary role
+  - additional roles
+  - status
+  - wallet summary (currently "Not connected")
+  - bookings
+  - last login
+  - joined
+  - actions
+
+User drawer tabs:
+- General
+- Roles
+- Effective Permissions
+- Activity
+- Audit
+- Sessions
+- Notes
+
+Security behavior:
+- A user must always keep at least one role.
+- Assigning Super Admin requires confirmation.
+- Deactivating user requires confirmation.
+- Delete user is disabled until retention/deletion policy is defined.
+- Effective permissions are read-only and inherited from roles.
+
+
+Current Role Model
+==================
+
+System roles:
+- administrador_sitio = Super Admin
+- administrador_profesor = Admin
+- coordinador = Coordinator
+- profesor = Teacher
+- alumno = Student
+- tutor_padre = Tutor / Parent
+- viewer = Viewer
+
+Legacy role aliases such as admin, teacher, student normalize to canonical roles.
+
+Permissions follow dot notation where possible:
+- roles.management.view
+- roles.management.create
+- roles.management.edit
+- roles.management.delete
+- roles.permissions.modify
+- users.profile.view
+- users.roles.assign
+- audit.logs.view
+- logs.activity.view
+- settings.platform.view
+- settings.platform.edit
+- atlas.view
+- atlas.manage
+- atlas.export
+
+Some legacy permissions such as roles:manage remain for backward compatibility while migration continues.
+
+
+Navigation Status
+=================
+
+Admin left menu is categorized and collapsible.
+
+Admin groups:
+- Command Center
+- People & Learning
+- Scheduling & Credits
+- Intelligence
+- Access & Governance
+- System
+
+IAM now appears as "Identity & Access" in the admin nav.
+
+Collapsed/expanded state is persisted in localStorage by role.
+
+
+Preview / Mock / Not-Yet-Production Areas
+=========================================
+
+This is important context: the app is not fully production-complete. It has production foundations mixed with advanced preview surfaces.
+
+The following areas are still preview or partially connected:
+
+1. Student learning roadmap
+   - Roadmap, badges, levels, tests, practice tests, unlocks need backend models.
+   - Some UI interactions are local state only.
+
+2. Student/tutor booking
+   - Student/tutor booking flows need real booking lifecycle and credit ledger.
+   - Fake local credit deduction has been disabled.
+
+3. Credits / wallet
+   - Needs ledger-grade model.
+   - Credit purchase, assignment, admin grants, refunds, usage must be persisted and audited.
+   - Tutor/admin credit local mutations were blocked.
+
+4. Teacher availability backend
+   - UI/service exists.
+   - Needs production scheduling tables and APIs.
+   - Availability blocks, empty slots, cooldown, class duration rules need backend source of truth.
+
+5. Google Calendar integration
+   - Current teacher calendar Google card is still mock/service abstraction.
+   - Needs OAuth, token storage, sync jobs, event mapping, conflict handling, webhooks/polling, audit logs.
+
+6. Lesson CMS
+   - Admin lesson creation/review/publish still needs backend workflow.
+
+7. Approvals
+   - Admin approvals workflow needs real persistence and state machine.
+
+8. Communications
+   - Messaging/notifications need real inbox/email/WhatsApp strategy.
+
+9. Invitations
+   - IAM invitation UI is staged but disabled.
+   - Needs invite token table and email delivery service.
+
+10. Reports/exports
+   - Some export buttons are staged or disabled pending backend export endpoints.
+
+
+Production Safety Changes Already Made
+======================================
+
+1. Generic preview ActionButton
+   - No longer simulates success.
+   - If no real action handler exists, it is disabled with explanation.
+
+2. Blocked high-risk local mutations:
+   - Buy credits
+   - Assign tutor credits
+   - Tutor class booking/deduct credits
+   - Admin grant credits
+
+3. Teacher calendar fake toast actions disabled:
+   - Open profile
+   - Message
+   - Add homework
+   - Share slot
+   - Close slot
+   - Waitlist campaign
+   - Copy Monday schedule
+   - Duplicate previous week
+   - Bulk edit selected slots
+
+4. Preview Action Audit exists:
+   - docs/PREVIEW_ACTION_AUDIT.md
+
+
+Mosaico Atlas Context
+=====================
+
+Mosaico Atlas is an in-app product/business/technical knowledge base.
+
+Purpose:
+- Internal source of truth for product, business, engineering, operations, UX, security, analytics, investor, and roadmap documentation.
+
+Important docs:
+- docs/MOSAICO_ATLAS.md
+
+Atlas features:
+- Volumes
+- Sections
+- Versions
+- Decisions
+- Glossary
+- Reviews
+- Comments
+- Attachments
+- Atlas audit logs
+
+Startup now ensures Atlas has rich Mosaico-specific content instead of placeholder text.
+
+Launch blockers documented in Atlas:
+- credit ledger
+- production booking lifecycle
+- teacher availability backend
+- Google Calendar connection
+- tutor/student scoping
+- E2E smoke coverage
+
+
+Documentation Inventory
+=======================
+
+Important documentation files:
+
+- README.md
+- docs/product-overview.md
+- docs/roadmap.md
+- docs/PLATFORM_ROADMAP.md
+- docs/production-readiness-audit.md
+- docs/production-execution-plan.md
+- docs/PREVIEW_ACTION_AUDIT.md
+- docs/final-production-report.md
+- docs/RBAC_ADMIN_MODULE.md
+- docs/rbac-permissions.md
+- docs/admin-guide.md
+- docs/teacher-guide.md
+- docs/student-guide.md
+- docs/tutor-parent-guide.md
+- docs/coordinator-guide.md
+- docs/MOSAICO_ATLAS.md
+- docs/TECHNICAL_WIKI.md
+- docs/SUPER_ADMIN_CONFIGURATION_CENTER.md
+- docs/ANALYTICS_OBSERVABILITY.md
+- docs/API_REFERENCE.md
+- docs/DATABASE_SCHEMA.md
+- docs/DATABASE_STANDARDIZATION_PLAN.md
+- docs/DEPLOYMENT_GUIDE.md
+- docs/ENVIRONMENT_VARIABLES.md
+- docs/OPERATIONS_RUNBOOK.md
+- docs/testing-guide.md
+- docs/security-checklist.md
+- docs/release-process.md
+
+Technical docs are registered in backend/server.py under TECHNICAL_DOCS so they can be shown in the technical wiki.
+
+
+Production Readiness Summary
+============================
+
+Production-backed foundations:
+- auth/session foundation
+- IAM/RBAC foundation
+- Super Admin configuration center
+- platform settings
+- audit logs
+- activity logs
+- analytics foundations
+- technical wiki
+- Mosaico Atlas
+- route/portal guards
+- health/version endpoints
+- admin docs
+
+Still not production-ready:
+- full credit ledger
+- full booking lifecycle
+- full teacher scheduling backend
+- Google Calendar real integration
+- learning roadmap/test/badge backend
+- lesson CMS workflow
+- tutor/student relationship scoping
+- communications/invitations
+- report exports
+- E2E smoke tests
+- full privacy/legal/support process
+
+
+Database / Schema Status
+========================
+
+Current schema is in:
+- backend/schema.sql
+
+Current style:
+- startup-applied idempotent schema
+- CREATE TABLE IF NOT EXISTS
+- ALTER TABLE ADD COLUMN IF NOT EXISTS
+- NOT VALID constraints for some relationships
+
+Current table domains include:
+- users
+- roles
+- permissions
+- role_permissions
+- user_roles
+- teacher_profiles
+- student_profiles
+- bookings
+- availability
+- payment_transactions
+- audit_events
+- activity_logs
+- analytics_events
+- error_events
+- atlas_* tables
+- local_auth_sessions
+- login_history
+
+Known database need:
+- Introduce formal migration tooling such as Alembic as schema grows.
+- Add ledger-grade credits/wallet schema.
+- Add production scheduling/availability tables.
+- Add learning roadmap/test/badge schema.
+- Add invitations table.
+- Add messaging/notification schema if internal comms are selected.
+
+
+Security Notes
+==============
+
+Implemented / started:
+- Backend permission enforcement for sensitive IAM/RBAC actions.
+- Frontend route guards prefer active user_roles over legacy users.role.
+- Users cannot self-demote out of last admin access.
+- Users cannot be left with zero roles.
+- System roles protected.
+- Super Admin protected.
+- Critical permission changes require confirmation.
+- Sensitive changes are audited.
+- Production config guards are documented and partially implemented.
+
+Still needs hardening:
+- Full permission migration from legacy roles:manage style to dot notation everywhere.
+- Backend tests for all IAM edge cases, not just current focused suite.
+- Full session revocation UI/API.
+- Password reset flow.
+- Invitation token security.
+- Export authorization and audit.
+- E2E tests for student-only, teacher-only, tutor, admin, super admin.
+
+
+Important Product Decisions
+===========================
+
+1. User can have multiple roles.
+2. Permissions are additive.
+3. Permissions have levels.
+4. Super Admin can manage everything.
+5. Admin can operate platform but should not override Super Admin.
+6. Coordinator, Teacher, Student, Tutor/Parent have scoped permissions.
+7. Admin profile is not purely technical; administrative/principal persona is distinct.
+8. Technical docs must be visible in-app for technical roles.
+9. No fake success toasts for actions that do not persist.
+10. Preview surfaces can exist only if clearly marked/disabled or isolated behind service abstraction.
+11. Credit/booking actions are high-risk and must not be fake.
+12. The platform should move from MVP to platform phase by phase.
+
+
+Current Roadmap State
+=====================
+
+Phase 0 / production foundation:
+- Mostly in progress/partially done.
+- Auth foundation, IAM/RBAC, docs, technical wiki, Atlas, audit/activity logs, analytics foundation, health/version endpoints are in place.
+- Mock/fake action safety pass completed.
+
+Phase 1 / identity, profiles, access:
+- IAM workspace is now significantly improved.
+- Need profile completion, session management, password reset, tutor/student relationships, and stricter permission migration.
+
+Phase 2 / academic learning model:
+- Not done.
+- Need real models for roadmap, lessons, activities, tests, badges, levels, unlocks.
+
+Phase 3 / credits and booking:
+- High priority next.
+- Need ledger, credit rules, booking lifecycle, cancellation/refund/no-show policy, Stripe checkout integration, admin credit grants.
+
+Phase 4 / teacher operations and calendar:
+- UI advanced, backend incomplete.
+- Need production availability, class slots, Google Calendar integration, homework, feedback, messaging.
+
+Phase 5 / analytics, reports, operations:
+- Foundation exists.
+- Need real product metrics from production events and report exports.
+
+
+Recommended Next Sprint
+=======================
+
+Recommended next sprint: Credits + Booking domain.
+
+Reason:
+- It unlocks student/tutor booking.
+- It supports teacher utilization.
+- It gives admin/principal real operational power.
+- It prevents fake money/credit operations.
+- It connects to Stripe, audits, analytics, and scheduling.
+
+Suggested backend models:
+- credit_accounts
+- credit_ledger_entries
+- credit_transactions
+- booking_requests
+- class_sessions
+- cancellation_policies
+- availability_blocks
+- availability_slots
+
+Suggested rules to define before coding:
+- Credits charged for 30, 45, 60 minute classes.
+- Cooldown gap between classes.
+- Refund rules:
+  - normal cancellation
+  - late cancellation
+  - no-show
+  - teacher cancellation
+- Who can book:
+  - student
+  - tutor/parent
+  - coordinator
+  - admin
+- Minimum notice.
+- Maximum advance booking.
+- Reschedule windows.
+- Whether teacher approval is required.
+- Whether credits are reserved at booking or charged at completion.
+
+
+Questions Still Needed From Product Owner
+=========================================
+
+Credits:
+- How many credits for 30, 45, 60 minutes?
+- Are credits shared at family level, student level, or both?
+- Are credits reserved when booking or spent when class completes?
+- Who can grant credits?
+- Do grants require reason codes?
+- What is refund policy?
+
+Booking:
+- Who can book, reschedule, cancel?
+- How much notice is required?
+- What is the cooldown gap?
+- Can one availability block offer multiple class durations?
+- What happens if Google Calendar conflicts?
+
+Learning:
+- What are the levels?
+- What milestones unlock badges?
+- Can badges unlock credits?
+- What is a practice test vs official test?
+- What counts as passing?
+
+Lesson CMS:
+- Draft/review/approved/published/archived?
+- Who can create?
+- Who can approve?
+- Required lesson fields?
+- Relation to levels, skills, tests, courses?
+
+Messaging:
+- Internal inbox, email, WhatsApp, or all?
+- Which notifications are required?
+- Who can message whom?
+
+Admin/principal:
+- What exact actions can administrative role do that technical admin should not own?
+- Which credit grants need approval?
+- Which lesson approvals need audit?
+
+
+Validation Commands Used Recently
+=================================
+
+Frontend build:
+- cd frontend
+- npm run build
+
+Backend compile/tests:
+- python -m py_compile backend\server.py backend\database.py
+- python -m pytest backend\tests\test_super_admin_configuration.py -q
+
+Whitespace/diff check:
+- git diff --check
+
+Latest checks before latest push:
+- npm run build passed
+- py_compile passed
+- backend test suite passed: 10 passed
+- git diff --check passed
+
+
+How To Continue Prompting ChatGPT
+=================================
+
+Useful prompt pattern:
+
+"Act as a Principal Full Stack Developer, Product Manager, UX Architect, and Security Lead for the Mosaico platform. Use the attached context. Work only on [module]. Do not refactor unrelated modules. Preserve existing design system. Prefer backend persistence, RBAC enforcement, audit logs, loading/error/empty states, and documentation updates. If an action is not production-backed, disable it with explanation or isolate it behind a service abstraction with TODO. Run build/tests and summarize files changed."
+
+For next sprint, recommended prompt:
+
+"Build the production Credits + Booking domain for Mosaico. Inspect existing bookings, products, payments, availability, teacher calendar, IAM/RBAC, audit logs, and analytics. Design additive database models for credit accounts, credit ledger entries, booking lifecycle, class sessions, availability blocks/slots, cancellation/no-show/refund policy. Implement backend APIs with permission checks and audit logs. Wire student/tutor/admin booking and credit screens to real persistence. Disable anything not yet supported. Update docs and run tests/build."
+
+
+Known Safe Direction
+====================
+
+Do:
+- Continue phase by phase.
+- Keep IAM as the access control center.
+- Build real credits/booking before enabling money/credit buttons.
+- Build scheduling backend before real Google Calendar sync.
+- Keep docs updated and visible in app.
+- Add backend permission enforcement for every sensitive action.
+- Add audit events for every sensitive change.
+- Keep frontend disabled states honest.
+
+Do not:
+- Re-enable fake credit mutations.
+- Let Student role access admin/teacher/tutor workspaces.
+- Add broad refactors unrelated to the active module.
+- Hide backend gaps behind success toasts.
+- Run destructive database changes without explicit approval.
+- Validate production constraints without data audit.
+
+
+Glossary
+========
+
+Mosaico Atlas:
+- In-app source of truth for product, business, technical, operations, UX, security, analytics, investor, and roadmap documentation.
+
+Technical Wiki:
+- In-app technical documentation viewer for technical roles.
+
+IAM:
+- Identity & Access Management. Replaces "Manage Users" as the higher-level module name.
+
+RBAC:
+- Role-Based Access Control. Users can have many roles; roles have many permissions; permissions are additive.
+
+Super Admin:
+- Technical/global governance role, canonical role name administrador_sitio.
+
+Admin / Administrative Principal:
+- Non-technical school administrator who can operate approvals, credits, users, lessons, and school workflows. Canonical role often administrador_profesor or administrative profile depending on context.
+
+Client:
+- Student/learner persona, sometimes also parent/tutor context depending on portal.
+
+Preview service:
+- A frontend or isolated service abstraction used for product review before backend persistence exists. Must not claim real persistence.
+
+
+End State Vision
+================
+
+Mosaico should become a real education platform where:
+- Students follow a structured Spanish learning roadmap.
+- Tutors/parents manage family learning, credits, bookings, and progress.
+- Teachers manage availability, classes, feedback, materials, and earnings.
+- Administrative principals operate school workflows safely.
+- Super Admins govern configuration, IAM, logs, analytics, and system health.
+- Credits, bookings, lessons, tests, badges, and reports are persisted, permissioned, auditable, and measurable.
+- The platform can be shown to remote stakeholders without relying on fake success actions.
+- The roadmap and documentation remain visible inside the platform through Technical Wiki and Mosaico Atlas.

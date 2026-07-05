@@ -748,7 +748,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
     return <Panel><div className="h-40 animate-pulse rounded-lg bg-[#FBF7EE]" /><p className="mt-3 text-sm text-[#5C6680]">Loading Identity & Access Management...</p></Panel>;
   }
 
-  const rowPadding = density === "compact" ? "py-2" : "py-4";
+  const userRowPadding = density === "compact" ? "p-3" : "p-4";
   const groupedPermissions = groupPermissions(permissions.filter((permission) => {
     const matchesSearch = !search || [permission.name, permission.description, permission.module, permission.section].join(" ").toLowerCase().includes(search.toLowerCase());
     const matchesRisk = riskFilter === "all" || permission.risk_level === riskFilter;
@@ -838,67 +838,61 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
             <p className="text-sm text-[#5C6680]">Showing {pagedUsers.length} of {filteredUsers.length} users. Selected: {selectedUsers.size}</p>
             <Button disabled={!selectedUsers.size} onClick={() => setBulkOpen(true)} className="bg-[#1F3B6E] text-white"><UserPlus size={16} className="mr-2" />Bulk role action</Button>
           </div>
-          <div className="hidden overflow-x-auto lg:block">
-            <table className="w-full min-w-[1120px] text-left text-sm">
-              <thead className="sticky top-0 bg-white text-xs uppercase tracking-[0.14em] text-[#5C6680]">
-                <tr className="border-b border-[#EFE4D0]">
-                  <th className="py-3 pr-3"><input aria-label="Select visible users" type="checkbox" checked={pagedUsers.length > 0 && pagedUsers.every((user) => selectedUsers.has(user.user_id))} onChange={(event) => setSelectedUsers((current) => { const next = new Set(current); pagedUsers.forEach((user) => event.target.checked ? next.add(user.user_id) : next.delete(user.user_id)); return next; })} /></th>
-                  <th>User</th><th>Primary role</th><th>Additional roles</th><th>Status</th><th>Wallet</th><th>Bookings</th><th>Last login</th><th>Joined</th><th className="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#EFE4D0]">
-                {pagedUsers.map((user) => {
-                  const rolesForUser = userRoleList(user);
-                  const primary = primaryRoleFor(user);
-                  const rest = rolesForUser.filter((role) => role !== primary);
-                  return (
-                    <tr key={user.user_id} className="align-top">
-                      <td className={`${rowPadding} pr-3`}><input aria-label={`Select ${user.email}`} type="checkbox" checked={selectedUsers.has(user.user_id)} onChange={() => setSelectedUsers((current) => { const next = new Set(current); next.has(user.user_id) ? next.delete(user.user_id) : next.add(user.user_id); return next; })} /></td>
-                      <td className={rowPadding}>
-                        <button type="button" onClick={() => openUser(user)} className="flex max-w-xs items-center gap-3 text-left">
-                          {user.picture ? <img src={user.picture} alt="" className="h-10 w-10 rounded-full object-cover" /> : <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFF0E6] font-display text-[#E8704C]">{user.name?.[0] || user.email?.[0] || "?"}</span>}
-                          <span className="min-w-0"><span className="block truncate font-semibold text-[#1F3B6E]">{user.name || "Unnamed user"}</span><span className="block truncate text-xs text-[#5C6680]">{user.email}</span><span className="block truncate text-xs text-[#5C6680]">{user.user_id}</span></span>
-                        </button>
-                      </td>
-                      <td className={rowPadding}><RoleChip role={primary} rolesByName={rolesByName} /></td>
-                      <td className={rowPadding}><div className="flex max-w-44 flex-wrap gap-1">{rest.slice(0, 2).map((role) => <RoleChip key={role} role={role} rolesByName={rolesByName} />)}{rest.length > 2 && <Badge tone="medium">+{rest.length - 2}</Badge>}</div></td>
-                      <td className={rowPadding}><Badge tone={user.active === false ? "high" : "low"}>{user.active === false ? "inactive" : "active"}</Badge></td>
-                      <td className={`${rowPadding} text-[#5C6680]`}>Not connected</td>
-                      <td className={`${rowPadding} text-[#5C6680]`}>{user.booking_count || 0}</td>
-                      <td className={`${rowPadding} text-[#5C6680]`}>{formatDate(user.last_login_at)}</td>
-                      <td className={`${rowPadding} text-[#5C6680]`}>{formatDate(user.created_at)}</td>
-                      <td className={`${rowPadding} text-right`}>
-                        <div className="relative inline-block">
-                          <Button variant="outline" className="border-[#EFE4D0]" onClick={() => setRowMenu(rowMenu === user.user_id ? null : user.user_id)} aria-label={`Actions for ${user.email}`}><MoreVertical size={16} /></Button>
-                          {rowMenu === user.user_id && (
-                            <div className="absolute right-0 z-20 mt-2 w-56 rounded-lg border border-[#EFE4D0] bg-white p-2 text-left shadow-lg">
-                              <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>View profile</button>
-                              <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>Edit roles</button>
-                              <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>View effective permissions</button>
-                              <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>View activity</button>
-                              <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>View audit history</button>
-                              <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>Login sessions</button>
-                              <button className="block w-full rounded-md px-3 py-2 text-left text-sm text-[#B42318] hover:bg-[#FFE7E2]" onClick={() => { setRowMenu(null); toggleActive(user, user.active === false); }}>{user.active === false ? "Activate" : "Deactivate"}</button>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="grid gap-3 lg:hidden">
-            {pagedUsers.map((user) => (
-              <button key={user.user_id} type="button" onClick={() => openUser(user)} className="rounded-lg border border-[#EFE4D0] bg-white p-4 text-left">
-                <div className="flex items-start justify-between gap-3">
-                  <div><p className="font-semibold text-[#1F3B6E]">{user.name || "Unnamed user"}</p><p className="text-sm text-[#5C6680]">{user.email}</p></div>
-                  <Badge tone={user.active === false ? "high" : "low"}>{user.active === false ? "inactive" : "active"}</Badge>
+          <div className="grid gap-2">
+            <div className="hidden rounded-md border-b border-[#EFE4D0] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#5C6680] lg:grid lg:grid-cols-[32px_minmax(220px,1.7fr)_minmax(190px,1.25fr)_96px_minmax(150px,0.9fr)_48px] lg:gap-3">
+              <div><input aria-label="Select visible users" type="checkbox" checked={pagedUsers.length > 0 && pagedUsers.every((user) => selectedUsers.has(user.user_id))} onChange={(event) => setSelectedUsers((current) => { const next = new Set(current); pagedUsers.forEach((user) => event.target.checked ? next.add(user.user_id) : next.delete(user.user_id)); return next; })} /></div>
+              <div>User</div>
+              <div>Access</div>
+              <div>Status</div>
+              <div>Activity</div>
+              <div className="text-right">Actions</div>
+            </div>
+            {pagedUsers.map((user) => {
+              const rolesForUser = userRoleList(user);
+              const primary = primaryRoleFor(user);
+              const rest = rolesForUser.filter((role) => role !== primary);
+              const selected = selectedUsers.has(user.user_id);
+              return (
+                <div key={user.user_id} className={`${userRowPadding} grid gap-3 rounded-lg border border-[#EFE4D0] bg-white text-sm lg:grid-cols-[32px_minmax(220px,1.7fr)_minmax(190px,1.25fr)_96px_minmax(150px,0.9fr)_48px] lg:items-center`}>
+                  <div className="flex items-center justify-between lg:block">
+                    <input aria-label={`Select ${user.email}`} type="checkbox" checked={selected} onChange={() => setSelectedUsers((current) => { const next = new Set(current); next.has(user.user_id) ? next.delete(user.user_id) : next.add(user.user_id); return next; })} />
+                    <div className="lg:hidden"><Badge tone={user.active === false ? "high" : "low"}>{user.active === false ? "inactive" : "active"}</Badge></div>
+                  </div>
+                  <button type="button" onClick={() => openUser(user)} className="flex min-w-0 items-center gap-3 text-left">
+                    {user.picture ? <img src={user.picture} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" /> : <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFF0E6] font-display text-[#E8704C]">{user.name?.[0] || user.email?.[0] || "?"}</span>}
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold text-[#1F3B6E]">{user.name || "Unnamed user"}</span>
+                      <span className="block truncate text-xs text-[#5C6680]">{user.email}</span>
+                      <span className="block truncate text-xs text-[#5C6680]">{user.user_id}</span>
+                    </span>
+                  </button>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap gap-1"><RoleChip role={primary} rolesByName={rolesByName} />{rest.slice(0, 3).map((role) => <RoleChip key={role} role={role} rolesByName={rolesByName} />)}{rest.length > 3 && <Badge tone="medium">+{rest.length - 3}</Badge>}</div>
+                    <p className="mt-1 text-xs text-[#5C6680]">{user.effective_permission_count || 0} effective permissions</p>
+                  </div>
+                  <div className="hidden lg:block"><Badge tone={user.active === false ? "high" : "low"}>{user.active === false ? "inactive" : "active"}</Badge></div>
+                  <div className="grid gap-1 text-xs text-[#5C6680] sm:grid-cols-3 lg:grid-cols-1">
+                    <span><strong className="text-[#1F3B6E]">{user.booking_count || 0}</strong> bookings</span>
+                    <span>Last: {formatDate(user.last_login_at)}</span>
+                    <span>Wallet: not connected</span>
+                  </div>
+                  <div className="relative flex justify-end">
+                    <Button variant="outline" className="border-[#EFE4D0]" onClick={() => setRowMenu(rowMenu === user.user_id ? null : user.user_id)} aria-label={`Actions for ${user.email}`}><MoreVertical size={16} /></Button>
+                    {rowMenu === user.user_id && (
+                      <div className="absolute right-0 top-10 z-20 w-56 rounded-lg border border-[#EFE4D0] bg-white p-2 text-left shadow-lg">
+                        <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>View profile</button>
+                        <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>Edit roles</button>
+                        <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>View effective permissions</button>
+                        <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>View activity</button>
+                        <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>View audit history</button>
+                        <button className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#FBF7EE]" onClick={() => openUser(user)}>Login sessions</button>
+                        <button className="block w-full rounded-md px-3 py-2 text-left text-sm text-[#B42318] hover:bg-[#FFE7E2]" onClick={() => { setRowMenu(null); toggleActive(user, user.active === false); }}>{user.active === false ? "Activate" : "Deactivate"}</button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">{userRoleList(user).slice(0, 4).map((role) => <RoleChip key={role} role={role} rolesByName={rolesByName} />)}</div>
-              </button>
-            ))}
+              );
+            })}
           </div>
           {pagedUsers.length === 0 && <p className="py-10 text-center text-sm text-[#5C6680]">No users match the current IAM filters.</p>}
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
@@ -923,23 +917,36 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
             </div>
           </Panel>
           <Panel>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] text-left text-sm">
-                <thead className="text-xs uppercase tracking-[0.14em] text-[#5C6680]"><tr className="border-b border-[#EFE4D0]"><th className="py-3">Role</th><th>Type</th><th>Status</th><th>Users</th><th>Permissions</th><th>Updated</th><th className="text-right">Actions</th></tr></thead>
-                <tbody className="divide-y divide-[#EFE4D0]">
-                  {roles.map((role) => (
-                    <tr key={role.name}>
-                      <td className="py-4 pr-3"><p className="font-semibold text-[#1F3B6E]">{roleLabel(role)}</p><p className="text-xs text-[#5C6680]">{role.name}</p><p className="text-xs text-[#5C6680]">{role.description}</p></td>
-                      <td><Badge tone={role.type === "system" ? "medium" : "low"}>{role.type}</Badge></td>
-                      <td><Badge tone={role.status === "active" ? "low" : "high"}>{role.status}</Badge></td>
-                      <td>{role.userCount || 0}</td>
-                      <td>{role.permissionCount || 0}</td>
-                      <td className="text-[#5C6680]">{formatDate(role.updated_at)}</td>
-                      <td><div className="flex justify-end gap-2"><Button onClick={() => { setSelectedRoleName(role.name); setTab("matrix"); }} variant="outline" className="border-[#EFE4D0]"><FileSearch size={15} /></Button><Button disabled={saving} onClick={() => duplicateRole(role)} variant="outline" className="border-[#EFE4D0]"><Copy size={15} /></Button><Button disabled={saving || role.name === "administrador_sitio"} onClick={() => updateRoleStatus(role)} variant="outline" className="border-[#EFE4D0]">{role.status === "active" ? "Deactivate" : "Activate"}</Button><Button disabled={saving || role.type === "system"} onClick={() => deleteRole(role)} variant="outline" className="border-[#EFE4D0] text-[#B42318]"><Trash2 size={15} /></Button></div></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="grid gap-3">
+              <div className="hidden rounded-md border-b border-[#EFE4D0] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#5C6680] lg:grid lg:grid-cols-[minmax(240px,1.6fr)_110px_110px_minmax(150px,1fr)_minmax(220px,1.2fr)] lg:gap-3">
+                <div>Role</div>
+                <div>Type</div>
+                <div>Status</div>
+                <div>Usage</div>
+                <div className="text-right">Actions</div>
+              </div>
+              {roles.map((role) => (
+                <div key={role.name} className="grid gap-3 rounded-lg border border-[#EFE4D0] bg-white p-4 text-sm lg:grid-cols-[minmax(240px,1.6fr)_110px_110px_minmax(150px,1fr)_minmax(220px,1.2fr)] lg:items-center">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-[#1F3B6E]">{roleLabel(role)}</p>
+                    <p className="truncate text-xs text-[#5C6680]">{role.name}</p>
+                    <p className="mt-1 text-xs text-[#5C6680]">{role.description}</p>
+                  </div>
+                  <div><Badge tone={role.type === "system" ? "medium" : "low"}>{role.type}</Badge></div>
+                  <div><Badge tone={role.status === "active" ? "low" : "high"}>{role.status}</Badge></div>
+                  <div className="grid gap-1 text-xs text-[#5C6680] sm:grid-cols-3 lg:grid-cols-1">
+                    <span><strong className="text-[#1F3B6E]">{role.userCount || 0}</strong> users</span>
+                    <span><strong className="text-[#1F3B6E]">{role.permissionCount || 0}</strong> permissions</span>
+                    <span>Updated {formatDate(role.updated_at)}</span>
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button onClick={() => { setSelectedRoleName(role.name); setTab("matrix"); }} variant="outline" className="border-[#EFE4D0]"><FileSearch size={15} /></Button>
+                    <Button disabled={saving} onClick={() => duplicateRole(role)} variant="outline" className="border-[#EFE4D0]"><Copy size={15} /></Button>
+                    <Button disabled={saving || role.name === "administrador_sitio"} onClick={() => updateRoleStatus(role)} variant="outline" className="border-[#EFE4D0]">{role.status === "active" ? "Deactivate" : "Activate"}</Button>
+                    <Button disabled={saving || role.type === "system"} onClick={() => deleteRole(role)} variant="outline" className="border-[#EFE4D0] text-[#B42318]"><Trash2 size={15} /></Button>
+                  </div>
+                </div>
+              ))}
             </div>
           </Panel>
         </div>
