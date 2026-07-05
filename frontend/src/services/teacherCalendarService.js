@@ -1,5 +1,26 @@
 const delay = (ms = 350) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const toMinutes = (time) => {
+  const [hour, minute] = time.split(":").map(Number);
+  return hour * 60 + minute;
+};
+
+const toTime = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
+function buildAvailabilityOptions(start, end, durations = [30, 45, 60], cooldown = 0) {
+  const startMinutes = toMinutes(start);
+  const endMinutes = toMinutes(end);
+  return durations.map((duration) => {
+    const slots = [];
+    let cursor = startMinutes;
+    while (cursor + duration <= endMinutes) {
+      slots.push({ start: toTime(cursor), end: toTime(cursor + duration), duration });
+      cursor += duration + cooldown;
+    }
+    return { duration, count: slots.length, slots };
+  });
+}
+
 export const calendarStatuses = {
   booked: "Booked",
   available: "Available",
@@ -89,6 +110,23 @@ let sessions = [
     end: "11:30",
     status: "available",
     classType: "Open private lesson",
+    durationOptions: [30, 45, 60],
+    cooldownMinutes: 0,
+    slotOptions: buildAvailabilityOptions("10:30", "11:30", [30, 45, 60], 0),
+    credits: 2,
+    location: "Online",
+  },
+  {
+    id: "availability-window-1",
+    date: "2026-07-11",
+    day: "Sat",
+    start: "09:00",
+    end: "11:00",
+    status: "available",
+    classType: "Wide availability window",
+    durationOptions: [30, 45, 60],
+    cooldownMinutes: 0,
+    slotOptions: buildAvailabilityOptions("09:00", "11:00", [30, 45, 60], 0),
     credits: 2,
     location: "Online",
   },
@@ -205,6 +243,8 @@ export async function getTeacherCalendarWorkspace() {
 
 export async function saveTeacherAvailability(payload) {
   await delay();
+  const durationOptions = payload.durationOptions?.length ? payload.durationOptions : [Number(payload.duration || 60)];
+  const cooldownMinutes = Number(payload.cooldownMinutes ?? payload.buffer ?? 0);
   const newSlot = {
     id: `available-${Date.now()}`,
     date: payload.date || "2026-07-12",
@@ -213,6 +253,9 @@ export async function saveTeacherAvailability(payload) {
     end: payload.endTime,
     status: "available",
     classType: payload.template || "Open private lesson",
+    durationOptions,
+    cooldownMinutes,
+    slotOptions: buildAvailabilityOptions(payload.startTime, payload.endTime, durationOptions, cooldownMinutes),
     credits: 2,
     location: payload.location || "Online",
   };

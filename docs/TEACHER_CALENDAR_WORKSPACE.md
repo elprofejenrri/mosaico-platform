@@ -24,6 +24,7 @@ Implemented UI capabilities:
 - Responsive desktop, tablet, and mobile layouts.
 - Month view uses compact non-overflowing slot cards and stacks the operations sidebar below the calendar until wide desktop space is available.
 - Day, week, and month views show a shared status legend and explicit empty-slot placeholders, so teachers can distinguish booked classes from available openings and unfilled gaps.
+- Availability is modeled as a time window, not only a single class slot. A window can expose 30, 45, and/or 60 minute class options and applies a configurable cooldown gap between generated options.
 
 ## Product Behavior
 
@@ -34,6 +35,15 @@ Teachers should be able to answer three questions quickly:
 3. Which open slots should I fill with student invitations?
 
 The page is intentionally operational rather than promotional. It prioritizes compact controls, state visibility, and direct actions.
+
+Availability behavior:
+
+- Teachers open a window such as `09:00-11:00`.
+- The window can support one or more class durations: 30, 45, and 60 minutes.
+- The platform calculates possible bookable starts inside the window for each duration.
+- Cooldown minutes are inserted after each possible class when calculating the next option.
+- Example with no cooldown: `09:00-11:00` can show four 30-minute slots, two 45-minute slots, or two 60-minute slots.
+- Example with 10-minute cooldown: each generated option reserves class time plus 10 minutes before the next possible start.
 
 ## Technical Design
 
@@ -56,6 +66,8 @@ The Teacher Portal renders this workspace for the calendar module from:
 Before this becomes a fully real scheduling platform, replace the mock service with backend-backed resources:
 
 - `teacher_availability_windows`
+- `teacher_availability_duration_options`
+- `teacher_availability_generated_slots`
 - `teacher_time_blocks`
 - `class_sessions`
 - `class_session_actions`

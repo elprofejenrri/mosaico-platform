@@ -109,6 +109,30 @@ function addOneHour(time) {
   return `${String(Math.min(hour + 1, 23)).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+function AvailabilityOptions({ session, compact = false }) {
+  if (session.status !== "available" || !session.slotOptions?.length) return null;
+  const visibleOptions = compact ? session.slotOptions.slice(0, 2) : session.slotOptions;
+  return (
+    <div className={`mt-2 grid gap-1 ${compact ? "" : "rounded-md bg-white/70 p-2"}`}>
+      {visibleOptions.map((option) => (
+        <div key={option.duration} className="flex items-center justify-between gap-2 rounded bg-white/80 px-2 py-1 text-[11px]">
+          <span className="font-semibold">{option.duration} min</span>
+          <span>{option.count} slot{option.count === 1 ? "" : "s"}</span>
+        </div>
+      ))}
+      {!compact && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {session.slotOptions.flatMap((option) => option.slots.slice(0, 4).map((slot) => (
+            <span key={`${option.duration}-${slot.start}`} className="rounded bg-[#EAF4FF] px-2 py-1 text-[11px] text-[#1F5F9D]">{slot.start}-{slot.end}</span>
+          )))}
+        </div>
+      )}
+      {compact && session.slotOptions.length > 2 && <p className="text-[11px] font-semibold">+{session.slotOptions.length - 2} options</p>}
+      <p className="text-[11px]">Cooldown: {session.cooldownMinutes || 0} min</p>
+    </div>
+  );
+}
+
 function EmptySlotPlaceholder({ date, start, end, compact = false, label, detail, onInvite }) {
   const fallbackLabel = date ? `${date} - ${start}-${end}` : `${start}-${end}`;
   const displayLabel = label || fallbackLabel;
@@ -175,6 +199,7 @@ function CalendarSlotCard({ session, onOpen, compact = false }) {
         </div>
         {compact ? <span className="shrink-0 rounded bg-white/70 px-1 text-[10px] font-semibold uppercase">{session.status}</span> : <MoreHorizontal size={16} className="shrink-0" />}
       </div>
+      <AvailabilityOptions session={session} compact={compact} />
       {!compact && (
         <div className="mt-2 grid gap-1 text-xs">
           <div><StatusBadge status={session.status} /></div>
@@ -365,14 +390,26 @@ function SchedulingInsightsPanel({ insights }) {
 }
 
 function AvailabilityModal({ onClose, onSaved }) {
-  const [form, setForm] = useState({ template: "Regular schedule", days: ["Mon"], startTime: "09:00", endTime: "12:00", duration: 60, buffer: 10, maxClasses: 4, location: "Online", active: true });
+  const [form, setForm] = useState({ template: "Regular schedule", days: ["Mon"], startTime: "09:00", endTime: "12:00", durationOptions: [30, 45, 60], cooldownMinutes: 0, maxClasses: 4, location: "Online", active: true });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const toggleDuration = (duration) => {
+    setForm((current) => {
+      const selected = new Set(current.durationOptions);
+      if (selected.has(duration)) selected.delete(duration);
+      else selected.add(duration);
+      return { ...current, durationOptions: Array.from(selected).sort((a, b) => a - b) };
+    });
+  };
   const save = async () => {
     setError("");
     if (form.endTime <= form.startTime) {
       setError("End time must be after start time.");
+      return;
+    }
+    if (!form.durationOptions.length) {
+      setError("Select at least one class duration.");
       return;
     }
     setLoading(true);
@@ -393,7 +430,14 @@ function AvailabilityModal({ onClose, onSaved }) {
         <Field label="Template"><Select value={form.template} onChange={(event) => update("template", event.target.value)}><option>Regular schedule</option><option>Summer schedule</option><option>Holiday schedule</option><option>Custom template</option></Select></Field>
         <Field label="Day"><Select value={form.days[0]} onChange={(event) => update("days", [event.target.value])}>{days.map((day) => <option key={day}>{day}</option>)}</Select></Field>
         <div className="grid grid-cols-2 gap-3"><Field label="Start time"><Input type="time" value={form.startTime} onChange={(event) => update("startTime", event.target.value)} /></Field><Field label="End time" error={error}><Input type="time" value={form.endTime} onChange={(event) => update("endTime", event.target.value)} /></Field></div>
-        <div className="grid grid-cols-3 gap-3"><Field label="Slot duration"><Input type="number" value={form.duration} onChange={(event) => update("duration", Number(event.target.value))} /></Field><Field label="Buffer"><Input type="number" value={form.buffer} onChange={(event) => update("buffer", Number(event.target.value))} /></Field><Field label="Max/day"><Input type="number" value={form.maxClasses} onChange={(event) => update("maxClasses", Number(event.target.value))} /></Field></div>
+        <Field label="Class durations" error={error && !form.durationOptions.length ? error : ""}>
+          <div className="grid grid-cols-3 gap-2">
+            {[30, 45, 60].map((duration) => (
+              <button key={duration} type="button" onClick={() => toggleDuration(duration)} className={`rounded-md border px-3 py-2 text-sm font-semibold ${form.durationOptions.includes(duration) ? "border-[#2DA89F] bg-[#E0F2F0] text-[#1B6F68]" : "border-[#EFE4D0] bg-white text-[#5C6680]"}`}>{duration} min</button>
+            ))}
+          </div>
+        </Field>
+        <div className="grid grid-cols-2 gap-3"><Field label="Cooldown gap"><Input type="number" min="0" step="5" value={form.cooldownMinutes} onChange={(event) => update("cooldownMinutes", Number(event.target.value))} /></Field><Field label="Max/day"><Input type="number" value={form.maxClasses} onChange={(event) => update("maxClasses", Number(event.target.value))} /></Field></div>
         <Field label="Location"><Select value={form.location} onChange={(event) => update("location", event.target.value)}><option>Online</option><option>Campus</option><option>Hybrid</option></Select></Field>
         <div className="grid gap-2 rounded-lg bg-[#FBF7EE] p-4 text-sm text-[#5C6680]"><button onClick={() => toast.success("Monday schedule copied.")} className="text-left">Copy Monday schedule to selected days</button><button onClick={() => toast.success("Previous week duplicated.")} className="text-left">Duplicate previous week</button><button onClick={() => toast.success("Bulk edit staged.")} className="text-left">Bulk edit selected slots</button></div>
         <Button disabled={loading} onClick={save} className="bg-[#E8704C] text-white hover:bg-[#C95630]">{loading ? "Saving..." : "Save availability"}</Button>
