@@ -23,6 +23,7 @@ Implemented UI capabilities:
 - Student quick view drawer with class actions: complete, cancel, no-show, late, reschedule, notes, homework, and feedback.
 - Responsive desktop, tablet, and mobile layouts.
 - Month view uses compact non-overflowing slot cards and stacks the operations sidebar below the calendar until wide desktop space is available.
+- Day, week, and month views show a shared status legend and explicit empty-slot placeholders, so teachers can distinguish booked classes from available openings and unfilled gaps.
 
 ## Product Behavior
 
@@ -61,6 +62,32 @@ Before this becomes a fully real scheduling platform, replace the mock service w
 - `calendar_integrations`
 - `student_invitation_campaigns`
 - `student_invitation_recipients`
+
+## Google Calendar Integration Requirements
+
+The current Google Calendar card is a mock service. To make it real, MOSAICO needs:
+
+- A Google Cloud project with the Google Calendar API enabled.
+- OAuth consent screen configured for MOSAICO.
+- OAuth client credentials for the production frontend/backend redirect URI.
+- Backend OAuth endpoints to start connection, handle callback, store refresh tokens securely, disconnect, and refresh access tokens.
+- Encrypted storage for calendar integration records and refresh tokens.
+- Calendar sync tables for external event IDs, sync direction, last sync cursor/page token, conflicts, and error state.
+- Backend worker or scheduled job for periodic sync.
+- Webhook/channel renewal if using Google Calendar push notifications.
+- Conflict policy for imported busy blocks versus MOSAICO booked classes.
+- RBAC enforcement with `calendar.teacher.sync_google` before allowing connect, disconnect, or manual sync.
+- Audit events for connect, disconnect, sync, conflict resolution, and permission failures.
+
+Recommended implementation steps:
+
+1. Add backend tables for `calendar_integrations`, `calendar_sync_events`, and `teacher_time_blocks`.
+2. Add Google OAuth endpoints and store refresh tokens encrypted.
+3. Replace `syncGoogleCalendar` in the frontend mock service with API calls.
+4. Import Google busy events as blocked time, not as booked MOSAICO classes.
+5. Export only confirmed MOSAICO classes when sync direction allows export.
+6. Add conflict review UI before overwriting or moving any class.
+7. Add automated tests for token refresh, permission checks, conflict creation, and disconnect behavior.
 
 Recommended backend endpoints:
 
