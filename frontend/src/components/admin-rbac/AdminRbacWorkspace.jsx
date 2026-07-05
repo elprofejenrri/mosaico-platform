@@ -58,6 +58,16 @@ function roleLabel(role) {
   return role?.label || role?.name || "Role";
 }
 
+function normalizeRoleList(items = []) {
+  return [...new Set(items.filter(Boolean))].sort();
+}
+
+function roleListsEqual(left = [], right = []) {
+  const a = normalizeRoleList(left);
+  const b = normalizeRoleList(right);
+  return a.length === b.length && a.every((item, index) => item === b[index]);
+}
+
 export default function AdminRbacWorkspace() {
   const [tab, setTab] = useState("roles");
   const [roles, setRoles] = useState([]);
@@ -238,6 +248,13 @@ export default function AdminRbacWorkspace() {
     });
   };
 
+  const userHasDraftChanges = (user) => !roleListsEqual(userDrafts[user.user_id] || [], user.roles || [user.role].filter(Boolean));
+
+  const cancelUserRoleChanges = (user) => {
+    setUserDrafts((drafts) => ({ ...drafts, [user.user_id]: user.roles || [user.role].filter(Boolean) }));
+    toast.success("Role changes cancelled.");
+  };
+
   const saveUserRoles = async (user) => {
     const rolesForUser = userDrafts[user.user_id] || [];
     if (!rolesForUser.length) {
@@ -416,7 +433,16 @@ export default function AdminRbacWorkspace() {
                     <td><Badge tone={user.active === false ? "high" : "low"}>{user.active === false ? "inactive" : "active"}</Badge></td>
                     <td><div className="flex max-w-xl flex-wrap gap-2">{roles.map((role) => <label key={`${user.user_id}-${role.name}`} className={`rounded-md border px-2 py-1 text-xs ${userDrafts[user.user_id]?.includes(role.name) ? "border-[#2DA89F] bg-[#E0F2F0] text-[#1B6F68]" : "border-[#EFE4D0] bg-white text-[#5C6680]"}`}><input aria-label={`${user.email} ${role.name}`} type="checkbox" checked={!!userDrafts[user.user_id]?.includes(role.name)} onChange={() => toggleUserRole(user.user_id, role.name)} className="mr-2 accent-[#2DA89F]" />{roleLabel(role)}</label>)}</div></td>
                     <td>{user.effective_permission_count || 0}</td>
-                    <td className="text-right"><Button disabled={saving} onClick={() => saveUserRoles(user)} className="bg-[#E8704C] text-white hover:bg-[#C95630]">Save</Button></td>
+                    <td className="text-right">
+                      {userHasDraftChanges(user) ? (
+                        <div className="flex justify-end gap-2">
+                          <Button disabled={saving} onClick={() => cancelUserRoleChanges(user)} variant="outline" className="border-[#EFE4D0]">Cancel</Button>
+                          <Button disabled={saving} onClick={() => saveUserRoles(user)} className="bg-[#E8704C] text-white hover:bg-[#C95630]">Save</Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-[#5C6680]">No changes</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

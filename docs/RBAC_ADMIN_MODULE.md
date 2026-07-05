@@ -26,6 +26,7 @@ Implemented in this phase:
 - Permissions matrix grouped by module and section.
 - Critical permission confirmation flow in the UI and backend.
 - User assignment tab with multi-role editing and bulk role assignment.
+- User assignment rows show Save and Cancel only when the draft role set differs from the persisted roles.
 - RBAC audit log tab.
 - Backend endpoints under `/api/admin/rbac/*`.
 - Server-side protections for required system roles and users without roles.
