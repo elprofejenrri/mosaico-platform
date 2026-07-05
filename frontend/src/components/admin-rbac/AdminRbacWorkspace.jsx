@@ -68,6 +68,25 @@ function roleListsEqual(left = [], right = []) {
   return a.length === b.length && a.every((item, index) => item === b[index]);
 }
 
+const administrativePermissionPrefixes = [
+  "roles.",
+  "users.",
+  "settings.",
+  "audit.",
+  "reports.",
+  "credits.wallet.grant",
+  "credits.wallet.refund",
+  "teachers.profile.edit",
+  "students.profile.edit",
+  "students.credits.modify",
+];
+
+function administrativePermissionCount(user) {
+  const permissions = Object.keys(user.effective_permissions || {});
+  if (permissions.includes("*")) return permissions.length;
+  return permissions.filter((permission) => administrativePermissionPrefixes.some((prefix) => permission.startsWith(prefix))).length;
+}
+
 export default function AdminRbacWorkspace() {
   const [tab, setTab] = useState("roles");
   const [roles, setRoles] = useState([]);
@@ -424,7 +443,7 @@ export default function AdminRbacWorkspace() {
           </div>
           <div className="mt-5 overflow-x-auto">
             <table className="w-full min-w-[980px] text-left text-sm">
-              <thead className="text-xs uppercase tracking-[0.14em] text-[#5C6680]"><tr className="border-b border-[#EFE4D0]"><th className="py-3">Select</th><th>User</th><th>Status</th><th>Roles</th><th>Effective permissions</th><th className="text-right">Actions</th></tr></thead>
+              <thead className="text-xs uppercase tracking-[0.14em] text-[#5C6680]"><tr className="border-b border-[#EFE4D0]"><th className="py-3">Select</th><th>User</th><th>Status</th><th>Roles</th><th>Admin access</th><th className="text-right">Actions</th></tr></thead>
               <tbody className="divide-y divide-[#EFE4D0]">
                 {users.filter((user) => [user.name, user.email, ...(user.roles || [])].join(" ").toLowerCase().includes(search.toLowerCase())).map((user) => (
                   <tr key={user.user_id}>
@@ -432,7 +451,19 @@ export default function AdminRbacWorkspace() {
                     <td><p className="font-semibold text-[#1F3B6E]">{user.name || "Unnamed user"}</p><p className="text-xs text-[#5C6680]">{user.email}</p></td>
                     <td><Badge tone={user.active === false ? "high" : "low"}>{user.active === false ? "inactive" : "active"}</Badge></td>
                     <td><div className="flex max-w-xl flex-wrap gap-2">{roles.map((role) => <label key={`${user.user_id}-${role.name}`} className={`rounded-md border px-2 py-1 text-xs ${userDrafts[user.user_id]?.includes(role.name) ? "border-[#2DA89F] bg-[#E0F2F0] text-[#1B6F68]" : "border-[#EFE4D0] bg-white text-[#5C6680]"}`}><input aria-label={`${user.email} ${role.name}`} type="checkbox" checked={!!userDrafts[user.user_id]?.includes(role.name)} onChange={() => toggleUserRole(user.user_id, role.name)} className="mr-2 accent-[#2DA89F]" />{roleLabel(role)}</label>)}</div></td>
-                    <td>{user.effective_permission_count || 0}</td>
+                    <td>
+                      {administrativePermissionCount(user) > 0 ? (
+                        <div>
+                          <p className="font-semibold text-[#B42318]">{administrativePermissionCount(user)} admin</p>
+                          <p className="text-xs text-[#5C6680]">{user.effective_permission_count || 0} total</p>
+                        </div>
+                      ) : (
+                        <div>
+                          <Badge tone="low">No admin access</Badge>
+                          <p className="mt-1 text-xs text-[#5C6680]">{user.effective_permission_count || 0} learning/self permissions</p>
+                        </div>
+                      )}
+                    </td>
                     <td className="text-right">
                       {userHasDraftChanges(user) ? (
                         <div className="flex justify-end gap-2">

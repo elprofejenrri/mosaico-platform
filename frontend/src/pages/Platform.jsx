@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import TeacherCalendarWorkspace from "../components/teacher-calendar/TeacherCalendarWorkspace";
 import AdminRbacWorkspace from "../components/admin-rbac/AdminRbacWorkspace";
+import { useApp } from "../context/AppContext";
+import { canAccessPortal } from "../lib/access";
 import {
   Area,
   AreaChart,
@@ -247,9 +249,11 @@ function SectionHeader({ eyebrow, title, action }) {
 }
 
 function RoleSwitcher({ current }) {
+  const { user } = useApp();
+  const visibleRoles = ["student", "tutor", "teacher", "admin"].filter((role) => canAccessPortal(user, role));
   return (
     <div className="grid grid-cols-2 gap-2 rounded-lg border border-[#EFE4D0] bg-white p-1 sm:grid-cols-4 lg:grid-cols-2">
-      {["student", "tutor", "teacher", "admin"].map((role) => (
+      {visibleRoles.map((role) => (
         <Link
           key={role}
           to={roleMeta[role].base}
@@ -266,7 +270,25 @@ function RoleSwitcher({ current }) {
 
 function PlatformShell({ role, children }) {
   const location = useLocation();
+  const { user, authLoading } = useApp();
   const meta = roleMeta[role];
+  if (!authLoading && role === "admin" && !canAccessPortal(user, "admin")) {
+    return (
+      <div className="bg-[#FBF7EE] px-4 py-10">
+        <Card className="mx-auto max-w-2xl">
+          <div className="flex items-start gap-4">
+            <div className="rounded-lg bg-[#FFF0E6] p-3 text-[#E8704C]"><ShieldCheck size={22} /></div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">Access denied</p>
+              <h1 className="mt-2 font-display text-3xl text-[#1F3B6E]">Administrative access required</h1>
+              <p className="mt-2 text-sm text-[#5C6680]">This account does not have administrative roles or permissions. Student-only users can use the client portal, but cannot open school operations.</p>
+              <Link to="/student"><Button className="mt-5 bg-[#1F3B6E] text-white hover:bg-[#162B52]">Go to client portal</Button></Link>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
   return (
     <div className="bg-[#FBF7EE]">
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-6 md:px-6 lg:grid-cols-[260px_1fr] lg:px-8">

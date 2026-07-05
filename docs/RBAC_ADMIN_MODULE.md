@@ -27,7 +27,14 @@ Implemented in this phase:
 - Critical permission confirmation flow in the UI and backend.
 - User assignment tab with multi-role editing and bulk role assignment.
 - User assignment rows show Save and Cancel only when the draft role set differs from the persisted roles.
+- User assignment rows separate administrative access from total effective permissions, so Student-only users show `No admin access` even when they have learning/self-service permissions.
 - RBAC audit log tab.
+
+## Administrative Access Clarification
+
+Student permissions such as dashboard, progress, credits view, or purchasing credits are not administrative powers. The RBAC UI treats these as learning/self-service permissions.
+
+Administrative access is shown only when the user has permissions in sensitive areas such as roles, users, settings, audit logs, reports, credit grants/refunds, teacher profile edits, or student credit modifications.
 - Backend endpoints under `/api/admin/rbac/*`.
 - Server-side protections for required system roles and users without roles.
 
