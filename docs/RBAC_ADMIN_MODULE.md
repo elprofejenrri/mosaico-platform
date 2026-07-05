@@ -35,6 +35,17 @@ Implemented in this phase:
 Student permissions such as dashboard, progress, credits view, or purchasing credits are not administrative powers. The RBAC UI treats these as learning/self-service permissions.
 
 Administrative access is shown only when the user has permissions in sensitive areas such as roles, users, settings, audit logs, reports, credit grants/refunds, teacher profile edits, or student credit modifications.
+
+## Portal Access Rules
+
+The platform shell enforces RBAC access per portal, not only in the role switcher. This means a user cannot bypass the UI by typing a protected portal URL directly.
+
+- Student/client portal is available to authenticated learning users.
+- Tutor portal requires `tutor_padre`, `administrador_sitio`, `administrador_profesor`, or `coordinador`.
+- Teacher portal requires `profesor`, `administrador_sitio`, `administrador_profesor`, `coordinador`, or the `calendar.teacher.view` permission.
+- Admin portal requires an administrative role or sensitive administrative permission such as role, user, report, or platform management access.
+
+Student-only users can keep their learning permissions without receiving Teacher, Tutor, or Admin workspace access.
 - Backend endpoints under `/api/admin/rbac/*`.
 - Server-side protections for required system roles and users without roles.
 

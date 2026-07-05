@@ -272,7 +272,18 @@ function PlatformShell({ role, children }) {
   const location = useLocation();
   const { user, authLoading } = useApp();
   const meta = roleMeta[role];
-  if (!authLoading && role === "admin" && !canAccessPortal(user, "admin")) {
+  const deniedTitleByRole = {
+    tutor: "Tutor access required",
+    teacher: "Teacher access required",
+    admin: "Administrative access required",
+  };
+  const deniedCopyByRole = {
+    tutor: "This account does not have a tutor or parent role. Student-only users can use the client portal, but cannot open family management tools.",
+    teacher: "This account does not have a teacher role or teacher calendar permission. Student-only users can use the client portal, but cannot open teacher operations.",
+    admin: "This account does not have administrative roles or permissions. Student-only users can use the client portal, but cannot open school operations.",
+  };
+
+  if (!authLoading && !canAccessPortal(user, role)) {
     return (
       <div className="bg-[#FBF7EE] px-4 py-10">
         <Card className="mx-auto max-w-2xl">
@@ -280,8 +291,8 @@ function PlatformShell({ role, children }) {
             <div className="rounded-lg bg-[#FFF0E6] p-3 text-[#E8704C]"><ShieldCheck size={22} /></div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">Access denied</p>
-              <h1 className="mt-2 font-display text-3xl text-[#1F3B6E]">Administrative access required</h1>
-              <p className="mt-2 text-sm text-[#5C6680]">This account does not have administrative roles or permissions. Student-only users can use the client portal, but cannot open school operations.</p>
+              <h1 className="mt-2 font-display text-3xl text-[#1F3B6E]">{deniedTitleByRole[role] || "Access required"}</h1>
+              <p className="mt-2 text-sm text-[#5C6680]">{deniedCopyByRole[role] || "This account does not have permission to open this workspace."}</p>
               <Link to="/student"><Button className="mt-5 bg-[#1F3B6E] text-white hover:bg-[#162B52]">Go to client portal</Button></Link>
             </div>
           </div>
