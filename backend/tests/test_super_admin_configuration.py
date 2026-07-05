@@ -70,3 +70,12 @@ def test_atlas_semver_increment_policy():
     assert server._next_semver("1.2.3", "major") == "2.0.0"
     assert server._next_semver("1.2.3", "minor") == "1.3.0"
     assert server._next_semver("1.2.3", "patch") == "1.2.4"
+
+
+def test_atlas_section_content_is_mosaico_specific():
+    content = server._atlas_section_markdown(4, "Product Bible", "Student Platform", "Canonical product behavior.")
+
+    assert "Replace this starter content" not in content
+    assert "React, FastAPI, Supabase" in content
+    assert "credit ledger" in content
+    assert "Student Platform" in content

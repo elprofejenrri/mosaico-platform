@@ -74,6 +74,17 @@ Startup seeds 25 core volumes:
 
 Each volume includes starter sections and one seeded version.
 
+## Content Strategy
+
+Atlas content is now seeded with Mosaico-specific operating guidance instead of placeholder text. The seed describes the current platform facts: React/FastAPI/Supabase/Render architecture, RBAC, Super Admin configuration, analytics, audit/activity logs, technical wiki, Mosaico Atlas, and launch blockers such as the credit ledger, production booking lifecycle, teacher availability backend, Google Calendar connection, tutor/student scoping, and E2E smoke coverage.
+
+On backend startup, `_ensure_atlas_rich_content(...)` safely backfills Atlas sections:
+
+- Creates any missing suggested sections for the 25 core volumes.
+- Replaces old starter text that still says `Replace this starter content`.
+- Preserves manually edited sections that no longer match the starter marker.
+- Keeps volume metadata, tags, links, and suggested sections aligned with the Atlas seed.
+
 ## API
 
 - `GET /api/admin/atlas`

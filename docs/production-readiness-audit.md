@@ -376,7 +376,9 @@ Mock domains:
 
 ## Button and Action Audit
 
-Pattern: `ActionButton` in `Platform.jsx` simulates work with a timeout and success toast. Any use of `ActionButton` should be treated as non-production until replaced with API call, loading state, error handling, and audit where needed.
+Pattern: `ActionButton` in `Platform.jsx` is now disabled unless it receives a real action handler. Any remaining use of `ActionButton` without `onAction` should be treated as non-production until replaced with API call, loading state, error handling, and audit where needed.
+
+High-risk local mutations for tutor credit purchase, tutor credit assignment, tutor class booking, and administrative credit grants are also blocked until the credit ledger and booking lifecycle exist.
 
 High-risk simulated actions:
 

@@ -31,6 +31,7 @@ import {
   CalendarDays,
   CalendarCheck,
   Check,
+  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   ClipboardCheck,
@@ -165,6 +166,36 @@ const roleNav = {
   ],
 };
 
+const roleNavGroups = {
+  student: [
+    ["Start", [""]],
+    ["Learning", ["learn", "roadmap", "ai-tutor", "progress"]],
+    ["Classes", ["classes"]],
+    ["Community", ["community"]],
+  ],
+  tutor: [
+    ["Start", [""]],
+    ["Family", ["students", "alerts", "messages"]],
+    ["Learning", ["roadmap", "tests", "progress", "badges", "feedback"]],
+    ["Classes", ["classes"]],
+    ["Money", ["credits", "payments"]],
+  ],
+  teacher: [
+    ["Start", [""]],
+    ["Teaching", ["calendar", "classes", "students"]],
+    ["Content", ["materials", "evaluations"]],
+    ["Money", ["earnings"]],
+  ],
+  admin: [
+    ["Command Center", ["", "approvals"]],
+    ["People & Learning", ["users", "teachers", "families", "lessons"]],
+    ["Scheduling & Credits", ["bookings", "credits"]],
+    ["Intelligence", ["analytics", "reports", "atlas"]],
+    ["Access & Governance", ["roles-permissions", "audit-logs", "activity-logs"]],
+    ["System", ["configuration", "system-settings"]],
+  ],
+};
+
 const roleMeta = {
   student: {
     label: "Client",
@@ -236,7 +267,7 @@ function PreviewSurfaceNotice({ role, module }) {
         <div>
           <p className="font-semibold text-[#1F3B6E]">Preview service</p>
           <p className="mt-1">
-            This workspace is isolated behind mock data while the backend domain is built. Actions show feedback but do not persist after refresh.
+            This workspace is isolated behind mock data while the backend domain is built. Production actions are disabled until they are connected to backend persistence.
           </p>
         </div>
         <Link to="/technical/wiki" className="shrink-0 font-semibold text-[#1F3B6E] hover:text-[#E8704C]">Implementation plan</Link>
@@ -245,25 +276,44 @@ function PreviewSurfaceNotice({ role, module }) {
   );
 }
 
-function ActionButton({ children, doneText, className = "", variant = "default", disabled = false }) {
+function ActionButton({
+  children,
+  doneText = "Action complete.",
+  className = "",
+  variant = "default",
+  disabled = false,
+  onAction,
+  unavailableText = "This product workflow is not connected to backend persistence yet.",
+}) {
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
+  const isConnected = typeof onAction === "function";
+  const isDisabled = disabled || loading || !isConnected;
+  const disabledReason = !isConnected ? unavailableText : "Action is unavailable in the current state.";
+  const accessibleLabel = typeof children === "string" ? children : "Action";
+
+  const runAction = async () => {
+    if (!isConnected) return;
+    setLoading(true);
+    try {
+      await onAction();
+      toast.success(doneText);
+    } catch (error) {
+      toast.error(error?.message || "Could not complete this action.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Button
       variant={variant}
-      disabled={disabled || loading || done}
+      disabled={isDisabled}
       className={className}
-      title={disabled ? undefined : "Preview action: backend persistence is pending."}
-      onClick={() => {
-        setLoading(true);
-        setTimeout(() => {
-          setLoading(false);
-          setDone(true);
-          toast.info(`${doneText} Preview only; backend persistence is pending.`);
-        }, 650);
-      }}
+      title={isDisabled ? disabledReason : undefined}
+      aria-label={isDisabled ? `${accessibleLabel}. ${disabledReason}` : undefined}
+      onClick={runAction}
     >
-      {loading ? "Working..." : done ? <><Check size={16} className="mr-2" />Previewed</> : children}
+      {loading ? "Working..." : children}
     </Button>
   );
 }
@@ -321,10 +371,72 @@ function RoleSwitcher({ current }) {
   );
 }
 
+function groupedNavItems(role, items) {
+  const bySlug = new Map(items.map((item) => [item[0], item]));
+  const used = new Set();
+  const groups = (roleNavGroups[role] || [["Navigation", items.map(([slug]) => slug)]]).map(([label, slugs]) => {
+    const groupItems = slugs.map((slug) => bySlug.get(slug)).filter(Boolean);
+    groupItems.forEach(([slug]) => used.add(slug));
+    return [label, groupItems];
+  }).filter(([, groupItems]) => groupItems.length > 0);
+  const leftovers = items.filter(([slug]) => !used.has(slug));
+  if (leftovers.length) groups.push(["Other", leftovers]);
+  return groups;
+}
+
+function SidebarNavGroup({ label, items, role, meta, location, expanded, onToggle }) {
+  const hasActive = items.some(([slug]) => {
+    const to = slug ? `${meta.base}/${slug}` : meta.base;
+    return location.pathname === to || (slug && location.pathname.startsWith(to));
+  });
+  const open = expanded || hasActive;
+  return (
+    <div className="border-t border-[#EFE4D0] pt-2 first:border-t-0 first:pt-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5C6680] hover:bg-[#FBF7EE]"
+      >
+        <span>{label}</span>
+        {open ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}
+      </button>
+      {open && (
+        <div className="mt-1 grid gap-1">
+          {items.map(([slug, itemLabel, Icon]) => {
+            const to = slug ? `${meta.base}/${slug}` : meta.base;
+            const active = location.pathname === to || (slug && location.pathname.startsWith(to));
+            return (
+              <NavLink
+                key={`${role}-${slug || "dashboard"}`}
+                to={to}
+                className={`flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+                  active ? "bg-[#FFF0E6] text-[#E8704C]" : "text-[#1F3B6E] hover:bg-[#FFF0E6]"
+                }`}
+              >
+                <Icon size={17} aria-hidden="true" />
+                <span>{itemLabel}</span>
+              </NavLink>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PlatformShell({ role, module = "dashboard", children }) {
   const location = useLocation();
   const { user, authLoading } = useApp();
   const meta = roleMeta[role];
+  const navStorageKey = `mosaico_nav_groups_${role}`;
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(navStorageKey) || "{}");
+    } catch {
+      return {};
+    }
+  });
   const deniedTitleByRole = {
     tutor: "Tutor access required",
     teacher: "Teacher access required",
@@ -340,6 +452,13 @@ function PlatformShell({ role, module = "dashboard", children }) {
     if (!user || module !== "dashboard") return;
     trackEvent("dashboard_viewed", { module: role, metadata: { path: location.pathname } });
   }, [location.pathname, module, role, user]);
+
+  useEffect(() => {
+    localStorage.setItem(navStorageKey, JSON.stringify(expandedGroups));
+  }, [expandedGroups, navStorageKey]);
+
+  const visibleNavItems = roleNav[role].filter(([slug]) => canAccessNavItem(user, role, slug));
+  const navGroups = groupedNavItems(role, visibleNavItems);
 
   if (!authLoading && !canAccessPortal(user, role)) {
     return (
@@ -364,23 +483,19 @@ function PlatformShell({ role, module = "dashboard", children }) {
         <aside className="lg:sticky lg:top-20 lg:self-start">
           <Card className="p-3">
             <RoleSwitcher current={role} />
-            <nav className="mt-4 grid gap-1">
-              {roleNav[role].filter(([slug]) => canAccessNavItem(user, role, slug)).map(([slug, label, Icon]) => {
-                const to = slug ? `${meta.base}/${slug}` : meta.base;
-                const active = location.pathname === to;
-                return (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
-                      active ? "bg-[#FFF0E6] text-[#E8704C]" : "text-[#1F3B6E] hover:bg-[#FFF0E6]"
-                    }`}
-                  >
-                    <Icon size={17} />
-                    {label}
-                  </NavLink>
-                );
-              })}
+            <nav className="mt-4 grid gap-3" aria-label={`${meta.label} navigation`}>
+              {navGroups.map(([label, items]) => (
+                <SidebarNavGroup
+                  key={`${role}-${label}`}
+                  label={label}
+                  items={items}
+                  role={role}
+                  meta={meta}
+                  location={location}
+                  expanded={expandedGroups[label] !== false}
+                  onToggle={() => setExpandedGroups((current) => ({ ...current, [label]: current[label] === false }))}
+                />
+              ))}
             </nav>
           </Card>
         </aside>
@@ -1150,8 +1265,8 @@ function RoadmapTestList({ title, tests, actionText }) {
 
 function useTutorState() {
   const [activeStudentId, setActiveStudentId] = useState(tutorStudents[0].id);
-  const [sharedCredits, setSharedCredits] = useState(learningAccount.sharedCredits);
-  const [studentCredits, setStudentCredits] = useState(
+  const [sharedCredits] = useState(learningAccount.sharedCredits);
+  const [studentCredits] = useState(
     Object.fromEntries(tutorStudents.map((student) => [student.id, student.credits]))
   );
   const [selectedTeacherId, setSelectedTeacherId] = useState(teachers[0].id);
@@ -1165,9 +1280,7 @@ function useTutorState() {
     setActiveStudentId,
     activeStudent,
     sharedCredits,
-    setSharedCredits,
     studentCredits,
-    setStudentCredits,
     selectedTeacherId,
     setSelectedTeacherId,
     selectedTeacher,
@@ -1331,7 +1444,7 @@ function TutorMiniStat({ label, value }) {
   );
 }
 
-function TutorCredits({ activeStudent, sharedCredits, setSharedCredits, studentCredits, setStudentCredits }) {
+function TutorCredits({ activeStudent, sharedCredits, studentCredits }) {
   const [assignAmount, setAssignAmount] = useState(2);
   return (
     <div className="grid gap-5">
@@ -1342,7 +1455,7 @@ function TutorCredits({ activeStudent, sharedCredits, setSharedCredits, studentC
       </div>
       <div className="grid gap-5 lg:grid-cols-[1fr_0.75fr]">
         <Card>
-          <SectionHeader eyebrow="Buy credits" title="Dummy credit packages" />
+          <SectionHeader eyebrow="Buy credits" title="Credit packages pending payment connection" />
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             {creditPackages.map((pack) => (
               <div key={pack.id} className="rounded-lg border border-[#EFE4D0] p-4">
@@ -1351,11 +1464,9 @@ function TutorCredits({ activeStudent, sharedCredits, setSharedCredits, studentC
                 <p className="text-sm text-[#5C6680]">credits · {pack.price}</p>
                 <p className="mt-2 text-xs text-[#5C6680]">{pack.bestFor}</p>
                 <Button
+                  disabled
+                  title="Credit purchases require Stripe checkout and a credit ledger before production use."
                   className="mt-4 w-full bg-[#E8704C] text-white hover:bg-[#C95630]"
-                  onClick={() => {
-                    setSharedCredits((credits) => credits + pack.credits);
-                    toast.success(`${pack.credits} credits added to shared wallet.`);
-                  }}
                 >
                   Buy credits
                 </Button>
@@ -1375,12 +1486,8 @@ function TutorCredits({ activeStudent, sharedCredits, setSharedCredits, studentC
             className="mt-4 w-full rounded-md border border-[#EFE4D0] px-3 py-2 outline-none focus:ring-2 focus:ring-[#E8704C]"
           />
           <Button
-            disabled={sharedCredits < assignAmount || assignAmount <= 0}
-            onClick={() => {
-              setSharedCredits((credits) => credits - assignAmount);
-              setStudentCredits((credits) => ({ ...credits, [activeStudent.id]: credits[activeStudent.id] + assignAmount }));
-              toast.success(`${assignAmount} credits assigned to ${activeStudent.name}.`);
-            }}
+            disabled
+            title="Credit assignment requires a persisted family wallet ledger before production use."
             className="mt-4 w-full bg-[#2DA89F] text-white hover:bg-[#23877f]"
           >
             Confirm assignment
@@ -1405,7 +1512,7 @@ function TutorCredits({ activeStudent, sharedCredits, setSharedCredits, studentC
   );
 }
 
-function TutorClasses({ activeStudent, studentCredits, setStudentCredits, selectedTeacherId, setSelectedTeacherId, selectedTeacher, selectedSlot, setSelectedSlot }) {
+function TutorClasses({ activeStudent, studentCredits, selectedTeacherId, setSelectedTeacherId, selectedTeacher, selectedSlot, setSelectedSlot }) {
   const canBook = studentCredits[activeStudent.id] >= selectedTeacher.creditCost && selectedSlot;
   return (
     <div className="grid gap-5">
@@ -1425,7 +1532,6 @@ function TutorClasses({ activeStudent, studentCredits, setStudentCredits, select
                 onClick={() => {
                   setSelectedTeacherId(teacher.id);
                   setSelectedSlot(null);
-                  toast.success(`${teacher.name} selected.`);
                 }}
                 className={`rounded-lg border p-4 text-left ${selectedTeacherId === teacher.id ? "border-[#E8704C] bg-[#FFF0E6]" : "border-[#EFE4D0] bg-white"}`}
               >
@@ -1442,14 +1548,11 @@ function TutorClasses({ activeStudent, studentCredits, setStudentCredits, select
             <p className="font-semibold">{selectedSlot || "Choose an available slot"} · Time zone: {tutorProfile.timezone}</p>
           </div>
           <Button
-            disabled={!canBook}
-            onClick={() => {
-              setStudentCredits((credits) => ({ ...credits, [activeStudent.id]: credits[activeStudent.id] - selectedTeacher.creditCost }));
-              toast.success(`Class booked for ${activeStudent.name}. ${selectedTeacher.creditCost} credits deducted.`);
-            }}
+            disabled
+            title="Booking requires the production booking lifecycle and credit ledger before production use."
             className="mt-4 bg-[#E8704C] text-white hover:bg-[#C95630]"
           >
-            {studentCredits[activeStudent.id] < selectedTeacher.creditCost ? "Insufficient credits" : "Book class"}
+            {!selectedSlot ? "Choose a slot first" : canBook ? "Book class" : "Insufficient credits"}
           </Button>
         </Card>
       </div>
@@ -2203,7 +2306,7 @@ function AdminUsersReal() {
 }
 
 function AdminCredits() {
-  const [schoolPool, setSchoolPool] = useState(1840);
+  const [schoolPool] = useState(1840);
   const [grantAmount, setGrantAmount] = useState(4);
   const [selectedAccount, setSelectedAccount] = useState(familyAccounts[0].name);
   return (
@@ -2223,11 +2326,8 @@ function AdminCredits() {
           <label className="mt-4 block text-sm font-semibold">Credits</label>
           <input type="number" min="1" value={grantAmount} onChange={(event) => setGrantAmount(Number(event.target.value))} className="mt-2 w-full rounded-md border border-[#EFE4D0] px-3 py-2 outline-none focus:ring-2 focus:ring-[#E8704C]" />
           <Button
-            disabled={grantAmount <= 0 || grantAmount > schoolPool}
-            onClick={() => {
-              setSchoolPool((pool) => pool - grantAmount);
-              toast.success(`${grantAmount} credits granted to ${selectedAccount}.`);
-            }}
+            disabled
+            title="Administrative credit grants require a persisted credit ledger and audit event before production use."
             className="mt-4 w-full bg-[#E8704C] text-white hover:bg-[#C95630]"
           >
             Give credits

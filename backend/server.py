@@ -1017,6 +1017,7 @@ TECHNICAL_DOCS = {
     "teacher-calendar-workspace": {"title": "Teacher Calendar Workspace", "path": "docs/TEACHER_CALENDAR_WORKSPACE.md", "section": "roadmap"},
     "production-readiness-audit": {"title": "Production Readiness Audit", "path": "docs/production-readiness-audit.md", "section": "roadmap"},
     "production-execution-plan": {"title": "Production Execution Plan", "path": "docs/production-execution-plan.md", "section": "roadmap"},
+    "preview-action-audit": {"title": "Preview Action Audit", "path": "docs/PREVIEW_ACTION_AUDIT.md", "section": "roadmap"},
     "rbac-admin-module": {"title": "RBAC Admin Module", "path": "docs/RBAC_ADMIN_MODULE.md", "section": "roadmap"},
     "super-admin-configuration-center": {"title": "Super Admin Configuration Center", "path": "docs/SUPER_ADMIN_CONFIGURATION_CENTER.md", "section": "architecture"},
     "analytics-observability": {"title": "Analytics and Observability", "path": "docs/ANALYTICS_OBSERVABILITY.md", "section": "architecture"},
@@ -1123,6 +1124,180 @@ ATLAS_GLOSSARY_SEEDS = [
     ("Audit Log", "Immutable record of sensitive platform changes."),
     ("Activity Log", "Operational timeline for user-facing and support events."),
 ]
+
+ATLAS_VOLUME_NARRATIVES = {
+    0: "This volume is the control plane for the Atlas. It gives leaders one place to understand what documentation exists, who owns it, what decisions are active, and which volumes must be reviewed before a production or investor milestone.",
+    1: "MOSAICO exists to make Spanish learning more structured, personal, measurable, and operationally reliable. The company vision connects live teaching, learning roadmaps, credits, parent visibility, and teacher operations into one education platform.",
+    2: "MOSAICO sits at the intersection of private language tutoring, online education operations, parent-managed learning, and teacher marketplaces. Market intelligence should track demand signals, competitors, pricing pressure, and unmet needs.",
+    3: "The product strategy is to move from polished MVP to a dependable learning platform. The sequence is foundation first: identity, RBAC, credits, scheduling, learning state, analytics, then marketplace and AI expansion.",
+    4: "The Product Bible defines how the platform behaves. It is the canonical source for student, tutor, teacher, coordinator, admin, analytics, RBAC, and learning economy workflows.",
+    5: "The UX Bible keeps MOSAICO usable as it grows. Operational SaaS screens should be quiet, dense, scannable, responsive, accessible, and honest about which actions persist.",
+    6: "The Learning Economy defines how credits, wallets, rewards, referrals, pricing, discounts, and marketplace incentives work without creating financial or trust risk.",
+    7: "Personas clarify what each role needs from MOSAICO: students learn, tutors guide, teachers deliver, coordinators operate, admins govern, and Super Admins protect the platform.",
+    8: "Business Operations describes the day-to-day system required to run a real education service: scheduling, support, teacher standards, student success, credits, incidents, and escalation paths.",
+    9: "Technical Architecture explains how React, FastAPI, Supabase, Render, Stripe, Google Calendar, RBAC, audit logs, analytics, and internal documentation fit together.",
+    10: "Security is a product requirement, not an afterthought. MOSAICO must protect accounts, roles, credits, payments, student data, teacher operations, audit trails, and exports.",
+    11: "AI Strategy should only advance where it improves learning or operations with clear safety, evaluation, and human override. Current AI surfaces are preview-oriented until guardrails are defined.",
+    12: "Analytics turns product usage and operational health into decisions. MOSAICO tracks product events, activity logs, audit events, request IDs, and admin dashboards.",
+    13: "The Financial Model connects class duration, credit pricing, teacher costs, subscriptions, retention, utilization, refunds, and growth assumptions into one operating view.",
+    14: "Go-To-Market defines how MOSAICO reaches students, parents, teachers, and partners with a clear promise: structured Spanish learning with live support and measurable progress.",
+    15: "The Sales Playbook turns positioning into repeatable conversations, demos, objections, follow-ups, and conversion processes for families, adult learners, and partner channels.",
+    16: "Customer Success protects learning continuity. It covers onboarding, activation, progress follow-up, parent confidence, teacher feedback, retention signals, and support escalation.",
+    17: "Marketing translates the product into trust-building stories, campaigns, content, email, social proof, SEO, and launch assets without overselling unfinished capabilities.",
+    18: "The Engineering Handbook defines how the team builds safely: inspect first, preserve production, document changes, test risk, avoid dead buttons, and protect user data.",
+    19: "The Design System keeps MOSAICO consistent across public pages, dashboards, admin tools, calendars, forms, tables, modals, states, and responsive layouts.",
+    20: "API Documentation defines contract-first backend behavior: auth, permissions, errors, request IDs, logs, analytics, admin operations, webhooks, and future versioning.",
+    21: "The Database Bible explains the data model and why it must evolve from flat MVP tables into normalized, auditable, ledger-grade platform data.",
+    22: "Deployment and DevOps make the product operable: environments, Render deploys, Supabase config, migrations, backups, feature flags, smoke tests, and rollback.",
+    23: "Investor Relations packages MOSAICO into a clear company narrative: market, product, traction, business model, financial model, risks, roadmap, and data room.",
+    24: "Future Vision keeps long-term bets visible while preventing them from distracting from launch blockers. It covers marketplace, AI, credentials, partnerships, and scale.",
+}
+
+ATLAS_SECTION_RULES = {
+    "Executive Summary": "Summarize the volume's purpose, decisions it influences, and what a leader should read first.",
+    "Glossary": "List the terms this volume standardizes and link them to Atlas glossary records.",
+    "Acronyms": "Define abbreviations used by product, engineering, operations, and business teams.",
+    "Product Taxonomy": "Name the product domains: identity, learning, credits, scheduling, content, analytics, admin, and operations.",
+    "Decision Log": "Capture approved, proposed, rejected, and superseded decisions with context and consequences.",
+    "Cross-Reference Map": "Explain which Atlas volumes must be read together before making changes.",
+    "Documentation Standards": "Require concrete language, owner, status, review cadence, version history, and decision links.",
+    "Review Cadence": "Define how often this volume should be reviewed and who is accountable.",
+    "Ownership Matrix": "Map responsibility across Super Admin, Admin, Coordinator, Teacher, Product, Engineering, and Operations.",
+    "Mission": "Describe the durable reason MOSAICO exists for learners, families, teachers, and operators.",
+    "Vision": "Describe the long-term platform ambition and the future learner experience.",
+    "Values": "Document values that guide tradeoffs: trust, clarity, measurable learning, operational excellence, and responsible growth.",
+    "Principles": "Define product and operating principles used to make everyday decisions.",
+    "Long-Term Strategy": "Connect near-term launch work to a broader education platform and marketplace strategy.",
+    "Brand Promise": "State what MOSAICO can credibly promise today and what should not be promised until built.",
+    "Market Map": "Frame the market across language tutoring, education marketplaces, parent-managed learning, and SaaS operations.",
+    "Competitor Landscape": "Track alternatives such as independent tutors, language apps, marketplaces, schools, and cohort programs.",
+    "Customer Segments": "Define adult learners, parents, students, teachers, coordinators, administrators, and partners.",
+    "Trends": "Track AI tutoring, hybrid live/asynchronous learning, skills proof, flexible payments, and parent visibility.",
+    "Opportunities": "Identify high-value openings: structured live learning, family wallets, teacher utilization, and measurable progress.",
+    "Risks": "Name business, security, data, operational, and UX risks before they become launch incidents.",
+    "North Star": "Define the metric and behavior that prove MOSAICO is creating learning value.",
+    "Product Principles": "Prioritize persisted workflows, permission safety, clear states, measurable progress, and honest previews.",
+    "Roadmap": "Sequence the platform through foundation, credits, booking, scheduling, learning, analytics, and marketplace expansion.",
+    "Prioritization": "Rank work by launch risk, learner value, operational leverage, data integrity, and revenue impact.",
+    "Launch Scope": "Define what is allowed in MVP, alpha, beta, and production.",
+    "Metrics": "Tie decisions to activation, class booking, completion, cancellation, retention, credits, utilization, and engagement.",
+    "Purpose": "Explain why this product area exists and what user or business problem it owns.",
+    "Modules": "List current and planned modules, separating production-backed flows from preview surfaces.",
+    "Student Platform": "Define student roadmap, classes, credits, tests, practice, badges, progress, and feedback.",
+    "Tutor Platform": "Define linked students, shared wallet, progress visibility, bookings, feedback, alerts, and communication.",
+    "Teacher Platform": "Define availability, classes, students, materials, feedback, evaluations, earnings, and calendar health.",
+    "Admin Platform": "Define user management, RBAC, credits, lessons, reports, analytics, configuration, logs, and Atlas.",
+    "Learning Economy": "Define credits, wallet, rewards, pricing, marketplace incentives, and anti-fraud rules.",
+    "AI": "Define AI tutor and operations assistant opportunities, guardrails, and evaluation requirements.",
+    "Analytics": "Define event catalog, dashboards, activity logs, audit logs, request IDs, and product metrics.",
+    "RBAC": "Define roles, additive permissions, protected roles, route enforcement, and backend authorization.",
+    "UX Principles": "Make screens scannable, honest, accessible, responsive, and calm under operational load.",
+    "Navigation": "Keep portal navigation role-aware, permission-aware, and free from broken links.",
+    "States": "Every important action needs loading, success, error, empty, disabled, and confirmation states.",
+    "Forms": "Forms require validation, useful labels, keyboard access, and clear error feedback.",
+    "Modals": "Use modals for focused tasks and critical confirmations; do not hide required context.",
+    "Accessibility": "Use semantic headings, focus states, ARIA labels where useful, sufficient contrast, and large tap targets.",
+    "Responsive Rules": "Desktop can use panels; tablet collapses sidebars; mobile is list-first with large controls.",
+    "Wallet": "Define balances, ownership, shared family use, ledger entries, grants, purchases, usage, refunds, and reconciliation.",
+    "Learning Credits": "Define how class duration maps to credits and why ledger-grade accounting is required before launch.",
+    "Mosaic Coins": "Describe reward currency as future-facing and separate from paid learning credits until policy is approved.",
+    "Rewards": "Define safe reward mechanics tied to learning progress and retention, not opaque gamification.",
+    "Marketplace": "Describe matching students with teachers or learning products by availability, level, goals, and quality.",
+    "Referrals": "Define referral economics, anti-abuse controls, attribution, and support expectations.",
+    "Coupons": "Define discount rules, campaign ownership, expiry, auditability, and revenue impact tracking.",
+    "Anti-fraud": "Define controls for credit grants, refunds, coupons, referrals, account abuse, and suspicious usage.",
+    "System Map": "Show how frontend, backend, database, auth, storage, payments, calendar, analytics, logs, and Atlas connect.",
+    "Frontend": "Document React routes, admin shell, portals, UI states, API client, error boundary, and analytics client.",
+    "Backend": "Document FastAPI routes, RBAC dependencies, seed jobs, database abstraction, audits, analytics, and settings.",
+    "Database": "Document current tables, JSONB fields, indexes, seed data, and upcoming ledger/scheduling tables.",
+    "Auth": "Document Supabase social login, local sessions, dev auth guardrails, roles, permissions, and session duration.",
+    "Storage": "Document Supabase Storage usage, upload limits, MIME validation, and future attachment handling.",
+    "Integrations": "Document Stripe, Google Calendar, Render, Supabase, and where mocks still exist.",
+    "Observability": "Document request IDs, error_events, analytics_events, activity_logs, audit_events, and admin dashboards.",
+    "Threat Model": "Identify risks around roles, payments, credits, student data, exports, calendar access, and support impersonation.",
+    "Data Protection": "Define what data is sensitive, where it lives, who can access it, and how exports are controlled.",
+    "Incident Response": "Define detection, triage, containment, communication, rollback, and post-incident documentation.",
+    "Pricing": "Document placeholder pricing, credits per class duration, package strategy, subscriptions, and revenue assumptions.",
+    "Credit Economics": "Track how credit price, teacher payout, cancellation policy, no-show policy, and utilization affect margin.",
+    "Revenue": "Define revenue streams: classes, packs, subscriptions, premium teachers, partners, and future marketplace take-rate.",
+    "Costs": "Track teacher compensation, platform tools, payment fees, support, marketing, and infrastructure.",
+    "Teacher Payouts": "Define payout logic before earnings are production-visible.",
+    "Forecasts": "Maintain model assumptions, scenarios, conversion rates, retention, utilization, and cash timing.",
+    "Environments": "Define local, alpha, beta, and production rules for access, data, feature flags, deploys, and rollback.",
+    "Render": "Document web/API services, build commands, env vars, deploy triggers, and operational limits.",
+    "Supabase": "Document database, auth, storage, backups, connection strings, JWT settings, and service role handling.",
+    "Secrets": "Define where secrets live, who can access them, and what must never be committed.",
+    "Deploy Flow": "Require checks, review, smoke testing, monitoring, and rollback plan for production releases.",
+    "Rollback": "Define code rollback, feature flag disablement, schema compatibility checks, and support comms.",
+    "Monitoring": "Define what to watch after release: health, logs, request IDs, errors, audit events, payments, bookings.",
+}
+
+
+def _atlas_section_markdown(number: int, volume_title: str, section_title: str, description: str) -> str:
+    narrative = ATLAS_VOLUME_NARRATIVES.get(number, description)
+    rule = ATLAS_SECTION_RULES.get(section_title, f"Document how {section_title.lower()} works for {volume_title}.")
+    return (
+        f"## {section_title}\n\n"
+        f"{narrative}\n\n"
+        f"### Mosaico context\n"
+        f"{rule}\n\n"
+        f"### Current platform facts\n"
+        f"- MOSAICO is a React, FastAPI, Supabase, Stripe, Render-based education platform.\n"
+        f"- The current production foundation includes auth, RBAC, Super Admin configuration, audit logs, activity logs, analytics, error tracking, technical wiki, and Mosaico Atlas.\n"
+        f"- Launch blockers are credit ledger, production booking lifecycle, teacher availability backend, Google Calendar connection, tutor/student scoping, and E2E smoke coverage.\n\n"
+        f"### Operating guidance\n"
+        f"- Keep this section concrete, decision-linked, and owned by the role responsible for {volume_title}.\n"
+        f"- Separate approved behavior from draft strategy.\n"
+        f"- When this section changes materially, create an Atlas version and link any decision record.\n"
+    )
+
+
+async def _ensure_atlas_rich_content(now: str) -> None:
+    for number, title, description, owner_role, estimated_pages, priority, tags, linked_numbers, sections in ATLAS_VOLUME_SEEDS:
+        volume_id = f"atlas-volume-{number:02d}"
+        volume = await db.atlas_volumes.find_one({"id": volume_id}, {"_id": 0})
+        if not volume:
+            continue
+        await db.atlas_volumes.update_one(
+            {"id": volume_id},
+            {"$set": {
+                "description": description,
+                "owner_role": owner_role,
+                "estimated_pages": estimated_pages,
+                "priority": priority,
+                "tags": tags,
+                "linked_volume_ids": [f"atlas-volume-{item:02d}" for item in linked_numbers],
+                "purpose": description,
+                "suggested_sections": sections,
+                "updated_at": volume.get("updated_at") or now,
+            }},
+        )
+        for order, section_title in enumerate(sections, start=1):
+            section_id = f"atlas-section-{number:02d}-{order:02d}"
+            existing = await db.atlas_sections.find_one({"id": section_id}, {"_id": 0})
+            content = _atlas_section_markdown(number, title, section_title, description)
+            section_doc = {
+                "id": section_id,
+                "volume_id": volume_id,
+                "parent_section_id": None,
+                "title": section_title,
+                "slug": _slugify(section_title),
+                "order_index": order,
+                "summary": ATLAS_SECTION_RULES.get(section_title, f"{section_title} for {title}."),
+                "content_markdown": content,
+                "status": existing.get("status", "draft") if existing else "draft",
+                "tags": tags[:2],
+                "linked_decision_ids": existing.get("linked_decision_ids", []) if existing else [],
+                "linked_glossary_terms": existing.get("linked_glossary_terms", []) if existing else [],
+                "created_at": existing.get("created_at") if existing else now,
+                "updated_at": now,
+            }
+            if existing:
+                current = existing.get("content_markdown") or ""
+                if "Replace this starter content" in current or "Starter section" in (existing.get("summary") or "") or not current.strip():
+                    await db.atlas_sections.update_one({"id": section_id}, {"$set": section_doc})
+            else:
+                await db.atlas_sections.insert_one(section_doc)
 
 DEFAULT_POSTS = [
     {"slug": "ser-vs-estar", "title_en": "Ser vs Estar: a kind, practical map",
@@ -1320,8 +1495,7 @@ async def seed_data():
                 "approved_at": None,
                 "deprecated_at": None,
             })
-            starter_sections = sections[:4]
-            for order, section_title in enumerate(starter_sections, start=1):
+            for order, section_title in enumerate(sections, start=1):
                 await db.atlas_sections.insert_one({
                     "id": f"atlas-section-{number:02d}-{order:02d}",
                     "volume_id": volume_id,
@@ -1329,8 +1503,8 @@ async def seed_data():
                     "title": section_title,
                     "slug": _slugify(section_title),
                     "order_index": order,
-                    "summary": f"Starter section for {section_title}.",
-                    "content_markdown": f"## {section_title}\n\nThis section defines how **{title}** treats {section_title.lower()} for MOSAICO. Replace this starter content as decisions become approved in Atlas.",
+                    "summary": ATLAS_SECTION_RULES.get(section_title, f"{section_title} for {title}."),
+                    "content_markdown": _atlas_section_markdown(number, title, section_title, description),
                     "status": "draft",
                     "tags": tags[:2],
                     "linked_decision_ids": [],
@@ -1349,6 +1523,7 @@ async def seed_data():
                 "created_at": now,
             })
         logger.info("Seeded Mosaico Atlas volumes")
+    await _ensure_atlas_rich_content(now)
     if await db.atlas_glossary_terms.count_documents({}) == 0:
         for term, definition in ATLAS_GLOSSARY_SEEDS:
             await db.atlas_glossary_terms.insert_one({

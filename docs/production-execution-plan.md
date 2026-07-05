@@ -11,7 +11,7 @@ Move from MVP to platform by converting one domain at a time from mock state to 
 The first production-safety pass is in place:
 
 - Preview-only platform modules now show an in-app preview notice.
-- Generic mock actions no longer present themselves as persisted success; they show preview feedback.
+- Generic mock actions no longer present themselves as persisted success; they are disabled until a real handler or backend service is connected.
 - Production-backed admin modules are identified separately from mock-backed modules.
 - Frontend role checks prefer `user.roles` when present, avoiding stale legacy `user.role` access.
 - Backend `/api/health` and `/api/version` endpoints support deployment verification.
@@ -39,6 +39,7 @@ Goal: prevent unsafe access, misleading production UI, and deployment blind spot
 
 4. Mark or hide mock-only production actions.
    - Replace high-risk `ActionButton` usage for credits, approvals, bookings, and lessons with disabled "not available yet" states until backend exists.
+   - Keep `docs/PREVIEW_ACTION_AUDIT.md` current as modules graduate from preview to production.
    - Keep demo screens visible only for technical/admin preview if needed.
 
 5. Register production readiness docs in the technical wiki backend registry.

@@ -154,6 +154,23 @@ function EmptySlotPlaceholder({ date, start, end, compact = false, label, detail
   );
 }
 
+function PendingWorkflowButton({ children, className = "", icon: Icon }) {
+  const reason = "This workflow needs a backend model before it can be used in production.";
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      disabled
+      title={reason}
+      aria-label={`${children}. ${reason}`}
+      className={className}
+    >
+      {Icon ? <Icon size={16} className="mr-2" /> : null}
+      {children}
+    </Button>
+  );
+}
+
 function CalendarToolbar({ view, setView, label, setLabel, openAvailability, openBlock }) {
   const views = ["day", "week", "month"];
   return (
@@ -439,7 +456,11 @@ function AvailabilityModal({ onClose, onSaved }) {
         </Field>
         <div className="grid grid-cols-2 gap-3"><Field label="Cooldown gap"><Input type="number" min="0" step="5" value={form.cooldownMinutes} onChange={(event) => update("cooldownMinutes", Number(event.target.value))} /></Field><Field label="Max/day"><Input type="number" value={form.maxClasses} onChange={(event) => update("maxClasses", Number(event.target.value))} /></Field></div>
         <Field label="Location"><Select value={form.location} onChange={(event) => update("location", event.target.value)}><option>Online</option><option>Campus</option><option>Hybrid</option></Select></Field>
-        <div className="grid gap-2 rounded-lg bg-[#FBF7EE] p-4 text-sm text-[#5C6680]"><button onClick={() => toast.success("Monday schedule copied.")} className="text-left">Copy Monday schedule to selected days</button><button onClick={() => toast.success("Previous week duplicated.")} className="text-left">Duplicate previous week</button><button onClick={() => toast.success("Bulk edit staged.")} className="text-left">Bulk edit selected slots</button></div>
+        <div className="grid gap-2 rounded-lg bg-[#FBF7EE] p-4 text-sm text-[#5C6680]">
+          <button disabled title="Schedule copy requires recurring availability templates." className="text-left disabled:opacity-60">Copy Monday schedule to selected days</button>
+          <button disabled title="Week duplication requires recurring availability templates." className="text-left disabled:opacity-60">Duplicate previous week</button>
+          <button disabled title="Bulk edit requires persisted availability slot selection." className="text-left disabled:opacity-60">Bulk edit selected slots</button>
+        </div>
         <Button disabled={loading} onClick={save} className="bg-[#E8704C] text-white hover:bg-[#C95630]">{loading ? "Saving..." : "Save availability"}</Button>
       </div>
     </Modal>
@@ -566,14 +587,14 @@ function StudentQuickViewDrawer({ session, student, onClose, onSessionUpdated })
         )}
         <Field label="Teacher feedback / class notes"><textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} rows={4} className="w-full rounded-md border border-[#EFE4D0] p-3 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" placeholder="Add feedback, notes, homework, or late/no-show details" /></Field>
         <div className="grid gap-2 sm:grid-cols-2">
-          <Button variant="outline" onClick={() => toast.success("Student profile opened.")}><UserRound size={16} className="mr-2" />Open profile</Button>
-          <Button variant="outline" onClick={() => toast.success("Message draft opened.")}><MessageCircle size={16} className="mr-2" />Message</Button>
+          <PendingWorkflowButton icon={UserRound}>Open profile</PendingWorkflowButton>
+          <PendingWorkflowButton icon={MessageCircle}>Message</PendingWorkflowButton>
           <Button variant="outline" onClick={() => runAction("reschedule", { date: "2026-07-12", start: "17:00", end: "18:00" })}><Clock size={16} className="mr-2" />Reschedule</Button>
           <Button variant="outline" onClick={() => runAction("cancel", { reason: "Teacher cancelled" })}><Ban size={16} className="mr-2" />Cancel</Button>
           <Button disabled={loadingAction === "complete"} onClick={() => runAction("complete")} className="bg-[#2DA89F] text-white hover:bg-[#23877f]"><Check size={16} className="mr-2" />Mark completed</Button>
           <Button variant="outline" onClick={() => runAction("noshow", { notes: feedback })}>Mark no-show</Button>
           <Button variant="outline" onClick={() => runAction("late", { notes: feedback })}>Mark late</Button>
-          <Button variant="outline" onClick={() => toast.success("Homework added.")}>Add homework</Button>
+          <PendingWorkflowButton>Add homework</PendingWorkflowButton>
         </div>
       </div>
     </Modal>
@@ -593,9 +614,9 @@ function EmptySlotsPanel({ slots, onInvite }) {
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button onClick={() => onInvite(slot)} variant="outline" className="border-[#EFE4D0]"><Mail size={16} className="mr-2" />Invite students</Button>
-              <Button onClick={() => toast.success("Slot shared.")} variant="outline" className="border-[#EFE4D0]">Share slot</Button>
-              <Button onClick={() => toast.success("Slot closed.")} variant="outline" className="border-[#EFE4D0]">Close slot</Button>
-              <Button onClick={() => toast.success("Waitlist campaign staged.")} variant="outline" className="border-[#EFE4D0]">Waitlist campaign</Button>
+              <PendingWorkflowButton className="border-[#EFE4D0]">Share slot</PendingWorkflowButton>
+              <PendingWorkflowButton className="border-[#EFE4D0]">Close slot</PendingWorkflowButton>
+              <PendingWorkflowButton className="border-[#EFE4D0]">Waitlist campaign</PendingWorkflowButton>
             </div>
           </div>
         ))}
