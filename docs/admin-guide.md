@@ -7,8 +7,9 @@ Admins operate the school side of MOSAICO. They manage users, credits, lessons, 
 ## Key Routes
 
 - `/admin`: overview.
-- `/admin/users`: user and role operations.
-- `/admin/roles-permissions`: RBAC management.
+- `/admin/iam`: Identity & Access Management for users, roles, permissions, sessions, and audit history.
+- `/admin/users`: compatibility entry into IAM users.
+- `/admin/roles-permissions`: compatibility entry into IAM permissions.
 - `/admin/configuration`: Super Admin configuration center.
 - `/admin/analytics`: product analytics.
 - `/admin/audit-logs`: sensitive audit trail.

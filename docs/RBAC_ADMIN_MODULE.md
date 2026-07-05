@@ -1,19 +1,21 @@
-# RBAC Admin Module
+# Identity & Access Management Module
 
 ## Purpose
 
-The RBAC Admin Module gives administrative users a governed way to manage roles, permissions, user assignments, and RBAC audit history from inside MOSAICO.
+The Identity & Access Management (IAM) module gives administrative users a governed way to manage users, roles, permissions, user assignments, login history, and access audit history from inside MOSAICO.
 
 Primary route:
 
 ```text
-/admin/roles-permissions
+/admin/iam
 ```
 
-Compatibility route:
+Compatibility routes:
 
 ```text
+/admin/users
 /admin/roles
+/admin/roles-permissions
 ```
 
 ## Current Scope
@@ -25,10 +27,13 @@ Implemented in this phase:
 - Dot-notation permission catalogue using `module.section.action`.
 - Permissions matrix grouped by module and section.
 - Critical permission confirmation flow in the UI and backend.
-- User assignment tab with multi-role editing and bulk role assignment.
-- User assignment rows show Save and Cancel only when the draft role set differs from the persisted roles.
-- User assignment rows separate administrative access from total effective permissions, so Student-only users show `No admin access` even when they have learning/self-service permissions.
-- RBAC audit log tab.
+- Scalable IAM users table with role chips instead of inline role checkboxes.
+- Debounced search, filters, sorting, pagination, density control, and active filter chips.
+- User detail drawer with General, Roles, Effective Permissions, Activity, Audit History, Login Sessions, and Notes sections.
+- Role assignment happens from the drawer or bulk role modal.
+- Bulk role assign, remove, and replace actions through `/api/admin/rbac/users/bulk-roles`.
+- IAM audit log tab.
+- Invitation and export actions are visible but disabled until backend invite/export services exist.
 
 ## Administrative Access Clarification
 

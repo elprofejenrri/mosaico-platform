@@ -149,7 +149,7 @@ const roleNav = {
   admin: [
     ["", "Overview", School],
     ["approvals", "Approvals", UserCheck],
-    ["users", "People", Users],
+    ["iam", "Identity & Access", ShieldCheck],
     ["credits", "Credits", Coins],
     ["lessons", "Lessons", FilePlus2],
     ["teachers", "Teachers", GraduationCap],
@@ -188,7 +188,7 @@ const roleNavGroups = {
   ],
   admin: [
     ["Command Center", ["", "approvals"]],
-    ["People & Learning", ["users", "teachers", "families", "lessons"]],
+    ["People & Learning", ["iam", "teachers", "families", "lessons"]],
     ["Scheduling & Credits", ["bookings", "credits"]],
     ["Intelligence", ["analytics", "reports", "atlas"]],
     ["Access & Governance", ["roles-permissions", "audit-logs", "activity-logs"]],
@@ -234,7 +234,7 @@ const trendData = [
 ];
 
 const productionBackedModules = {
-  admin: new Set(["users", "roles", "roles-permissions", "analytics", "atlas", "atlas-volume", "configuration", "audit-logs", "activity-logs", "system-settings"]),
+  admin: new Set(["iam", "users", "roles", "roles-permissions", "analytics", "atlas", "atlas-volume", "configuration", "audit-logs", "activity-logs", "system-settings"]),
 };
 
 function isProductionBackedModule(role, module = "dashboard") {
@@ -246,6 +246,8 @@ function canAccessNavItem(user, role, slug) {
   const permissionBySlug = {
     users: "users.profile.view",
     roles: "roles.management.view",
+    iam: "roles.management.view",
+    users: "users.profile.view",
     "roles-permissions": "roles.management.view",
     analytics: "reports.analytics.view",
     atlas: "atlas.view",
@@ -1978,7 +1980,7 @@ export function AdminPortal({ module = "dashboard" }) {
     <PlatformShell role="admin" module={module}>
       {module === "dashboard" && <AdminDashboard />}
       {module === "approvals" && <AdminApprovals />}
-      {module === "users" && <AdminUsersReal />}
+      {(module === "iam" || module === "users") && <AdminRbacWorkspace initialTab="users" />}
       {module === "credits" && <AdminCredits />}
       {module === "lessons" && <AdminLessons />}
       {module === "teachers" && <AdminTeachers />}
@@ -1989,7 +1991,8 @@ export function AdminPortal({ module = "dashboard" }) {
       {module === "analytics" && <AdminAnalyticsDashboard />}
       {module === "atlas" && <MosaicoAtlas />}
       {module === "atlas-volume" && <MosaicoAtlasVolumeDetail />}
-      {(module === "roles" || module === "roles-permissions") && <AdminRbacWorkspace />}
+      {module === "roles" && <AdminRbacWorkspace initialTab="roles" />}
+      {module === "roles-permissions" && <AdminRbacWorkspace initialTab="matrix" />}
       {module === "configuration" && <SuperAdminConfigurationCenter />}
       {module === "audit-logs" && <AdminAuditLogs />}
       {module === "activity-logs" && <AdminActivityLogs />}

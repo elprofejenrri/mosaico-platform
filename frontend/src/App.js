@@ -60,6 +60,7 @@ function AppRouter() {
           <Route path="/teacher/earnings" element={<TeacherPortal module="earnings" />} />
           <Route path="/admin" element={<AdminPortal />} />
           <Route path="/admin/approvals" element={<AdminPortal module="approvals" />} />
+          <Route path="/admin/iam" element={<AdminPortal module="iam" />} />
           <Route path="/admin/users" element={<AdminPortal module="users" />} />
           <Route path="/admin/credits" element={<AdminPortal module="credits" />} />
           <Route path="/admin/lessons" element={<AdminPortal module="lessons" />} />

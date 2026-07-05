@@ -572,6 +572,7 @@ async def _can_perform_action(user: User, action: str) -> bool:
 async def _can_access_route(user: User, route: str) -> bool:
     route_permissions = {
         "/admin/roles-permissions": "roles.management.view",
+        "/admin/iam": "roles.management.view",
         "/admin/roles": "roles.management.view",
         "/admin/users": "users.profile.view",
         "/teacher/calendar": "calendar.teacher.view",
