@@ -37,6 +37,9 @@ import {
 const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const hours = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"];
 const weekPlaceholderHours = ["09:00", "10:30", "13:00", "15:00", "17:00", "18:00", "19:00"];
+const workWeekDays = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const weekendDays = ["Sat", "Sun"];
+const monthWeekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const dayDates = {
   Mon: "2026-07-06",
   Tue: "2026-07-07",
@@ -95,10 +98,11 @@ function StatusBadge({ status }) {
 
 function CalendarLegend() {
   return (
-    <div className="flex flex-wrap gap-2 rounded-lg border border-[#EFE4D0] bg-[#FBF7EE] p-3">
+    <div className="flex max-w-full flex-wrap gap-1 overflow-hidden rounded-lg border border-[#EFE4D0] bg-[#FBF7EE] p-2 sm:gap-2 sm:p-3">
       {["booked", "available", "empty", "blocked", "conflict", "completed", "cancelled"].map((status) => (
-        <span key={status} className={`rounded-md border px-2 py-1 text-xs font-semibold ${statusStyles[status]}`}>
-          {calendarStatuses[status]}
+        <span key={status} className={`whitespace-nowrap rounded-md border px-1.5 py-1 text-[11px] font-semibold sm:px-2 sm:text-xs ${statusStyles[status]}`}>
+          <span className="sm:hidden">{status === "empty" ? "Empty" : calendarStatuses[status]}</span>
+          <span className="hidden sm:inline">{calendarStatuses[status]}</span>
         </span>
       ))}
     </div>
@@ -110,9 +114,9 @@ function addOneHour(time) {
   return `${String(Math.min(hour + 1, 23)).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function AvailabilityOptions({ session, compact = false }) {
+function AvailabilityOptions({ session, compact = false, maxOptions = 2 }) {
   if (session.status !== "available" || !session.slotOptions?.length) return null;
-  const visibleOptions = compact ? session.slotOptions.slice(0, 2) : session.slotOptions;
+  const visibleOptions = compact ? session.slotOptions.slice(0, maxOptions) : session.slotOptions;
   return (
     <div className={`mt-2 grid gap-1 ${compact ? "" : "rounded-md bg-white/70 p-2"}`}>
       {visibleOptions.map((option) => (
@@ -123,33 +127,33 @@ function AvailabilityOptions({ session, compact = false }) {
       ))}
       {!compact && (
         <div className="mt-1 flex flex-wrap gap-1">
-          {session.slotOptions.flatMap((option) => option.slots.slice(0, 4).map((slot) => (
+          {session.slotOptions.flatMap((option) => option.slots.slice(0, 2).map((slot) => (
             <span key={`${option.duration}-${slot.start}`} className="rounded bg-[#EAF4FF] px-2 py-1 text-[11px] text-[#1F5F9D]">{slot.start}-{slot.end}</span>
           )))}
         </div>
       )}
-      {compact && session.slotOptions.length > 2 && <p className="text-[11px] font-semibold">+{session.slotOptions.length - 2} options</p>}
-      <p className="text-[11px]">Cooldown: {session.cooldownMinutes || 0} min</p>
+      {compact && session.slotOptions.length > maxOptions && <p className="truncate text-[11px] font-semibold">+{session.slotOptions.length - maxOptions} options</p>}
+      <p className="truncate text-[11px]">Cooldown: {session.cooldownMinutes || 0} min</p>
     </div>
   );
 }
 
-function EmptySlotPlaceholder({ date, start, end, compact = false, label, detail, onInvite }) {
+function EmptySlotPlaceholder({ date, start, end, compact = false, label, detail, onInvite, tiny = false }) {
   const fallbackLabel = date ? `${date} - ${start}-${end}` : `${start}-${end}`;
   const displayLabel = label || fallbackLabel;
   return (
     <button
       type="button"
       onClick={() => onInvite?.({ id: `placeholder-${date || "day"}-${start}`, date, start, end, demand: "Open", suggestion: "Turn this empty slot into bookable availability or invite students." })}
-      className={`min-w-0 w-full rounded-lg border border-dashed border-[#D9C8A8] bg-white text-left text-[#5C6680] transition hover:border-[#E8704C] hover:bg-[#FFF0E6] ${compact ? "p-2" : "p-3"}`}
+      className={`min-w-0 w-full rounded-lg border border-dashed border-[#D9C8A8] bg-white text-left text-[#5C6680] transition hover:border-[#E8704C] hover:bg-[#FFF0E6] ${tiny ? "px-2 py-1" : compact ? "p-2" : "p-3"}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className={`${compact ? "truncate text-xs" : "font-semibold text-[#1F3B6E]"}`}>{compact ? "Empty" : "Empty slot"}</p>
-          <p className={`${compact ? "truncate text-xs" : "mt-1 text-sm"}`}>{displayLabel}</p>
-          {!compact && <p className="mt-1 text-xs">{detail || "No class booked yet"}</p>}
+          <p className={`${tiny ? "truncate text-[11px]" : compact ? "truncate text-xs" : "font-semibold text-[#1F3B6E]"}`}>{tiny ? "Empty" : compact ? "Empty" : "Empty slot"}</p>
+          {!tiny && <p className={`${compact ? "truncate text-xs" : "mt-1 text-sm"}`}>{displayLabel}</p>}
+          {!compact && !tiny && <p className="mt-1 text-xs">{detail || "No class booked yet"}</p>}
         </div>
-        {!compact && <StatusBadge status="empty" />}
+        {!compact && !tiny && <StatusBadge status="empty" />}
       </div>
     </button>
   );
@@ -204,22 +208,26 @@ function CalendarToolbar({ view, setView, label, setLabel, openAvailability, ope
   );
 }
 
-function CalendarSlotCard({ session, onOpen, compact = false, highlighted = false }) {
+function CalendarSlotCard({ session, onOpen, compact = false, highlighted = false, density = "default" }) {
+  const isMonth = density === "month";
+  const isWeek = density === "week";
+  const compactCard = compact || isMonth || isWeek;
+  const timeLabel = `${session.start} - ${session.end}`;
   return (
     <button
       id={`calendar-session-${session.id}`}
       onClick={() => onOpen(session)}
-      className={`min-w-0 w-full rounded-lg border text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${compact ? "p-2" : "p-3"} ${highlighted ? "ring-4 ring-[#F4C13D] ring-offset-2" : ""} ${statusStyles[session.status] || statusStyles.empty}`}
+      className={`min-w-0 w-full rounded-lg border text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${isMonth ? "px-2 py-1.5" : compactCard ? "p-2" : "p-3"} ${highlighted ? "ring-4 ring-[#F4C13D] ring-offset-2" : ""} ${statusStyles[session.status] || statusStyles.empty}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className={`${compact ? "truncate text-xs font-semibold" : "font-semibold"}`}>{session.start} - {session.end}</p>
-          {compact ? <p className="mt-1 truncate text-xs">{calendarStatuses[session.status]}</p> : <p className="mt-1 truncate text-sm">{session.studentName || session.classType}</p>}
+          <p className={`${isMonth ? "truncate text-[11px] font-semibold" : compactCard ? "truncate text-sm font-semibold" : "font-semibold"}`}>{timeLabel}</p>
+          {compactCard ? <p className={`${isMonth ? "text-[11px]" : "mt-1 text-xs"} truncate`}>{session.studentName || session.classType || calendarStatuses[session.status]}</p> : <p className="mt-1 truncate text-sm">{session.studentName || session.classType}</p>}
         </div>
-        {compact ? <span className="shrink-0 rounded bg-white/70 px-1 text-[10px] font-semibold uppercase">{session.status}</span> : <MoreHorizontal size={16} className="shrink-0" />}
+        {compactCard ? <span className="shrink-0 rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold">{calendarStatuses[session.status]}</span> : <MoreHorizontal size={16} className="shrink-0" />}
       </div>
-      <AvailabilityOptions session={session} compact={compact} />
-      {!compact && (
+      {!isMonth && <AvailabilityOptions session={session} compact={compactCard} maxOptions={isWeek ? 2 : 3} />}
+      {!compactCard && (
         <div className="mt-2 grid gap-1 text-xs">
           <div><StatusBadge status={session.status} /></div>
           <p>{session.studentName ? `${session.classType} - ${session.level}` : session.reason || session.location || "Open slot"}</p>
@@ -255,33 +263,24 @@ function DayView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId 
   );
 }
 
-function WeekView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId }) {
+function DayColumn({ day, sessions, emptySlots, onOpen, onInvite, highlightedSessionId }) {
+  const daySessions = sessions.filter((session) => session.day === day);
+  const dayEmptySlots = emptySlots.filter((slot) => slot.date === dayDates[day]);
+  const dayHours = Array.from(new Set([...weekPlaceholderHours, ...daySessions.map((session) => session.start), ...dayEmptySlots.map((slot) => slot.start)])).sort();
   return (
-    <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <h2 className="font-display text-2xl text-[#1F3B6E]">Week view</h2>
-        <CalendarLegend />
+    <div className="min-w-0 rounded-lg bg-[#FBF7EE] p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="font-semibold text-[#1F3B6E]">{day}</p>
+        <p className="truncate text-xs text-[#5C6680]">{dayDates[day]?.slice(5).replace("-", "/")}</p>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
-        {days.map((day) => {
-          const daySessions = sessions.filter((session) => session.day === day);
-          const dayEmptySlots = emptySlots.filter((slot) => slot.date === dayDates[day]);
-          const dayHours = Array.from(new Set([...weekPlaceholderHours, ...daySessions.map((session) => session.start), ...dayEmptySlots.map((slot) => slot.start)])).sort();
-          return (
-            <div key={day} className="rounded-lg bg-[#FBF7EE] p-3">
-              <p className="font-semibold text-[#1F3B6E]">{day}</p>
-              <div className="mt-3 grid gap-2">
-                {dayHours.map((hour) => {
-                  const session = daySessions.find((item) => item.start === hour);
-                  const emptySlot = dayEmptySlots.find((slot) => slot.start === hour);
-                  return session ? (
-                    <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} highlighted={session.id === highlightedSessionId} />
-                  ) : (
-                    <EmptySlotPlaceholder key={`${day}-${hour}`} date={dayDates[day]} start={hour} end={emptySlot?.end || addOneHour(hour)} onInvite={onInvite} />
-                  );
-                })}
-              </div>
-            </div>
+      <div className="mt-3 grid min-w-0 gap-2">
+        {dayHours.map((hour) => {
+          const session = daySessions.find((item) => item.start === hour);
+          const emptySlot = dayEmptySlots.find((slot) => slot.start === hour);
+          return session ? (
+            <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} density="week" highlighted={session.id === highlightedSessionId} />
+          ) : (
+            <EmptySlotPlaceholder key={`${day}-${hour}`} date={dayDates[day]} start={hour} end={emptySlot?.end || addOneHour(hour)} compact onInvite={onInvite} />
           );
         })}
       </div>
@@ -289,31 +288,77 @@ function WeekView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId
   );
 }
 
+function WeekView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId }) {
+  const weekendItems = sessions.filter((session) => weekendDays.includes(session.day));
+  const weekendEmpty = emptySlots.filter((slot) => weekendDays.some((day) => dayDates[day] === slot.date));
+  return (
+    <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="font-display text-2xl text-[#1F3B6E]">Work week view</h2>
+          <p className="text-sm text-[#5C6680]">Monday to Friday stay readable; weekend activity is summarized below.</p>
+        </div>
+        <CalendarLegend />
+      </div>
+      <div className="mt-4 grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {workWeekDays.map((day) => <DayColumn key={day} day={day} sessions={sessions} emptySlots={emptySlots} onOpen={onOpen} onInvite={onInvite} highlightedSessionId={highlightedSessionId} />)}
+      </div>
+      <div className="mt-3 rounded-lg border border-[#EFE4D0] bg-[#FBF7EE] p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-semibold text-[#1F3B6E]">Weekend</p>
+          <p className="text-sm text-[#5C6680]">{weekendItems.length} calendar item{weekendItems.length === 1 ? "" : "s"} - {weekendEmpty.length} empty slot{weekendEmpty.length === 1 ? "" : "s"}</p>
+        </div>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {weekendItems.slice(0, 2).map((session) => <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} density="week" highlighted={session.id === highlightedSessionId} />)}
+          {weekendEmpty.slice(0, 2).map((slot) => <EmptySlotPlaceholder key={slot.id} date={slot.date} start={slot.start} end={slot.end} compact onInvite={onInvite} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MonthView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId }) {
-  const dates = Array.from({ length: 30 }, (_, idx) => idx + 1);
+  const year = 2026;
+  const month = 6;
+  const dates = Array.from({ length: 31 }, (_, idx) => idx + 1);
+  const firstDay = new Date(year, month, 1).getDay();
+  const mondayOffset = (firstDay + 6) % 7;
+  const leadingBlanks = Array.from({ length: mondayOffset }, (_, idx) => `blank-start-${idx}`);
+  const trailingBlanks = Array.from({ length: (7 - ((leadingBlanks.length + dates.length) % 7)) % 7 }, (_, idx) => `blank-end-${idx}`);
   return (
     <div className="min-w-0 rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h2 className="font-display text-2xl text-[#1F3B6E]">Month view</h2>
         <CalendarLegend />
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-7">
+      <div className="mt-4 grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-[0.08em] text-[#5C6680] sm:gap-2">
+        {monthWeekdays.map((day) => <div key={day} className="rounded-md bg-[#FBF7EE] px-1 py-2">{day}</div>)}
+      </div>
+      <div className="mt-2 grid min-w-0 grid-cols-7 gap-1 sm:gap-2">
+        {leadingBlanks.map((item) => <div key={item} className="min-h-24 rounded-lg border border-transparent bg-transparent sm:min-h-32" />)}
         {dates.map((date) => {
           const key = `2026-07-${String(date).padStart(2, "0")}`;
           const daySessions = sessions.filter((session) => session.date === key);
           const dayEmptySlots = emptySlots.filter((slot) => slot.date === key);
+          const rawWeekday = new Date(year, month, date).getDay();
+          const weekday = monthWeekdays[rawWeekday === 0 ? 6 : rawWeekday - 1];
+          const totalItems = daySessions.length + dayEmptySlots.length;
           return (
-            <div key={date} className="min-h-28 min-w-0 overflow-hidden rounded-lg border border-[#EFE4D0] bg-[#FBF7EE] p-3">
-              <p className="font-semibold text-[#1F3B6E]">Jul {date}</p>
-              <div className="mt-2 grid min-w-0 gap-1">
-                {daySessions.slice(0, 3).map((session) => <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} compact highlighted={session.id === highlightedSessionId} />)}
-                {daySessions.length < 3 && dayEmptySlots.slice(0, 3 - daySessions.length).map((slot) => <EmptySlotPlaceholder key={slot.id} date={slot.date} start={slot.start} end={slot.end} compact onInvite={onInvite} />)}
-                {daySessions.length + dayEmptySlots.length > 3 && <p className="text-xs font-semibold text-[#5C6680]">+{daySessions.length + dayEmptySlots.length - 3} more</p>}
-                {daySessions.length === 0 && dayEmptySlots.length === 0 && <EmptySlotPlaceholder date={key} start="empty" end="day" label="Empty day" compact onInvite={onInvite} />}
+            <div key={date} className="min-h-24 min-w-0 overflow-hidden rounded-lg border border-[#EFE4D0] bg-[#FBF7EE] p-1.5 sm:min-h-32 sm:p-2">
+              <div className="flex min-w-0 items-center justify-between gap-1">
+                <p className="truncate font-semibold text-[#1F3B6E]">{date}</p>
+                <p className="hidden truncate text-[11px] text-[#5C6680] sm:block">{weekday}</p>
+              </div>
+              <div className="mt-1 grid min-w-0 gap-1">
+                {daySessions.slice(0, 2).map((session) => <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} density="month" highlighted={session.id === highlightedSessionId} />)}
+                {daySessions.length < 2 && dayEmptySlots.slice(0, 2 - daySessions.length).map((slot) => <EmptySlotPlaceholder key={slot.id} date={slot.date} start={slot.start} end={slot.end} tiny onInvite={onInvite} />)}
+                {totalItems > 2 && <p className="truncate rounded bg-white/70 px-2 py-1 text-[11px] font-semibold text-[#5C6680]">+{totalItems - 2} more</p>}
+                {totalItems === 0 && <EmptySlotPlaceholder date={key} start="empty" end="day" label="Empty day" tiny onInvite={onInvite} />}
               </div>
             </div>
           );
         })}
+        {trailingBlanks.map((item) => <div key={item} className="min-h-24 rounded-lg border border-transparent bg-transparent sm:min-h-32" />)}
       </div>
     </div>
   );

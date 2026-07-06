@@ -22,7 +22,8 @@ Implemented UI capabilities:
 - Scheduling insights KPIs and action suggestions.
 - Student quick view drawer with class actions: complete, cancel, no-show, late, reschedule, notes, homework, and feedback.
 - Responsive desktop, tablet, and mobile layouts.
-- Month view uses compact non-overflowing slot cards and stacks the operations sidebar below the calendar until wide desktop space is available.
+- Week view uses a readable five-day work-week grid with weekend activity summarized below, preventing narrow seven-column cards from overlapping.
+- Month view follows a standard calendar grid with weekday headers and compact non-overflowing event pills.
 - Day, week, and month views show a shared status legend and explicit empty-slot placeholders, so teachers can distinguish booked classes from available openings and unfilled gaps.
 - The calendar is now the persistent center of the workspace. Google Calendar and scheduling insights open as lateral panels only when requested.
 - The former fixed "Next class" and "Today's classes" side modules are replaced by action buttons that highlight the relevant class directly inside the calendar.
