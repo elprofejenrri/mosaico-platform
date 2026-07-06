@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider } from "./context/AppContext";
 import { Navbar } from "./components/Navbar";
 import { Footer } from "./components/Footer";
-import { PlatformLanding, StudentPortal, TutorPortal, TeacherPortal, AdminPortal } from "./pages/Platform";
+import { PlatformLanding, StudentPortal, TutorPortal, TeacherPortal, SchoolAdminPortal, AdminPortal } from "./pages/Platform";
 import Pricing from "./pages/Pricing";
 import Faq from "./pages/Faq";
 import Blog from "./pages/Blog";
@@ -58,6 +58,17 @@ function AppRouter() {
           <Route path="/teacher/materials" element={<TeacherPortal module="materials" />} />
           <Route path="/teacher/evaluations" element={<TeacherPortal module="evaluations" />} />
           <Route path="/teacher/earnings" element={<TeacherPortal module="earnings" />} />
+          <Route path="/school-admin" element={<SchoolAdminPortal />} />
+          <Route path="/school-admin/approvals" element={<SchoolAdminPortal module="approvals" />} />
+          <Route path="/school-admin/credits" element={<SchoolAdminPortal module="credits" />} />
+          <Route path="/school-admin/classes" element={<SchoolAdminPortal module="classes" />} />
+          <Route path="/school-admin/roadmaps" element={<SchoolAdminPortal module="roadmaps" />} />
+          <Route path="/school-admin/lessons" element={<SchoolAdminPortal module="lessons" />} />
+          <Route path="/school-admin/students" element={<SchoolAdminPortal module="students" />} />
+          <Route path="/school-admin/teachers" element={<SchoolAdminPortal module="teachers" />} />
+          <Route path="/school-admin/bookings" element={<SchoolAdminPortal module="bookings" />} />
+          <Route path="/school-admin/families" element={<SchoolAdminPortal module="families" />} />
+          <Route path="/school-admin/reports" element={<SchoolAdminPortal module="reports" />} />
           <Route path="/admin" element={<AdminPortal />} />
           <Route path="/admin/approvals" element={<AdminPortal module="approvals" />} />
           <Route path="/admin/iam" element={<AdminPortal module="iam" />} />

@@ -21,13 +21,18 @@ export function hasAnyRole(user, roleNames = []) {
 
 export function canAccessPortal(user, portal) {
   if (portal === "student") return true;
-  if (portal === "tutor") return hasAnyRole(user, ["tutor_padre", "administrador_sitio", "administrador_profesor", "coordinador"]);
-  if (portal === "teacher") return hasAnyRole(user, ["profesor", "administrador_sitio", "administrador_profesor", "coordinador"]) || hasPermission(user, "calendar.teacher.view");
+  if (portal === "tutor") return hasAnyRole(user, ["tutor_padre", "administrador_sitio", "administrador_profesor", "administrador_escolar", "coordinador"]);
+  if (portal === "teacher") return hasAnyRole(user, ["profesor", "administrador_sitio", "administrador_profesor", "administrador_escolar", "coordinador"]) || hasPermission(user, "calendar.teacher.view");
+  if (portal === "schoolAdmin") {
+    return hasAnyRole(user, ["administrador_sitio", "administrador_profesor", "administrador_escolar", "coordinador"]) ||
+      hasPermission(user, "classes.sessions.create") ||
+      hasPermission(user, "learning.roadmaps.create");
+  }
   if (portal === "admin") {
-    return hasAnyRole(user, ["administrador_sitio", "administrador_profesor", "coordinador", "viewer"]) ||
+    return hasAnyRole(user, ["administrador_sitio", "administrador_profesor", "viewer"]) ||
       hasPermission(user, "roles.management.view") ||
-      hasPermission(user, "users.profile.view") ||
-      hasPermission(user, "reports.analytics.view");
+      hasPermission(user, "settings.platform.view") ||
+      hasPermission(user, "audit.logs.view");
   }
   return false;
 }

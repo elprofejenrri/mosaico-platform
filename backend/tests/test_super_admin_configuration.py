@@ -1,4 +1,5 @@
 import copy
+import asyncio
 import sys
 from pathlib import Path
 
@@ -30,6 +31,22 @@ def test_platform_config_rejects_invalid_availability_duration():
 
     with pytest.raises(HTTPException):
         server._validate_platform_config(config)
+
+
+def test_public_settings_exposes_only_feature_flags(monkeypatch):
+    async def fake_get_settings():
+        settings = copy.deepcopy(server.DEFAULT_SETTINGS)
+        settings["platform_config"]["feature_flags"]["ai_tutor"] = True
+        settings["platform_config"]["general"]["support_email"] = "private@example.com"
+        return settings
+
+    monkeypatch.setattr(server, "_get_settings", fake_get_settings)
+
+    payload = asyncio.run(server.get_public_settings())
+
+    assert payload["platform_config"]["feature_flags"]["ai_tutor"] is True
+    assert "general" not in payload["platform_config"]
+    assert "support_email" not in payload["platform_config"]
 
 
 def test_super_admin_keeps_wildcard_permission():

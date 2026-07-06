@@ -309,12 +309,15 @@ ROLE_ALIASES = {
     "admin": "administrador_sitio",
     "student": "alumno",
     "teacher": "profesor",
+    "school_admin": "administrador_escolar",
+    "school_administrative": "administrador_escolar",
     "cms": "editor_cms",
 }
 ADMIN_ROLES = {"administrador_sitio", "administrador_profesor"}
 ROLE_LABELS = {
     "administrador_sitio": "Super Admin",
     "administrador_profesor": "Admin",
+    "administrador_escolar": "School Administrative",
     "coordinador": "Coordinator",
     "profesor": "Teacher",
     "editor_cms": "Editor CMS",
@@ -329,10 +332,11 @@ ROLE_LEVELS = {
     "profesor": 30,
     "coordinador": 60,
     "editor_cms": 40,
+    "administrador_escolar": 65,
     "administrador_profesor": 70,
     "administrador_sitio": 100,
 }
-SYSTEM_ROLE_NAMES = {"administrador_sitio", "administrador_profesor", "coordinador", "profesor", "alumno", "tutor_padre", "viewer"}
+SYSTEM_ROLE_NAMES = {"administrador_sitio", "administrador_profesor", "administrador_escolar", "coordinador", "profesor", "alumno", "tutor_padre", "viewer"}
 CRITICAL_PERMISSION_ACTIONS = {"delete", "refund", "grant", "modify", "assign", "sync_google"}
 
 
@@ -380,6 +384,10 @@ DOT_PERMISSION_CATALOG = [
     _dot_permission("classes.sessions.cancel", "Cancel class sessions.", 4),
     _dot_permission("classes.sessions.complete", "Complete class sessions.", 3),
     _dot_permission("classes.sessions.feedback", "Submit class feedback.", 3),
+    _dot_permission("learning.roadmaps.view", "View learning roadmaps."),
+    _dot_permission("learning.roadmaps.create", "Create learning roadmaps.", 4),
+    _dot_permission("learning.roadmaps.edit", "Edit learning roadmaps.", 4),
+    _dot_permission("learning.roadmaps.publish", "Publish learning roadmaps.", 5),
     _dot_permission("students.profile.view", "View student profiles."),
     _dot_permission("students.profile.edit", "Edit student profiles.", 4),
     _dot_permission("students.progress.view", "View student progress."),
@@ -452,6 +460,16 @@ ROLE_PERMISSION_LEVELS: Dict[str, Dict[str, int]] = {
         "reports.analytics.view": 4, "reports.analytics.export": 4, "settings.platform.view": 4,
         "settings.view": 4, "logs.activity.view": 4, "logs.view": 4, "audit.logs.view": 5, "audit.view": 5,
         "atlas.view": 4, "atlas.export": 4,
+    },
+    "administrador_escolar": {
+        "dashboard.general.view": 4, "users.profile.view": 3, "users.profile.edit": 3,
+        "students.profile.view": 4, "students.profile.edit": 4, "students.progress.view": 4,
+        "teachers.profile.view": 4, "teachers.profile.edit": 3, "teachers.availability.view": 3,
+        "classes.sessions.view": 4, "classes.sessions.create": 4, "classes.sessions.edit": 4,
+        "classes.sessions.cancel": 4, "learning.roadmaps.view": 4, "learning.roadmaps.create": 4,
+        "learning.roadmaps.edit": 4, "learning.roadmaps.publish": 4, "reports.analytics.view": 3,
+        "credits.wallet.view": 3, "credits.wallet.grant": 4, "logs.activity.view": 3,
+        "lessons:create": 4, "lessons:approve": 4,
     },
     "coordinador": {
         "dashboard.general.view": 3, "users.profile.view": 3, "calendar.teacher.view": 3,
@@ -3487,7 +3505,12 @@ async def _create_gcal_event(booking: dict, product: dict) -> dict:
 @api.get("/settings/public")
 async def get_public_settings():
     s = await _get_settings()
-    return {k: s.get(k, "") for k in PUBLIC_SETTINGS_FIELDS}
+    public_settings = {k: s.get(k, "") for k in PUBLIC_SETTINGS_FIELDS}
+    platform_config = s.get("platform_config") or DEFAULT_SETTINGS["platform_config"]
+    public_settings["platform_config"] = {
+        "feature_flags": platform_config.get("feature_flags") or DEFAULT_SETTINGS["platform_config"]["feature_flags"],
+    }
+    return public_settings
 
 
 @api.get("/admin/configuration/settings")

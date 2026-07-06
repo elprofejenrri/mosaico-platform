@@ -19,6 +19,13 @@
 
 ## Important Permissions
 
+- `classes.sessions.view`
+- `classes.sessions.create`
+- `classes.sessions.edit`
+- `learning.roadmaps.view`
+- `learning.roadmaps.create`
+- `learning.roadmaps.edit`
+- `learning.roadmaps.publish`
 - `users.profile.view`
 - `users.profile.edit`
 - `users.roles.assign`
@@ -46,3 +53,9 @@
 ## Admin UI
 
 The main RBAC UI is `/admin/roles-permissions`. It supports role inspection, permission levels, user role assignment, safety prompts, and audit visibility.
+
+## School Administrative Role
+
+`administrador_escolar` is the non-technical education administrator role. It is meant for school principal workflows and has additive permissions for classes, learning roadmaps, student/teacher coordination, and school reports. It does not receive technical IAM, platform settings, audit, or system-health permissions by default.
+
+The portal selector shows one active profile at a time through a dropdown. Users with multiple roles can switch between Client, Tutor, Teacher, School Administrative, and Technical Admin when their effective permissions allow those portals.

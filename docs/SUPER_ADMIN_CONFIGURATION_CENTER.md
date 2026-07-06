@@ -49,6 +49,10 @@ Settings are stored in `site_settings.platform_config` and merged with safe defa
 
 Validation blocks unsafe values such as invalid booking windows, unsupported class durations, invalid cooldowns, and unknown default roles.
 
+The configuration editor keeps a sticky save bar visible while scrolling. It shows whether changes are unsaved, provides `Save changes`, and lets admins discard edits without searching back to the top of the page. The top section save action remains available, but the sticky bar is the primary long-form editing control.
+
+Public-safe feature flags are also returned by `/api/settings/public`. After a Super Admin saves configuration changes, the frontend refreshes those public settings and removes disabled feature modules from the left sidebar navigation.
+
 ## Audit Logs
 
 Audit events are immutable records for sensitive changes. The schema supports:

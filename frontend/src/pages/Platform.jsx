@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, NavLink, useLocation, useParams } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { trackEvent } from "../lib/analytics";
@@ -146,15 +146,22 @@ const roleNav = {
     ["evaluations", "Evaluations", ClipboardCheck],
     ["earnings", "Earnings", CircleDollarSign],
   ],
-  admin: [
+  schoolAdmin: [
     ["", "Overview", School],
     ["approvals", "Approvals", UserCheck],
-    ["iam", "Identity & Access", ShieldCheck],
     ["credits", "Credits", Coins],
+    ["classes", "Classes", CalendarCheck],
+    ["roadmaps", "Roadmaps", Target],
     ["lessons", "Lessons", FilePlus2],
+    ["students", "Students", Users],
     ["teachers", "Teachers", GraduationCap],
     ["bookings", "Bookings", CalendarDays],
     ["families", "Families", ShieldCheck],
+    ["reports", "Reports", LineChart],
+  ],
+  admin: [
+    ["", "Overview", LayoutDashboard],
+    ["iam", "Identity & Access", ShieldCheck],
     ["analytics", "Analytics", LineChart],
     ["atlas", "Mosaico Atlas", BookOpen],
     ["reports", "Reports", LineChart],
@@ -186,15 +193,448 @@ const roleNavGroups = {
     ["Content", ["materials", "evaluations"]],
     ["Money", ["earnings"]],
   ],
-  admin: [
-    ["Command Center", ["", "approvals"]],
-    ["People & Learning", ["iam", "teachers", "families", "lessons"]],
+  schoolAdmin: [
+    ["Start", [""]],
+    ["Academic Operations", ["approvals", "classes", "roadmaps", "lessons"]],
     ["Scheduling & Credits", ["bookings", "credits"]],
+    ["People", ["students", "teachers", "families"]],
+    ["Intelligence", ["reports"]],
+  ],
+  admin: [
+    ["Command Center", [""]],
+    ["Access & Governance", ["iam", "roles-permissions", "audit-logs", "activity-logs"]],
     ["Intelligence", ["analytics", "reports", "atlas"]],
-    ["Access & Governance", ["roles-permissions", "audit-logs", "activity-logs"]],
     ["System", ["configuration", "system-settings"]],
   ],
 };
+
+const platformUiText = {
+  en: {
+    roleLabels: { student: "Client", tutor: "Tutor", teacher: "Teacher", schoolAdmin: "School Administrative", admin: "Technical Admin" },
+    profileSelector: "Active profile",
+    navGroups: {
+      "Start": "Start",
+      "Learning": "Learning",
+      "Classes": "Classes",
+      "Community": "Community",
+      "Family": "Family",
+      "Money": "Money",
+      "Teaching": "Teaching",
+      "Content": "Content",
+      "Academic Operations": "Academic Operations",
+      "People": "People",
+      "Command Center": "Command Center",
+      "People & Learning": "People & Learning",
+      "Scheduling & Credits": "Scheduling & Credits",
+      "Intelligence": "Intelligence",
+      "Access & Governance": "Access & Governance",
+      "System": "System",
+      "Other": "Other",
+      "Navigation": "Navigation",
+    },
+    navLabels: {
+      "student:": "Dashboard",
+      "student:learn": "Learning Hub",
+      "student:roadmap": "Roadmap",
+      "student:classes": "Live Classes",
+      "student:ai-tutor": "AI Tutor",
+      "student:community": "Community",
+      "student:progress": "Progress",
+      "tutor:": "Overview",
+      "tutor:students": "Students",
+      "tutor:classes": "Classes",
+      "tutor:credits": "Credits",
+      "tutor:progress": "Progress",
+      "tutor:roadmap": "Roadmap",
+      "tutor:tests": "Tests",
+      "tutor:feedback": "Feedback",
+      "tutor:messages": "Messages",
+      "tutor:alerts": "Alerts",
+      "tutor:badges": "Badges",
+      "tutor:payments": "Payments",
+      "teacher:": "Dashboard",
+      "teacher:calendar": "Calendar",
+      "teacher:students": "Students",
+      "teacher:classes": "Classes",
+      "teacher:materials": "Materials",
+      "teacher:evaluations": "Evaluations",
+      "teacher:earnings": "Earnings",
+      "schoolAdmin:": "Overview",
+      "schoolAdmin:approvals": "Approvals",
+      "schoolAdmin:credits": "Credits",
+      "schoolAdmin:classes": "Classes",
+      "schoolAdmin:roadmaps": "Roadmaps",
+      "schoolAdmin:lessons": "Lessons",
+      "schoolAdmin:students": "Students",
+      "schoolAdmin:teachers": "Teachers",
+      "schoolAdmin:bookings": "Bookings",
+      "schoolAdmin:families": "Families",
+      "schoolAdmin:reports": "Reports",
+      "admin:": "Overview",
+      "admin:approvals": "Approvals",
+      "admin:iam": "Identity & Access",
+      "admin:credits": "Credits",
+      "admin:lessons": "Lessons",
+      "admin:teachers": "Teachers",
+      "admin:bookings": "Bookings",
+      "admin:families": "Families",
+      "admin:analytics": "Analytics",
+      "admin:atlas": "Mosaico Atlas",
+      "admin:reports": "Reports",
+      "admin:roles-permissions": "Roles & Access",
+      "admin:configuration": "Configuration",
+      "admin:audit-logs": "Audit Logs",
+      "admin:activity-logs": "Activity Logs",
+      "admin:system-settings": "System Health",
+    },
+    preview: {
+      title: "Preview service",
+      body: "This workspace is isolated behind mock data while the backend domain is built. Production actions are disabled until they are connected to backend persistence.",
+    },
+    denied: {
+      eyebrow: "Access denied",
+      tutorTitle: "Tutor access required",
+      teacherTitle: "Teacher access required",
+      schoolAdminTitle: "School administrative access required",
+      adminTitle: "Technical admin access required",
+      fallbackTitle: "Access required",
+      tutorCopy: "This account does not have a tutor or parent role. Student-only users can use the client portal, but cannot open family management tools.",
+      teacherCopy: "This account does not have a teacher role or teacher calendar permission. Student-only users can use the client portal, but cannot open teacher operations.",
+      schoolAdminCopy: "This account does not have the school administrative role or academic operations permissions.",
+      adminCopy: "This account does not have technical administration permissions. Student-only users can use the client portal, but cannot open platform governance.",
+      fallbackCopy: "This account does not have permission to open this workspace.",
+      action: "Go to client portal",
+    },
+    rbac: {
+      roleCatalogEyebrow: "Role catalog",
+      roleCatalogTitle: "Roles can hold many permission levels",
+      role: "Role",
+      permissionCatalogEyebrow: "Permission catalog",
+      permissionCatalogTitle: "Functionality access by feature",
+      multiRoleEyebrow: "Multi-role users",
+      multiRoleTitle: "One person can inherit access from multiple roles",
+      user: "User",
+      level: "Level",
+      permissions: "permissions",
+      configuredAccess: "Configured access",
+      custom: "Custom",
+      saveRolePermissions: "Save role permissions",
+      saveUserRoles: "Save user roles",
+    },
+    config: {
+      loading: "Loading configuration...",
+      retry: "Retry",
+      empty: "No configuration found.",
+      requiredPlatformName: "Platform name is required.",
+      invalidMaxDays: "Max days ahead must be at least 1.",
+      requiredDuration: "At least one class duration is required.",
+      saveTitle: "Save platform configuration",
+      saveBody: "This changes platform-wide behavior and will be written to the audit log.",
+      saveConfirm: "Save configuration",
+      discarded: "Configuration changes discarded.",
+      saved: "Platform configuration saved.",
+      saveError: "Could not save configuration.",
+      maintenance: "Maintenance",
+      maintenanceDetail: "Controls public operational mode",
+      activeFlags: "Active flags",
+      activeFlagsDetail: "Enabled platform features",
+      environment: "Environment",
+      production: "Production",
+      on: "On",
+      off: "Off",
+      actions: "Configuration actions",
+      unsaved: "You have unsaved platform configuration changes.",
+      savedState: "Configuration is saved. Changes will appear here while you edit.",
+      cancelChanges: "Cancel changes",
+      saveChanges: "Save changes",
+      saving: "Saving...",
+      superAdmin: "Super Admin",
+      center: "Configuration Center",
+      settings: "Settings",
+      enabled: "Enabled",
+      disabled: "Disabled",
+      sections: {
+        general: "General platform",
+        feature_flags: "Feature flags",
+        booking_rules: "Booking rules",
+        credit_rules: "Credit rules",
+        cancellation_policy: "Cancellation policy",
+        teacher_availability_rules: "Teacher availability",
+        student_scheduling_rules: "Student scheduling",
+        notification_settings: "Notifications",
+        role_defaults: "Role defaults",
+      },
+    },
+    landing: {
+      eyebrow: "MOSAICO Platform",
+      title: "Learn Spanish through real conversations.",
+      subtitle: "A warm, modern language learning platform for lessons, live teachers, AI roleplay, community, progress, and operations.",
+      start: "Start learning",
+      manage: "Manage a learner",
+      teachers: "Explore teachers",
+      demo: "Book a demo",
+      pillarsEyebrow: "Product pillars",
+      pillarsTitle: "One platform for learners, teachers, and operators.",
+      teacherPreview: "Teacher preview",
+      coursePreview: "Course preview",
+      aiCommunity: "AI and community",
+      roleplayTitle: "Airport roleplay",
+      roleplayBody: "Practice a flight delay conversation with grammar correction.",
+      pricingEyebrow: "Pricing preview",
+      pricingTitle: "Subscriptions, class packs, and premium tutoring.",
+      pricingBody: "Payments are currently a pitch-ready dummy flow with realistic plans and package cards.",
+      viewPlans: "View plans",
+    },
+  },
+  es: {
+    roleLabels: { student: "Cliente", tutor: "Tutor", teacher: "Profesor", schoolAdmin: "Administrativo escolar", admin: "Admin tecnico" },
+    profileSelector: "Perfil activo",
+    navGroups: {
+      "Start": "Inicio",
+      "Learning": "Aprendizaje",
+      "Classes": "Clases",
+      "Community": "Comunidad",
+      "Family": "Familia",
+      "Money": "Dinero",
+      "Teaching": "Enseñanza",
+      "Content": "Contenido",
+      "Academic Operations": "Operacion academica",
+      "People": "Personas",
+      "Command Center": "Centro de mando",
+      "People & Learning": "Personas y aprendizaje",
+      "Scheduling & Credits": "Agenda y créditos",
+      "Intelligence": "Inteligencia",
+      "Access & Governance": "Acceso y gobierno",
+      "System": "Sistema",
+      "Other": "Otros",
+      "Navigation": "Navegación",
+    },
+    navLabels: {
+      "student:": "Panel",
+      "student:learn": "Centro de aprendizaje",
+      "student:roadmap": "Ruta",
+      "student:classes": "Clases en vivo",
+      "student:ai-tutor": "Tutor IA",
+      "student:community": "Comunidad",
+      "student:progress": "Progreso",
+      "tutor:": "Resumen",
+      "tutor:students": "Estudiantes",
+      "tutor:classes": "Clases",
+      "tutor:credits": "Créditos",
+      "tutor:progress": "Progreso",
+      "tutor:roadmap": "Ruta",
+      "tutor:tests": "Pruebas",
+      "tutor:feedback": "Retroalimentación",
+      "tutor:messages": "Mensajes",
+      "tutor:alerts": "Alertas",
+      "tutor:badges": "Insignias",
+      "tutor:payments": "Pagos",
+      "teacher:": "Panel",
+      "teacher:calendar": "Calendario",
+      "teacher:students": "Estudiantes",
+      "teacher:classes": "Clases",
+      "teacher:materials": "Materiales",
+      "teacher:evaluations": "Evaluaciones",
+      "teacher:earnings": "Ingresos",
+      "schoolAdmin:": "Resumen",
+      "schoolAdmin:approvals": "Aprobaciones",
+      "schoolAdmin:credits": "Creditos",
+      "schoolAdmin:classes": "Clases",
+      "schoolAdmin:roadmaps": "Rutas",
+      "schoolAdmin:lessons": "Lecciones",
+      "schoolAdmin:students": "Estudiantes",
+      "schoolAdmin:teachers": "Profesores",
+      "schoolAdmin:bookings": "Reservas",
+      "schoolAdmin:families": "Familias",
+      "schoolAdmin:reports": "Reportes",
+      "admin:": "Resumen",
+      "admin:approvals": "Aprobaciones",
+      "admin:iam": "Identidad y acceso",
+      "admin:credits": "Créditos",
+      "admin:lessons": "Lecciones",
+      "admin:teachers": "Profesores",
+      "admin:bookings": "Reservas",
+      "admin:families": "Familias",
+      "admin:analytics": "Analítica",
+      "admin:atlas": "Mosaico Atlas",
+      "admin:reports": "Reportes",
+      "admin:roles-permissions": "Roles y acceso",
+      "admin:configuration": "Configuración",
+      "admin:audit-logs": "Auditoría",
+      "admin:activity-logs": "Actividad",
+      "admin:system-settings": "Salud del sistema",
+    },
+    preview: {
+      title: "Servicio de vista previa",
+      body: "Este espacio usa datos simulados mientras se construye el dominio backend. Las acciones productivas están deshabilitadas hasta conectarse a persistencia real.",
+    },
+    denied: {
+      eyebrow: "Acceso denegado",
+      tutorTitle: "Acceso de tutor requerido",
+      teacherTitle: "Acceso de profesor requerido",
+      schoolAdminTitle: "Acceso administrativo escolar requerido",
+      adminTitle: "Acceso tecnico requerido",
+      fallbackTitle: "Acceso requerido",
+      tutorCopy: "Esta cuenta no tiene rol de tutor o padre. Los usuarios sólo estudiantes pueden usar el portal cliente, pero no las herramientas familiares.",
+      teacherCopy: "Esta cuenta no tiene rol de profesor ni permiso de calendario. Los usuarios sólo estudiantes pueden usar el portal cliente, pero no operaciones docentes.",
+      schoolAdminCopy: "Esta cuenta no tiene rol administrativo escolar ni permisos de operacion academica.",
+      adminCopy: "Esta cuenta no tiene permisos de administracion tecnica. Los usuarios solo estudiantes pueden usar el portal cliente, pero no gobierno de plataforma.",
+      fallbackCopy: "Esta cuenta no tiene permiso para abrir este espacio.",
+      action: "Ir al portal cliente",
+    },
+    rbac: {
+      roleCatalogEyebrow: "Catálogo de roles",
+      roleCatalogTitle: "Los roles pueden tener varios niveles de permisos",
+      role: "Rol",
+      permissionCatalogEyebrow: "Catálogo de permisos",
+      permissionCatalogTitle: "Acceso a funcionalidades por módulo",
+      multiRoleEyebrow: "Usuarios multirol",
+      multiRoleTitle: "Una persona puede heredar acceso de varios roles",
+      user: "Usuario",
+      level: "Nivel",
+      permissions: "permisos",
+      configuredAccess: "Acceso configurado",
+      custom: "Personalizado",
+      saveRolePermissions: "Guardar permisos del rol",
+      saveUserRoles: "Guardar roles del usuario",
+    },
+    config: {
+      loading: "Cargando configuración...",
+      retry: "Reintentar",
+      empty: "No se encontró configuración.",
+      requiredPlatformName: "El nombre de la plataforma es obligatorio.",
+      invalidMaxDays: "Los días máximos hacia adelante deben ser al menos 1.",
+      requiredDuration: "Se requiere al menos una duración de clase.",
+      saveTitle: "Guardar configuración de plataforma",
+      saveBody: "Esto cambia el comportamiento global de la plataforma y se escribirá en la auditoría.",
+      saveConfirm: "Guardar configuración",
+      discarded: "Cambios de configuración descartados.",
+      saved: "Configuración guardada.",
+      saveError: "No se pudo guardar la configuración.",
+      maintenance: "Mantenimiento",
+      maintenanceDetail: "Controla el modo operativo público",
+      activeFlags: "Flags activos",
+      activeFlagsDetail: "Funciones habilitadas",
+      environment: "Entorno",
+      production: "Producción",
+      on: "Activo",
+      off: "Inactivo",
+      actions: "Acciones de configuración",
+      unsaved: "Tienes cambios de configuración sin guardar.",
+      savedState: "La configuración está guardada. Los cambios aparecerán aquí mientras editas.",
+      cancelChanges: "Cancelar cambios",
+      saveChanges: "Guardar cambios",
+      saving: "Guardando...",
+      superAdmin: "Super Admin",
+      center: "Centro de configuración",
+      settings: "Configuración",
+      enabled: "Habilitado",
+      disabled: "Deshabilitado",
+      sections: {
+        general: "Plataforma general",
+        feature_flags: "Flags de funciones",
+        booking_rules: "Reglas de reserva",
+        credit_rules: "Reglas de créditos",
+        cancellation_policy: "Política de cancelación",
+        teacher_availability_rules: "Disponibilidad de profesores",
+        student_scheduling_rules: "Agenda de estudiantes",
+        notification_settings: "Notificaciones",
+        role_defaults: "Roles por defecto",
+      },
+    },
+    landing: {
+      eyebrow: "Plataforma MOSAICO",
+      title: "Aprende español con conversaciones reales.",
+      subtitle: "Una plataforma cálida y moderna para lecciones, profesores en vivo, práctica con IA, comunidad, progreso y operación escolar.",
+      start: "Empezar a aprender",
+      manage: "Gestionar un estudiante",
+      teachers: "Explorar profesores",
+      demo: "Agendar demo",
+      pillarsEyebrow: "Pilares del producto",
+      pillarsTitle: "Una plataforma para estudiantes, profesores y operadores.",
+      teacherPreview: "Vista de profesores",
+      coursePreview: "Vista de cursos",
+      aiCommunity: "IA y comunidad",
+      roleplayTitle: "Roleplay en aeropuerto",
+      roleplayBody: "Practica una conversación por retraso de vuelo con corrección gramatical.",
+      pricingEyebrow: "Vista de precios",
+      pricingTitle: "Suscripciones, paquetes de clases y tutoría premium.",
+      pricingBody: "Los pagos siguen como flujo demo listo para presentar, con planes y paquetes realistas.",
+      viewPlans: "Ver planes",
+    },
+  },
+};
+
+function platformText(lang) {
+  return platformUiText[lang] || platformUiText.en;
+}
+
+function navLabel(lang, role, slug, fallback) {
+  return platformText(lang).navLabels[`${role}:${slug}`] || fallback;
+}
+
+function roleEyebrow(lang, role, meta) {
+  const labels = {
+    en: { student: "Client portal", tutor: "Tutor portal", teacher: "Teacher workspace", schoolAdmin: "School administration", admin: "Technical administration" },
+    es: { student: "Portal cliente", tutor: "Portal tutor", teacher: "Espacio del profesor", schoolAdmin: "Administracion escolar", admin: "Administracion tecnica" },
+  };
+  return labels[lang]?.[role] || meta.eyebrow || `${meta.label} ${meta.portal || ""}`.trim();
+}
+
+const configFieldLabels = {
+  en: {
+    brand_name: "Brand name",
+    tagline_en: "Tagline EN",
+    tagline_es: "Tagline ES",
+    logo_url: "Logo URL",
+    favicon_url: "Favicon URL",
+    hero_image_url: "Hero image URL",
+    contact_email: "Contact email",
+    social_instagram: "Social Instagram",
+    social_twitter: "Social Twitter",
+    platform_name: "Platform name",
+    support_email: "Support email",
+    support_phone: "Support phone",
+    maintenance_mode: "Maintenance mode",
+    environment_badge: "Environment badge",
+    max_days_ahead: "Max days ahead",
+    min_notice_hours: "Minimum notice hours",
+    default_class_minutes: "Default class minutes",
+    cooldown_minutes: "Cooldown minutes",
+    allowed_durations: "Allowed durations",
+    default_student_role: "Default student role",
+    default_teacher_role: "Default teacher role",
+    default_tutor_role: "Default tutor role",
+  },
+  es: {
+    brand_name: "Nombre de marca",
+    tagline_en: "Lema EN",
+    tagline_es: "Lema ES",
+    logo_url: "URL del logo",
+    favicon_url: "URL del favicon",
+    hero_image_url: "URL de imagen principal",
+    contact_email: "Correo de contacto",
+    social_instagram: "Instagram",
+    social_twitter: "Twitter",
+    platform_name: "Nombre de plataforma",
+    support_email: "Correo de soporte",
+    support_phone: "Teléfono de soporte",
+    maintenance_mode: "Modo mantenimiento",
+    environment_badge: "Etiqueta de entorno",
+    max_days_ahead: "Días máximos hacia adelante",
+    min_notice_hours: "Horas mínimas de aviso",
+    default_class_minutes: "Minutos por clase",
+    cooldown_minutes: "Pausa entre clases",
+    allowed_durations: "Duraciones permitidas",
+    default_student_role: "Rol estudiante por defecto",
+    default_teacher_role: "Rol profesor por defecto",
+    default_tutor_role: "Rol tutor por defecto",
+  },
+};
+
+function fieldLabel(key, lang) {
+  return configFieldLabels[lang]?.[key] || configFieldLabels.en[key] || key.replaceAll("_", " ");
+}
 
 const roleMeta = {
   student: {
@@ -215,11 +655,17 @@ const roleMeta = {
     title: "What do I need to teach and follow up today?",
     subtitle: "Classes, students, feedback, materials, and earnings for a modern teaching workflow.",
   },
+  schoolAdmin: {
+    label: "School Administrative",
+    base: "/school-admin",
+    title: "How is learning operating today?",
+    subtitle: "Create classes, build learning roadmaps, coordinate students and teachers, and review school performance.",
+  },
   admin: {
-    label: "Administrative",
+    label: "Technical Admin",
     base: "/admin",
-    title: "How is the school running today?",
-    subtitle: "A principal-style view for approvals, credits, lessons, teachers, family accounts, and learner support.",
+    title: "How is the platform governed today?",
+    subtitle: "Technical administration for IAM, configuration, audit logs, activity logs, system health, and platform controls.",
   },
 };
 
@@ -227,6 +673,7 @@ const roleMetaText = {
   en: {
     student: {
       label: "Client",
+      eyebrow: "Client portal",
       title: "What should I do today?",
       subtitle: "Your Spanish plan, live classes, practice prompts, and community moments in one place.",
       portal: "portal",
@@ -234,6 +681,7 @@ const roleMetaText = {
     },
     tutor: {
       label: "Tutor",
+      eyebrow: "Tutor portal",
       title: "Guide the learning journey",
       subtitle: "Track students, credits, classes, feedback, and family communication without losing context.",
       portal: "portal",
@@ -241,15 +689,25 @@ const roleMetaText = {
     },
     teacher: {
       label: "Teacher",
+      eyebrow: "Teacher workspace",
       title: "Teacher workspace",
       subtitle: "Manage classes, availability, student invitations, calendar blocks, and scheduling health.",
       portal: "workspace",
       pitchHome: "Pitch home",
     },
+    schoolAdmin: {
+      label: "School Administrative",
+      eyebrow: "School administration",
+      title: "Education operations center",
+      subtitle: "Create classes, shape learning roadmaps, coordinate teachers and students, and monitor school performance.",
+      portal: "portal",
+      pitchHome: "Pitch home",
+    },
     admin: {
-      label: "Administrative",
-      title: "School operations cockpit",
-      subtitle: "Operate approvals, people, credits, lessons, analytics, configuration, and access governance.",
+      label: "Technical Admin",
+      eyebrow: "Technical administration",
+      title: "Platform governance center",
+      subtitle: "Manage identity, access, configuration, audit logs, activity logs, system health, and technical controls.",
       portal: "portal",
       pitchHome: "Pitch home",
     },
@@ -276,9 +734,16 @@ const roleMetaText = {
       portal: "espacio",
       pitchHome: "Inicio",
     },
+    schoolAdmin: {
+      label: "Administrativo escolar",
+      title: "Centro de operacion educativa",
+      subtitle: "Crea clases, disena rutas de aprendizaje, coordina profesores y estudiantes, y monitorea el desempeno escolar.",
+      portal: "portal",
+      pitchHome: "Inicio",
+    },
     admin: {
-      label: "Administrativo",
-      title: "Centro de operaciones escolares",
+      label: "Admin tecnico",
+      title: "Centro de gobierno de plataforma",
       subtitle: "Opera aprobaciones, personas, créditos, lecciones, analítica, configuración y gobierno de accesos.",
       portal: "portal",
       pitchHome: "Inicio",
@@ -300,11 +765,57 @@ const productionBackedModules = {
   admin: new Set(["iam", "users", "roles", "roles-permissions", "analytics", "atlas", "atlas-volume", "configuration", "audit-logs", "activity-logs", "system-settings"]),
 };
 
+const navFeatureFlags = {
+  student: {
+    roadmap: "student_roadmap",
+    "ai-tutor": "ai_tutor",
+    community: "community",
+    credits: "credits_wallet",
+  },
+  tutor: {
+    roadmap: "student_roadmap",
+    credits: "credits_wallet",
+    payments: "credits_wallet",
+  },
+  teacher: {
+    calendar: "teacher_calendar",
+  },
+  schoolAdmin: {
+    credits: "credits_wallet",
+    roadmaps: "student_roadmap",
+  },
+  admin: {},
+};
+
 function isProductionBackedModule(role, module = "dashboard") {
   return productionBackedModules[role]?.has(module) || false;
 }
 
-function canAccessNavItem(user, role, slug) {
+function isNavFeatureEnabled(settings, role, slug) {
+  const flagName = navFeatureFlags[role]?.[slug];
+  if (!flagName) return true;
+  const flags = settings?.platform_config?.feature_flags || {};
+  return flags[flagName] !== false;
+}
+
+function canAccessNavItem(user, role, slug, settings = {}) {
+  if (!isNavFeatureEnabled(settings, role, slug)) return false;
+  if (role === "schoolAdmin") {
+    const permissionBySlug = {
+      approvals: "users.profile.edit",
+      credits: "credits.wallet.grant",
+      classes: "classes.sessions.create",
+      roadmaps: "learning.roadmaps.create",
+      lessons: "lessons:create",
+      students: "students.profile.view",
+      teachers: "teachers.profile.view",
+      bookings: "classes.sessions.view",
+      families: "students.profile.view",
+      reports: "reports.analytics.view",
+    };
+    const permission = permissionBySlug[slug];
+    return permission ? hasPermission(user, permission, 1) : true;
+  }
   if (role !== "admin") return true;
   const permissionBySlug = {
     users: "users.profile.view",
@@ -325,14 +836,16 @@ function canAccessNavItem(user, role, slug) {
 }
 
 function PreviewSurfaceNotice({ role, module }) {
+  const { lang } = useApp();
+  const copy = platformText(lang).preview;
   if (isProductionBackedModule(role, module)) return null;
   return (
     <div className="mb-5 rounded-lg border border-[#F4C13D] bg-[#FFF9E8] p-4 text-sm text-[#7A5600]">
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="font-semibold text-[#1F3B6E]">Preview service</p>
+          <p className="font-semibold text-[#1F3B6E]">{copy.title}</p>
           <p className="mt-1">
-            This workspace is isolated behind mock data while the backend domain is built. Production actions are disabled until they are connected to backend persistence.
+            {copy.body}
           </p>
         </div>
         <Link to="/technical/wiki" className="shrink-0 font-semibold text-[#1F3B6E] hover:text-[#E8704C]">Implementation plan</Link>
@@ -417,21 +930,32 @@ function SectionHeader({ eyebrow, title, action }) {
 }
 
 function RoleSwitcher({ current }) {
-  const { user } = useApp();
-  const visibleRoles = ["student", "tutor", "teacher", "admin"].filter((role) => canAccessPortal(user, role));
+  const { user, lang } = useApp();
+  const navigate = useNavigate();
+  const labels = platformText(lang).roleLabels;
+  const visibleRoles = ["student", "tutor", "teacher", "schoolAdmin", "admin"].filter((role) => canAccessPortal(user, role));
+  const selectedRole = visibleRoles.includes(current) ? current : visibleRoles[0] || "student";
   return (
-    <div className="grid grid-cols-2 gap-2 rounded-lg border border-[#EFE4D0] bg-white p-1 sm:grid-cols-4 lg:grid-cols-2">
-      {visibleRoles.map((role) => (
-        <Link
-          key={role}
-          to={roleMeta[role].base}
-          className={`rounded-md px-3 py-2 text-center text-xs font-semibold transition-colors ${
-            current === role ? "bg-[#1F3B6E] text-white" : "text-[#5C6680] hover:bg-[#FFF0E6]"
-          }`}
+    <div className="rounded-lg border border-[#EFE4D0] bg-white p-3">
+      <label htmlFor="portal-role-switcher" className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5C6680]">
+        {platformText(lang).profileSelector || "Active profile"}
+      </label>
+      <div className="relative">
+        <select
+          id="portal-role-switcher"
+          value={selectedRole}
+          onChange={(event) => navigate(roleMeta[event.target.value]?.base || "/student")}
+          className="h-11 w-full appearance-none rounded-md border border-[#EFE4D0] bg-[#FBF7EE] px-3 pr-9 text-sm font-semibold text-[#1F3B6E] outline-none transition-colors focus:border-[#1F3B6E] focus:ring-2 focus:ring-[#1F3B6E]/15"
+          aria-label={platformText(lang).profileSelector || "Active profile"}
         >
-          {roleMeta[role].label}
-        </Link>
-      ))}
+          {visibleRoles.map((role) => (
+            <option key={role} value={role}>
+              {labels[role] || roleMeta[role].label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#5C6680]" size={16} aria-hidden="true" />
+      </div>
     </div>
   );
 }
@@ -449,7 +973,8 @@ function groupedNavItems(role, items) {
   return groups;
 }
 
-function SidebarNavGroup({ label, items, role, meta, location, expanded, onToggle }) {
+function SidebarNavGroup({ label, items, role, meta, location, expanded, onToggle, lang }) {
+  const copy = platformText(lang);
   const hasActive = items.some(([slug]) => {
     const to = slug ? `${meta.base}/${slug}` : meta.base;
     return location.pathname === to || (slug && location.pathname.startsWith(to));
@@ -463,7 +988,7 @@ function SidebarNavGroup({ label, items, role, meta, location, expanded, onToggl
         aria-expanded={open}
         className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5C6680] hover:bg-[#FBF7EE]"
       >
-        <span>{label}</span>
+        <span>{copy.navGroups[label] || label}</span>
         {open ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}
       </button>
       {open && (
@@ -480,7 +1005,7 @@ function SidebarNavGroup({ label, items, role, meta, location, expanded, onToggl
                 }`}
               >
                 <Icon size={17} aria-hidden="true" />
-                <span>{itemLabel}</span>
+                <span>{navLabel(lang, role, slug, itemLabel)}</span>
               </NavLink>
             );
           })}
@@ -492,8 +1017,9 @@ function SidebarNavGroup({ label, items, role, meta, location, expanded, onToggl
 
 function PlatformShell({ role, module = "dashboard", children }) {
   const location = useLocation();
-  const { user, authLoading, lang } = useApp();
+  const { user, authLoading, lang, settings } = useApp();
   const meta = { ...roleMeta[role], ...(roleMetaText[lang]?.[role] || roleMetaText.en[role]) };
+  const copy = platformText(lang);
   const navStorageKey = `mosaico_nav_groups_${role}`;
   const [expandedGroups, setExpandedGroups] = useState(() => {
     try {
@@ -503,14 +1029,16 @@ function PlatformShell({ role, module = "dashboard", children }) {
     }
   });
   const deniedTitleByRole = {
-    tutor: "Tutor access required",
-    teacher: "Teacher access required",
-    admin: "Administrative access required",
+    tutor: copy.denied.tutorTitle,
+    teacher: copy.denied.teacherTitle,
+    schoolAdmin: copy.denied.schoolAdminTitle,
+    admin: copy.denied.adminTitle,
   };
   const deniedCopyByRole = {
-    tutor: "This account does not have a tutor or parent role. Student-only users can use the client portal, but cannot open family management tools.",
-    teacher: "This account does not have a teacher role or teacher calendar permission. Student-only users can use the client portal, but cannot open teacher operations.",
-    admin: "This account does not have administrative roles or permissions. Student-only users can use the client portal, but cannot open school operations.",
+    tutor: copy.denied.tutorCopy,
+    teacher: copy.denied.teacherCopy,
+    schoolAdmin: copy.denied.schoolAdminCopy,
+    admin: copy.denied.adminCopy,
   };
 
   useEffect(() => {
@@ -522,7 +1050,7 @@ function PlatformShell({ role, module = "dashboard", children }) {
     localStorage.setItem(navStorageKey, JSON.stringify(expandedGroups));
   }, [expandedGroups, navStorageKey]);
 
-  const visibleNavItems = roleNav[role].filter(([slug]) => canAccessNavItem(user, role, slug));
+  const visibleNavItems = roleNav[role].filter(([slug]) => canAccessNavItem(user, role, slug, settings));
   const navGroups = groupedNavItems(role, visibleNavItems);
 
   if (!authLoading && !canAccessPortal(user, role)) {
@@ -532,10 +1060,10 @@ function PlatformShell({ role, module = "dashboard", children }) {
           <div className="flex items-start gap-4">
             <div className="rounded-lg bg-[#FFF0E6] p-3 text-[#E8704C]"><ShieldCheck size={22} /></div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">Access denied</p>
-              <h1 className="mt-2 font-display text-3xl text-[#1F3B6E]">{deniedTitleByRole[role] || "Access required"}</h1>
-              <p className="mt-2 text-sm text-[#5C6680]">{deniedCopyByRole[role] || "This account does not have permission to open this workspace."}</p>
-              <Link to="/student"><Button className="mt-5 bg-[#1F3B6E] text-white hover:bg-[#162B52]">Go to client portal</Button></Link>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">{copy.denied.eyebrow}</p>
+              <h1 className="mt-2 font-display text-3xl text-[#1F3B6E]">{deniedTitleByRole[role] || copy.denied.fallbackTitle}</h1>
+              <p className="mt-2 text-sm text-[#5C6680]">{deniedCopyByRole[role] || copy.denied.fallbackCopy}</p>
+              <Link to="/student"><Button className="mt-5 bg-[#1F3B6E] text-white hover:bg-[#162B52]">{copy.denied.action}</Button></Link>
             </div>
           </div>
         </Card>
@@ -546,7 +1074,7 @@ function PlatformShell({ role, module = "dashboard", children }) {
     <div className="bg-[#FBF7EE]">
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-6 md:px-6 lg:grid-cols-[260px_1fr] lg:px-8">
         <aside className="lg:sticky lg:top-20 lg:self-start">
-          <Card className="p-3">
+          <Card className="p-3 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-2">
             <RoleSwitcher current={role} />
             <nav className="mt-4 grid gap-3" aria-label={`${meta.label} navigation`}>
               {navGroups.map(([label, items]) => (
@@ -557,6 +1085,7 @@ function PlatformShell({ role, module = "dashboard", children }) {
                   role={role}
                   meta={meta}
                   location={location}
+                  lang={lang}
                   expanded={expandedGroups[label] !== false}
                   onToggle={() => setExpandedGroups((current) => ({ ...current, [label]: current[label] === false }))}
                 />
@@ -568,7 +1097,7 @@ function PlatformShell({ role, module = "dashboard", children }) {
           <div className="mb-6 rounded-lg bg-[#1F3B6E] p-6 text-white">
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-white/70">{meta.label} {meta.portal}</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-white/70">{roleEyebrow(lang, role, meta)}</p>
                 <h1 className="mt-3 font-display text-3xl md:text-4xl">{meta.title}</h1>
                 <p className="mt-3 max-w-2xl text-sm md:text-base text-white/75">{meta.subtitle}</p>
               </div>
@@ -588,6 +1117,8 @@ function PlatformShell({ role, module = "dashboard", children }) {
 }
 
 export function PlatformLanding() {
+  const { lang } = useApp();
+  const copy = platformText(lang).landing;
   return (
     <div data-testid="platform-landing" className="bg-[#FBF7EE]">
       <section className="relative overflow-hidden">
@@ -599,30 +1130,30 @@ export function PlatformLanding() {
         <div className="absolute inset-0 bg-[#1F3B6E]/70" />
         <div className="relative mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl content-center gap-10 px-6 py-16 lg:px-10">
           <div className="max-w-4xl text-white">
-            <p className="text-xs uppercase tracking-[0.26em] text-[#F4C13D] font-semibold">MOSAICO Platform</p>
-            <h1 className="mt-5 font-display text-4xl leading-tight sm:text-6xl lg:text-7xl">Learn Spanish through real conversations.</h1>
+            <p className="text-xs uppercase tracking-[0.26em] text-[#F4C13D] font-semibold">{copy.eyebrow}</p>
+            <h1 className="mt-5 font-display text-4xl leading-tight sm:text-6xl lg:text-7xl">{copy.title}</h1>
             <p className="mt-6 max-w-2xl text-lg text-white/82">
-              A warm, modern language learning platform for lessons, live teachers, AI roleplay, community, progress, and operations.
+              {copy.subtitle}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link to="/student">
                 <Button className="bg-[#E8704C] text-white hover:bg-[#C95630] px-6 py-6">
-                  Start learning <ArrowRight size={16} className="ml-2" />
+                  {copy.start} <ArrowRight size={16} className="ml-2" />
                 </Button>
               </Link>
               <Link to="/tutor">
                 <Button variant="outline" className="border-white/50 bg-white/10 text-white hover:bg-white hover:text-[#1F3B6E] px-6 py-6">
-                  Manage a learner
+                  {copy.manage}
                 </Button>
               </Link>
               <Link to="/teacher">
                 <Button variant="outline" className="border-white/50 bg-white/10 text-white hover:bg-white hover:text-[#1F3B6E] px-6 py-6">
-                  Explore teachers
+                  {copy.teachers}
                 </Button>
               </Link>
               <Link to="/admin">
                 <Button variant="outline" className="border-white/50 bg-white/10 text-white hover:bg-white hover:text-[#1F3B6E] px-6 py-6">
-                  Book a demo
+                  {copy.demo}
                 </Button>
               </Link>
             </div>
@@ -639,7 +1170,7 @@ export function PlatformLanding() {
       </section>
 
       <section className="mx-auto max-w-7xl px-6 py-16 lg:px-10">
-        <SectionHeader eyebrow="Product pillars" title="One platform for learners, teachers, and operators." />
+        <SectionHeader eyebrow={copy.pillarsEyebrow} title={copy.pillarsTitle} />
         <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {pillars.map((pillar, idx) => (
             <Card key={pillar.key}>
@@ -652,16 +1183,16 @@ export function PlatformLanding() {
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-5 px-6 pb-16 lg:grid-cols-3 lg:px-10">
-        <PreviewPanel title="Teacher preview" icon={GraduationCap}>
+        <PreviewPanel title={copy.teacherPreview} icon={GraduationCap}>
           {teachers.map((teacher) => <TeacherMini key={teacher.id} teacher={teacher} />)}
         </PreviewPanel>
-        <PreviewPanel title="Course preview" icon={BookOpen}>
+        <PreviewPanel title={copy.coursePreview} icon={BookOpen}>
           {courses.map((course) => <CourseMini key={course.id} course={course} />)}
         </PreviewPanel>
-        <PreviewPanel title="AI and community" icon={Bot}>
+        <PreviewPanel title={copy.aiCommunity} icon={Bot}>
           <div className="rounded-lg bg-[#FFF0E6] p-4">
-            <p className="text-sm font-semibold">Airport roleplay</p>
-            <p className="mt-1 text-sm text-[#5C6680]">Practice a flight delay conversation with grammar correction.</p>
+            <p className="text-sm font-semibold">{copy.roleplayTitle}</p>
+            <p className="mt-1 text-sm text-[#5C6680]">{copy.roleplayBody}</p>
           </div>
           {events.slice(0, 2).map((event) => (
             <div key={event.id} className="rounded-lg border border-[#EFE4D0] p-4">
@@ -676,12 +1207,12 @@ export function PlatformLanding() {
         <div className="rounded-lg bg-[#E8704C] p-8 text-white md:p-10">
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-white/75">Pricing preview</p>
-              <h2 className="mt-3 font-display text-3xl">Subscriptions, class packs, and premium tutoring.</h2>
-              <p className="mt-3 max-w-2xl text-white/82">Payments are currently a pitch-ready dummy flow with realistic plans and package cards.</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-white/75">{copy.pricingEyebrow}</p>
+              <h2 className="mt-3 font-display text-3xl">{copy.pricingTitle}</h2>
+              <p className="mt-3 max-w-2xl text-white/82">{copy.pricingBody}</p>
             </div>
             <Link to="/admin/payments">
-              <Button className="bg-[#F4C13D] text-[#1F3B6E] hover:bg-white">View plans</Button>
+              <Button className="bg-[#F4C13D] text-[#1F3B6E] hover:bg-white">{copy.viewPlans}</Button>
             </Link>
           </div>
         </div>
@@ -2065,6 +2596,24 @@ export function AdminPortal({ module = "dashboard" }) {
   );
 }
 
+export function SchoolAdminPortal({ module = "dashboard" }) {
+  return (
+    <PlatformShell role="schoolAdmin" module={module}>
+      {module === "dashboard" && <AdminDashboard />}
+      {module === "approvals" && <AdminApprovals />}
+      {module === "credits" && <AdminCredits />}
+      {module === "classes" && <AdminBookings />}
+      {module === "roadmaps" && <AdminLessons />}
+      {module === "lessons" && <AdminLessons />}
+      {module === "students" && <AdminFamilies />}
+      {module === "teachers" && <AdminTeachers />}
+      {module === "bookings" && <AdminBookings />}
+      {module === "families" && <AdminFamilies />}
+      {module === "reports" && <AdminReports />}
+    </PlatformShell>
+  );
+}
+
 function AdminDashboard() {
   return (
     <div className="grid gap-5">
@@ -3118,6 +3667,8 @@ function AdminReports({ compact = false }) {
 }
 
 function AdminRolesAccess() {
+  const { lang } = useApp();
+  const copy = platformText(lang).rbac;
   const [selectedRole, setSelectedRole] = useState(rbacRoles[1].id);
   const [selectedUser, setSelectedUser] = useState(rbacUsers[0].id);
   const activeRole = rbacRoles.find((role) => role.id === selectedRole) || rbacRoles[0];
@@ -3132,7 +3683,7 @@ function AdminRolesAccess() {
       <div className="grid gap-4 md:grid-cols-5">
         {rbacPermissionLevels.map((item) => (
           <div key={item.level} className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.16em] text-[#5C6680]">Level {item.level}</p>
+            <p className="text-xs uppercase tracking-[0.16em] text-[#5C6680]">{copy.level} {item.level}</p>
             <p className="mt-2 font-semibold">{item.label}</p>
             <p className="mt-1 text-sm text-[#5C6680]">{item.description}</p>
           </div>
@@ -3141,8 +3692,8 @@ function AdminRolesAccess() {
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
-          <SectionHeader eyebrow="Role catalog" title="Roles can hold many permission levels" />
-          <label className="mt-4 block text-sm font-semibold">Role</label>
+          <SectionHeader eyebrow={copy.roleCatalogEyebrow} title={copy.roleCatalogTitle} />
+          <label className="mt-4 block text-sm font-semibold">{copy.role}</label>
           <select value={selectedRole} onChange={(event) => setSelectedRole(event.target.value)} className="mt-2 w-full rounded-md border border-[#EFE4D0] px-3 py-2 outline-none focus:ring-2 focus:ring-[#E8704C]">
             {rbacRoles.map((role) => <option key={role.id} value={role.id}>{role.label}</option>)}
           </select>
@@ -3152,11 +3703,11 @@ function AdminRolesAccess() {
                 <p className="font-semibold">{activeRole.label}</p>
                 <p className="text-sm text-[#5C6680]">{activeRole.id}</p>
               </div>
-              <span className="rounded-md bg-[#E0F2F0] px-3 py-1 text-sm text-[#2DA89F]">Level {activeRole.level}</span>
+              <span className="rounded-md bg-[#E0F2F0] px-3 py-1 text-sm text-[#2DA89F]">{copy.level} {activeRole.level}</span>
             </div>
             <div className="mt-4 grid gap-2">
               {activeRole.permissions.map((permissionKey) => {
-                const permission = permissionLookup[permissionKey] || { feature: permissionKey, action: "Configured access", level: 1, catalog: "Custom" };
+                const permission = permissionLookup[permissionKey] || { feature: permissionKey, action: copy.configuredAccess, level: 1, catalog: copy.custom };
                 return (
                   <div key={permissionKey} className="flex flex-col justify-between gap-2 rounded-md bg-white px-3 py-2 md:flex-row md:items-center">
                     <div>
@@ -3168,12 +3719,12 @@ function AdminRolesAccess() {
                 );
               })}
             </div>
-            <ActionButton doneText={`${activeRole.label} permissions saved.`} className="mt-4 bg-[#E8704C] text-white hover:bg-[#C95630]">Save role permissions</ActionButton>
+            <ActionButton doneText={`${activeRole.label} ${copy.permissions} saved.`} className="mt-4 bg-[#E8704C] text-white hover:bg-[#C95630]">{copy.saveRolePermissions}</ActionButton>
           </div>
         </Card>
 
         <Card>
-          <SectionHeader eyebrow="Permission catalog" title="Functionality access by feature" />
+          <SectionHeader eyebrow={copy.permissionCatalogEyebrow} title={copy.permissionCatalogTitle} />
           <div className="mt-5 grid gap-4">
             {rbacCatalogs.map((catalog) => (
               <div key={catalog.id} className="rounded-lg border border-[#EFE4D0] p-4">
@@ -3183,7 +3734,7 @@ function AdminRolesAccess() {
                     <div key={permission.key} className="grid gap-2 rounded-md bg-[#FBF7EE] p-3 md:grid-cols-[0.8fr_1fr_auto] md:items-center">
                       <p className="font-medium">{permission.feature}</p>
                       <p className="text-sm text-[#5C6680]">{permission.action}</p>
-                      <span className="w-fit rounded-md bg-white px-3 py-1 text-sm text-[#5C6680]">Level {permission.level}</span>
+                      <span className="w-fit rounded-md bg-white px-3 py-1 text-sm text-[#5C6680]">{copy.level} {permission.level}</span>
                     </div>
                   ))}
                 </div>
@@ -3194,10 +3745,10 @@ function AdminRolesAccess() {
       </div>
 
       <Card>
-        <SectionHeader eyebrow="Multi-role users" title="One person can inherit access from multiple roles" />
+        <SectionHeader eyebrow={copy.multiRoleEyebrow} title={copy.multiRoleTitle} />
         <div className="mt-5 grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
           <div>
-            <label className="block text-sm font-semibold">User</label>
+            <label className="block text-sm font-semibold">{copy.user}</label>
             <select value={selectedUser} onChange={(event) => setSelectedUser(event.target.value)} className="mt-2 w-full rounded-md border border-[#EFE4D0] px-3 py-2 outline-none focus:ring-2 focus:ring-[#E8704C]">
               {rbacUsers.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
             </select>
@@ -3218,13 +3769,13 @@ function AdminRolesAccess() {
                 <input type="checkbox" defaultChecked={activeUser.roles.includes(role.id)} className="mt-1 h-4 w-4 accent-[#E8704C]" />
                 <span>
                   <span className="block font-semibold">{role.label}</span>
-                  <span className="text-sm text-[#5C6680]">Level {role.level} - {role.permissions.length} permissions</span>
+                  <span className="text-sm text-[#5C6680]">{copy.level} {role.level} - {role.permissions.length} {copy.permissions}</span>
                 </span>
               </label>
             ))}
           </div>
         </div>
-        <ActionButton doneText={`${activeUser.name} roles updated.`} className="mt-5 bg-[#2DA89F] text-white hover:bg-[#23877f]">Save user roles</ActionButton>
+        <ActionButton doneText={`${activeUser.name} roles updated.`} className="mt-5 bg-[#2DA89F] text-white hover:bg-[#23877f]">{copy.saveUserRoles}</ActionButton>
       </Card>
     </div>
   );
@@ -3270,6 +3821,8 @@ function parseConfigValue(value, raw) {
 }
 
 function SuperAdminConfigurationCenter() {
+  const { lang, refreshSettings } = useApp();
+  const copy = platformText(lang).config;
   const [data, setData] = useState(null);
   const [draft, setDraft] = useState(null);
   const [health, setHealth] = useState(null);
@@ -3278,7 +3831,7 @@ function SuperAdminConfigurationCenter() {
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -3290,13 +3843,13 @@ function SuperAdminConfigurationCenter() {
       setDraft(settingsRes.data);
       setHealth(healthRes.data);
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not load platform configuration.");
+      setError(err.response?.data?.detail || copy.saveError);
     } finally {
       setLoading(false);
     }
-  };
+  }, [copy.saveError]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const updateConfig = (section, key, value) => {
     setDraft((current) => ({
@@ -3314,10 +3867,21 @@ function SuperAdminConfigurationCenter() {
 
   const validate = () => {
     const config = draft?.platform_config || {};
-    if (!config.general?.platform_name?.trim()) return "Platform name is required.";
-    if (Number(config.booking_rules?.max_days_ahead || 0) < 1) return "Max days ahead must be at least 1.";
-    if (!config.teacher_availability_rules?.allowed_durations?.length) return "At least one class duration is required.";
+    if (!config.general?.platform_name?.trim()) return copy.requiredPlatformName;
+    if (Number(config.booking_rules?.max_days_ahead || 0) < 1) return copy.invalidMaxDays;
+    if (!config.teacher_availability_rules?.allowed_durations?.length) return copy.requiredDuration;
     return "";
+  };
+
+  const hasChanges = useMemo(() => JSON.stringify(draft) !== JSON.stringify(data), [data, draft]);
+  const requestSave = () => setConfirm({
+    title: copy.saveTitle,
+    body: copy.saveBody,
+    confirmLabel: copy.saveConfirm,
+  });
+  const resetDraft = () => {
+    setDraft(data);
+    toast.info(copy.discarded);
   };
 
   const persist = async () => {
@@ -3331,38 +3895,52 @@ function SuperAdminConfigurationCenter() {
       const res = await api.patch("/admin/configuration/settings", draft);
       setData(res.data);
       setDraft(res.data);
-      toast.success("Platform configuration saved.");
+      toast.success(copy.saved);
+      await refreshSettings();
       await load();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Could not save configuration.");
+      toast.error(err.response?.data?.detail || copy.saveError);
     } finally {
       setSaving(false);
       setConfirm(null);
     }
   };
 
-  if (loading) return <Card><div className="h-40 animate-pulse rounded-lg bg-[#FBF7EE]" /><p className="mt-3 text-sm text-[#5C6680]">Loading configuration...</p></Card>;
-  if (error) return <Card><p className="text-sm text-[#B42318]">{error}</p><Button onClick={load} className="mt-4">Retry</Button></Card>;
-  if (!draft) return <Card><p className="text-sm text-[#5C6680]">No configuration found.</p></Card>;
+  if (loading) return <Card><div className="h-40 animate-pulse rounded-lg bg-[#FBF7EE]" /><p className="mt-3 text-sm text-[#5C6680]">{copy.loading}</p></Card>;
+  if (error) return <Card><p className="text-sm text-[#B42318]">{error}</p><Button onClick={load} className="mt-4">{copy.retry}</Button></Card>;
+  if (!draft) return <Card><p className="text-sm text-[#5C6680]">{copy.empty}</p></Card>;
 
   return (
     <div className="grid gap-5">
       <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard label="Maintenance" value={draft.platform_config.general.maintenance_mode ? "On" : "Off"} detail="Controls public operational mode" icon={Settings} />
-        <MetricCard label="Active flags" value={Object.values(draft.platform_config.feature_flags || {}).filter(Boolean).length} detail="Enabled platform features" icon={ShieldCheck} color="#2DA89F" />
-        <MetricCard label="Environment" value={draft.platform_config.general.environment_badge || "Production"} detail={health?.version?.commit || "local"} icon={School} color="#8B5BB8" />
+        <MetricCard label={copy.maintenance} value={draft.platform_config.general.maintenance_mode ? copy.on : copy.off} detail={copy.maintenanceDetail} icon={Settings} />
+        <MetricCard label={copy.activeFlags} value={Object.values(draft.platform_config.feature_flags || {}).filter(Boolean).length} detail={copy.activeFlagsDetail} icon={ShieldCheck} color="#2DA89F" />
+        <MetricCard label={copy.environment} value={draft.platform_config.general.environment_badge || copy.production} detail={health?.version?.commit || "local"} icon={School} color="#8B5BB8" />
+      </div>
+
+      <div className="sticky top-3 z-30 rounded-lg border border-[#EFE4D0] bg-white/95 p-3 shadow-lg backdrop-blur">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">{copy.actions}</p>
+            <p className="text-sm text-[#5C6680]">{hasChanges ? copy.unsaved : copy.savedState}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" disabled={!hasChanges || saving} onClick={resetDraft} className="border-[#EFE4D0]">{copy.cancelChanges}</Button>
+            <Button disabled={!hasChanges || saving} onClick={requestSave} className="bg-[#E8704C] text-white hover:bg-[#C95630]">{saving ? copy.saving : copy.saveChanges}</Button>
+          </div>
+        </div>
       </div>
 
       <Card>
         <SectionHeader
-          eyebrow="Super Admin"
-          title="Configuration Center"
-          action={<Button disabled={saving} onClick={() => setConfirm({ title: "Save platform configuration", body: "This changes platform-wide behavior and will be written to the audit log.", confirmLabel: "Save configuration" })} className="bg-[#E8704C] text-white hover:bg-[#C95630]">{saving ? "Saving..." : "Save changes"}</Button>}
+          eyebrow={copy.superAdmin}
+          title={copy.center}
+          action={<Button disabled={!hasChanges || saving} onClick={requestSave} className="bg-[#E8704C] text-white hover:bg-[#C95630]">{saving ? copy.saving : copy.saveChanges}</Button>}
         />
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           {Object.entries(draft.public_branding || {}).map(([key, value]) => (
             <label key={key} className="block">
-              <span className="text-sm font-semibold capitalize text-[#1F3B6E]">{key.replaceAll("_", " ")}</span>
+              <span className="text-sm font-semibold text-[#1F3B6E]">{fieldLabel(key, lang)}</span>
               <input value={value || ""} onChange={(event) => updateBranding(key, event.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#EFE4D0] px-3 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" />
             </label>
           ))}
@@ -3371,15 +3949,15 @@ function SuperAdminConfigurationCenter() {
 
       {configSections.map(([section, label]) => (
         <Card key={section}>
-          <SectionHeader eyebrow="Settings" title={label} />
+          <SectionHeader eyebrow={copy.settings} title={copy.sections[section] || label} />
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {Object.entries(draft.platform_config[section] || {}).map(([key, value]) => (
               <label key={`${section}-${key}`} className="block rounded-lg border border-[#EFE4D0] p-4">
-                <span className="text-sm font-semibold capitalize text-[#1F3B6E]">{key.replaceAll("_", " ")}</span>
+                <span className="text-sm font-semibold text-[#1F3B6E]">{fieldLabel(key, lang)}</span>
                 {typeof value === "boolean" ? (
                   <select value={String(value)} onChange={(event) => updateConfig(section, key, event.target.value === "true")} className="mt-2 h-10 w-full rounded-md border border-[#EFE4D0] px-3 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]">
-                    <option value="true">Enabled</option>
-                    <option value="false">Disabled</option>
+                    <option value="true">{copy.enabled}</option>
+                    <option value="false">{copy.disabled}</option>
                   </select>
                 ) : (
                   <input

@@ -24,6 +24,7 @@ import {
 import { Button } from "../ui/button";
 import { Progress } from "../ui/progress";
 import WorkspaceSidePanel from "../WorkspaceSidePanel";
+import { useApp } from "../../context/AppContext";
 import {
   blockTeacherTime,
   calendarStatuses,
@@ -40,6 +41,92 @@ const weekPlaceholderHours = ["09:00", "10:30", "13:00", "15:00", "17:00", "18:0
 const workWeekDays = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const weekendDays = ["Sat", "Sun"];
 const monthWeekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+const calendarCopy = {
+  en: {
+    statuses: { booked: "Booked", available: "Available", blocked: "Blocked", cancelled: "Cancelled", completed: "Completed", conflict: "Conflict", empty: "Empty gap" },
+    teacherWorkspace: "Teacher workspace",
+    title: "Teacher Calendar",
+    subtitle: "Manage classes, availability, student invitations, calendar blocks, and scheduling health.",
+    openAvailability: "Open availability",
+    blockTime: "Block time",
+    today: "Today",
+    dayTimeline: "Day timeline",
+    workWeek: "Work week view",
+    workWeekHelp: "Monday to Friday stay readable; weekend activity is summarized below.",
+    weekend: "Weekend",
+    calendarItem: "calendar item",
+    calendarItems: "calendar items",
+    emptySlot: "empty slot",
+    emptySlots: "empty slots",
+    monthView: "Month view",
+    empty: "Empty",
+    emptySlotTitle: "Empty slot",
+    emptyDay: "Empty day",
+    noClass: "No class booked yet",
+    calendarCenter: "Calendar center",
+    centerTitle: "Calendar stays in focus",
+    centerHelp: "Open side panels only when needed, or jump directly to the next class.",
+    calendarConnected: "Calendar connected",
+    connectCalendar: "Connect calendar",
+    nextClass: "Next class",
+    todayFocus: "Today's focus",
+    insights: "Insights",
+    googleCalendar: "Google Calendar",
+    calendarConnection: "Calendar connection",
+    schedulingInsights: "Scheduling Insights",
+    operationalIntel: "Operational intelligence",
+    disconnect: "Disconnect",
+    connectGoogle: "Connect Google Calendar",
+    syncNow: "Sync now",
+    conflictReview: "Google Calendar conflict needs review.",
+    emptySlotsTitle: "Empty slots and fill rate",
+  },
+  es: {
+    statuses: { booked: "Reservado", available: "Disponible", blocked: "Bloqueado", cancelled: "Cancelado", completed: "Completado", conflict: "Conflicto", empty: "Espacio vacío" },
+    teacherWorkspace: "Espacio del profesor",
+    title: "Calendario del profesor",
+    subtitle: "Administra clases, disponibilidad, invitaciones, bloqueos de calendario y salud de agenda.",
+    openAvailability: "Abrir disponibilidad",
+    blockTime: "Bloquear horario",
+    today: "Hoy",
+    dayTimeline: "Vista del día",
+    workWeek: "Semana laboral",
+    workWeekHelp: "Lunes a viernes se mantiene legible; el fin de semana se resume abajo.",
+    weekend: "Fin de semana",
+    calendarItem: "elemento de calendario",
+    calendarItems: "elementos de calendario",
+    emptySlot: "espacio vacío",
+    emptySlots: "espacios vacíos",
+    monthView: "Vista mensual",
+    empty: "Vacío",
+    emptySlotTitle: "Espacio vacío",
+    emptyDay: "Día vacío",
+    noClass: "Aún no hay clase reservada",
+    calendarCenter: "Centro del calendario",
+    centerTitle: "El calendario permanece en foco",
+    centerHelp: "Abre paneles laterales sólo cuando los necesites o salta directo a la próxima clase.",
+    calendarConnected: "Calendario conectado",
+    connectCalendar: "Conectar calendario",
+    nextClass: "Próxima clase",
+    todayFocus: "Foco de hoy",
+    insights: "Insights",
+    googleCalendar: "Google Calendar",
+    calendarConnection: "Conexión de calendario",
+    schedulingInsights: "Insights de agenda",
+    operationalIntel: "Inteligencia operativa",
+    disconnect: "Desconectar",
+    connectGoogle: "Conectar Google Calendar",
+    syncNow: "Sincronizar",
+    conflictReview: "conflicto de Google Calendar requiere revisión.",
+    emptySlotsTitle: "Espacios vacíos y tasa de ocupación",
+  },
+};
+
+function useCalendarCopy() {
+  const { lang } = useApp();
+  return calendarCopy[lang] || calendarCopy.en;
+}
 const dayDates = {
   Mon: "2026-07-06",
   Tue: "2026-07-07",
@@ -93,16 +180,18 @@ function Select(props) {
 }
 
 function StatusBadge({ status }) {
-  return <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${statusStyles[status] || statusStyles.empty}`}>{calendarStatuses[status] || status}</span>;
+  const copy = useCalendarCopy();
+  return <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${statusStyles[status] || statusStyles.empty}`}>{copy.statuses[status] || calendarStatuses[status] || status}</span>;
 }
 
 function CalendarLegend() {
+  const copy = useCalendarCopy();
   return (
     <div className="flex max-w-full flex-wrap gap-1 overflow-hidden rounded-lg border border-[#EFE4D0] bg-[#FBF7EE] p-2 sm:gap-2 sm:p-3">
       {["booked", "available", "empty", "blocked", "conflict", "completed", "cancelled"].map((status) => (
         <span key={status} className={`whitespace-nowrap rounded-md border px-1.5 py-1 text-[11px] font-semibold sm:px-2 sm:text-xs ${statusStyles[status]}`}>
-          <span className="sm:hidden">{status === "empty" ? "Empty" : calendarStatuses[status]}</span>
-          <span className="hidden sm:inline">{calendarStatuses[status]}</span>
+          <span className="sm:hidden">{status === "empty" ? copy.empty : copy.statuses[status]}</span>
+          <span className="hidden sm:inline">{copy.statuses[status]}</span>
         </span>
       ))}
     </div>
@@ -139,6 +228,7 @@ function AvailabilityOptions({ session, compact = false, maxOptions = 2 }) {
 }
 
 function EmptySlotPlaceholder({ date, start, end, compact = false, label, detail, onInvite, tiny = false }) {
+  const copy = useCalendarCopy();
   const fallbackLabel = date ? `${date} - ${start}-${end}` : `${start}-${end}`;
   const displayLabel = label || fallbackLabel;
   return (
@@ -149,9 +239,9 @@ function EmptySlotPlaceholder({ date, start, end, compact = false, label, detail
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className={`${tiny ? "truncate text-[11px]" : compact ? "truncate text-xs" : "font-semibold text-[#1F3B6E]"}`}>{tiny ? "Empty" : compact ? "Empty" : "Empty slot"}</p>
+          <p className={`${tiny ? "truncate text-[11px]" : compact ? "truncate text-xs" : "font-semibold text-[#1F3B6E]"}`}>{tiny ? copy.empty : compact ? copy.empty : copy.emptySlotTitle}</p>
           {!tiny && <p className={`${compact ? "truncate text-xs" : "mt-1 text-sm"}`}>{displayLabel}</p>}
-          {!compact && !tiny && <p className="mt-1 text-xs">{detail || "No class booked yet"}</p>}
+          {!compact && !tiny && <p className="mt-1 text-xs">{detail || copy.noClass}</p>}
         </div>
         {!compact && !tiny && <StatusBadge status="empty" />}
       </div>
@@ -177,18 +267,19 @@ function PendingWorkflowButton({ children, className = "", icon: Icon }) {
 }
 
 function CalendarToolbar({ view, setView, label, setLabel, openAvailability, openBlock }) {
+  const copy = useCalendarCopy();
   const views = ["day", "week", "month"];
   return (
     <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">Teacher workspace</p>
-          <h1 className="mt-1 font-display text-4xl text-[#1F3B6E]">Teacher Calendar</h1>
-          <p className="mt-1 text-sm text-[#5C6680]">Manage classes, availability, student invitations, calendar blocks, and scheduling health.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">{copy.teacherWorkspace}</p>
+          <h1 className="mt-1 font-display text-4xl text-[#1F3B6E]">{copy.title}</h1>
+          <p className="mt-1 text-sm text-[#5C6680]">{copy.subtitle}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={openAvailability} className="bg-[#E8704C] text-white hover:bg-[#C95630]"><Plus size={16} className="mr-2" />Open availability</Button>
-          <Button onClick={openBlock} variant="outline" className="border-[#EFE4D0]"><Ban size={16} className="mr-2" />Block time</Button>
+          <Button onClick={openAvailability} className="bg-[#E8704C] text-white hover:bg-[#C95630]"><Plus size={16} className="mr-2" />{copy.openAvailability}</Button>
+          <Button onClick={openBlock} variant="outline" className="border-[#EFE4D0]"><Ban size={16} className="mr-2" />{copy.blockTime}</Button>
         </div>
       </div>
       <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -199,7 +290,7 @@ function CalendarToolbar({ view, setView, label, setLabel, openAvailability, ope
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" className="border-[#EFE4D0]" onClick={() => setLabel("Previous period")}><ChevronLeft size={16} /></Button>
-          <Button variant="outline" className="border-[#EFE4D0]" onClick={() => setLabel("Jul 6-12, 2026")}>Today</Button>
+          <Button variant="outline" className="border-[#EFE4D0]" onClick={() => setLabel("Jul 6-12, 2026")}>{copy.today}</Button>
           <Button variant="outline" className="border-[#EFE4D0]" onClick={() => setLabel("Next period")}><ChevronRight size={16} /></Button>
           <span className="rounded-md bg-[#FBF7EE] px-3 py-2 text-sm font-semibold text-[#1F3B6E]">{label}</span>
         </div>
@@ -209,6 +300,7 @@ function CalendarToolbar({ view, setView, label, setLabel, openAvailability, ope
 }
 
 function CalendarSlotCard({ session, onOpen, compact = false, highlighted = false, density = "default" }) {
+  const copy = useCalendarCopy();
   const isMonth = density === "month";
   const isWeek = density === "week";
   const compactCard = compact || isMonth || isWeek;
@@ -222,9 +314,9 @@ function CalendarSlotCard({ session, onOpen, compact = false, highlighted = fals
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className={`${isMonth ? "truncate text-[11px] font-semibold" : compactCard ? "truncate text-sm font-semibold" : "font-semibold"}`}>{timeLabel}</p>
-          {compactCard ? <p className={`${isMonth ? "text-[11px]" : "mt-1 text-xs"} truncate`}>{session.studentName || session.classType || calendarStatuses[session.status]}</p> : <p className="mt-1 truncate text-sm">{session.studentName || session.classType}</p>}
+          {compactCard ? <p className={`${isMonth ? "text-[11px]" : "mt-1 text-xs"} truncate`}>{session.studentName || session.classType || copy.statuses[session.status]}</p> : <p className="mt-1 truncate text-sm">{session.studentName || session.classType}</p>}
         </div>
-        {compactCard ? <span className="shrink-0 rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold">{calendarStatuses[session.status]}</span> : <MoreHorizontal size={16} className="shrink-0" />}
+        {compactCard ? <StatusBadge status={session.status} /> : <MoreHorizontal size={16} className="shrink-0" />}
       </div>
       {!isMonth && <AvailabilityOptions session={session} compact={compactCard} maxOptions={isWeek ? 2 : 3} />}
       {!compactCard && (
@@ -240,11 +332,12 @@ function CalendarSlotCard({ session, onOpen, compact = false, highlighted = fals
 }
 
 function DayView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId }) {
+  const copy = useCalendarCopy();
   const visibleEmptySlots = emptySlots.filter((slot) => slot.date === "2026-07-06");
   return (
     <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <h2 className="font-display text-2xl text-[#1F3B6E]">Day timeline</h2>
+        <h2 className="font-display text-2xl text-[#1F3B6E]">{copy.dayTimeline}</h2>
         <CalendarLegend />
       </div>
       <div className="mt-4 grid gap-2">
@@ -289,14 +382,15 @@ function DayColumn({ day, sessions, emptySlots, onOpen, onInvite, highlightedSes
 }
 
 function WeekView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId }) {
+  const copy = useCalendarCopy();
   const weekendItems = sessions.filter((session) => weekendDays.includes(session.day));
   const weekendEmpty = emptySlots.filter((slot) => weekendDays.some((day) => dayDates[day] === slot.date));
   return (
     <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="font-display text-2xl text-[#1F3B6E]">Work week view</h2>
-          <p className="text-sm text-[#5C6680]">Monday to Friday stay readable; weekend activity is summarized below.</p>
+          <h2 className="font-display text-2xl text-[#1F3B6E]">{copy.workWeek}</h2>
+          <p className="text-sm text-[#5C6680]">{copy.workWeekHelp}</p>
         </div>
         <CalendarLegend />
       </div>
@@ -305,8 +399,8 @@ function WeekView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId
       </div>
       <div className="mt-3 rounded-lg border border-[#EFE4D0] bg-[#FBF7EE] p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="font-semibold text-[#1F3B6E]">Weekend</p>
-          <p className="text-sm text-[#5C6680]">{weekendItems.length} calendar item{weekendItems.length === 1 ? "" : "s"} - {weekendEmpty.length} empty slot{weekendEmpty.length === 1 ? "" : "s"}</p>
+          <p className="font-semibold text-[#1F3B6E]">{copy.weekend}</p>
+          <p className="text-sm text-[#5C6680]">{weekendItems.length} {weekendItems.length === 1 ? copy.calendarItem : copy.calendarItems} - {weekendEmpty.length} {weekendEmpty.length === 1 ? copy.emptySlot : copy.emptySlots}</p>
         </div>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {weekendItems.slice(0, 2).map((session) => <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} density="week" highlighted={session.id === highlightedSessionId} />)}
@@ -318,6 +412,7 @@ function WeekView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId
 }
 
 function MonthView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionId }) {
+  const copy = useCalendarCopy();
   const year = 2026;
   const month = 6;
   const dates = Array.from({ length: 31 }, (_, idx) => idx + 1);
@@ -328,7 +423,7 @@ function MonthView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionI
   return (
     <div className="min-w-0 rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <h2 className="font-display text-2xl text-[#1F3B6E]">Month view</h2>
+        <h2 className="font-display text-2xl text-[#1F3B6E]">{copy.monthView}</h2>
         <CalendarLegend />
       </div>
       <div className="mt-4 grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-[0.08em] text-[#5C6680] sm:gap-2">
@@ -353,7 +448,7 @@ function MonthView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionI
                 {daySessions.slice(0, 2).map((session) => <CalendarSlotCard key={session.id} session={session} onOpen={onOpen} density="month" highlighted={session.id === highlightedSessionId} />)}
                 {daySessions.length < 2 && dayEmptySlots.slice(0, 2 - daySessions.length).map((slot) => <EmptySlotPlaceholder key={slot.id} date={slot.date} start={slot.start} end={slot.end} tiny onInvite={onInvite} />)}
                 {totalItems > 2 && <p className="truncate rounded bg-white/70 px-2 py-1 text-[11px] font-semibold text-[#5C6680]">+{totalItems - 2} more</p>}
-                {totalItems === 0 && <EmptySlotPlaceholder date={key} start="empty" end="day" label="Empty day" tiny onInvite={onInvite} />}
+                {totalItems === 0 && <EmptySlotPlaceholder date={key} start="empty" end="day" label={copy.emptyDay} tiny onInvite={onInvite} />}
               </div>
             </div>
           );
@@ -365,6 +460,7 @@ function MonthView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionI
 }
 
 function GoogleCalendarCard({ integration, setIntegration }) {
+  const copy = useCalendarCopy();
   const [loading, setLoading] = useState(false);
   const sync = async (nextState = {}) => {
     setLoading(true);
@@ -382,9 +478,9 @@ function GoogleCalendarCard({ integration, setIntegration }) {
     <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#5C6680]">Google Calendar</p>
-          <h2 className="mt-1 font-display text-xl text-[#1F3B6E]">{integration.status === "connected" ? "Connected" : "Not connected"}</h2>
-          <p className="mt-1 text-sm text-[#5C6680]">Last synced: {integration.lastSyncedAt || "Never"}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#5C6680]">{copy.googleCalendar}</p>
+          <h2 className="mt-1 font-display text-xl text-[#1F3B6E]">{integration.status === "connected" ? copy.calendarConnected : copy.connectCalendar}</h2>
+          <p className="mt-1 text-sm text-[#5C6680]">{integration.lastSyncedAt || "Never"}</p>
         </div>
         <StatusBadge status={integration.status === "connected" ? "completed" : "conflict"} />
       </div>
@@ -394,11 +490,11 @@ function GoogleCalendarCard({ integration, setIntegration }) {
           <option value="export">Export Mosaico classes</option>
           <option value="two-way">Two-way sync</option>
         </Select>
-        <Button disabled={loading} onClick={() => sync()} className="bg-[#1F3B6E] text-white hover:bg-[#162B52]"><RefreshCw size={16} className="mr-2" />{loading ? "Syncing..." : "Sync now"}</Button>
+        <Button disabled={loading} onClick={() => sync()} className="bg-[#1F3B6E] text-white hover:bg-[#162B52]"><RefreshCw size={16} className="mr-2" />{loading ? "..." : copy.syncNow}</Button>
         <Button onClick={() => sync({ status: integration.status === "connected" ? "not-connected" : "connected" })} variant="outline" className="border-[#EFE4D0]">
-          <LinkIcon size={16} className="mr-2" />{integration.status === "connected" ? "Disconnect" : "Connect Google Calendar"}
+          <LinkIcon size={16} className="mr-2" />{integration.status === "connected" ? copy.disconnect : copy.connectGoogle}
         </Button>
-        {integration.conflicts > 0 && <p className="rounded-md bg-[#FFF9E8] p-3 text-sm text-[#9A6A00]">{integration.conflicts} Google Calendar conflict needs review.</p>}
+        {integration.conflicts > 0 && <p className="rounded-md bg-[#FFF9E8] p-3 text-sm text-[#9A6A00]">{integration.conflicts} {copy.conflictReview}</p>}
       </div>
     </div>
   );
@@ -433,21 +529,22 @@ function SchedulingInsightsPanel({ insights }) {
 }
 
 function CalendarActionCenter({ integration, sessions, onOpenCalendar, onHighlightNext, onHighlightToday, onOpenInsights }) {
+  const copy = useCalendarCopy();
   const booked = sessions.filter((item) => ["booked", "conflict"].includes(item.status));
   const today = booked.filter((item) => item.date === "2026-07-06");
   return (
     <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">Calendar center</p>
-          <h2 className="mt-1 font-display text-2xl text-[#1F3B6E]">Calendar stays in focus</h2>
-          <p className="mt-1 text-sm text-[#5C6680]">Open side panels only when needed, or jump directly to the next class.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">{copy.calendarCenter}</p>
+          <h2 className="mt-1 font-display text-2xl text-[#1F3B6E]">{copy.centerTitle}</h2>
+          <p className="mt-1 text-sm text-[#5C6680]">{copy.centerHelp}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onOpenCalendar} variant="outline" className="border-[#EFE4D0]"><LinkIcon size={16} className="mr-2" />{integration.status === "connected" ? "Calendar connected" : "Connect calendar"}</Button>
-          <Button disabled={!booked.length} onClick={onHighlightNext} className="bg-[#1F3B6E] text-white hover:bg-[#162B52]"><Video size={16} className="mr-2" />Next class</Button>
-          <Button disabled={!today.length} onClick={onHighlightToday} variant="outline" className="border-[#EFE4D0]"><CalendarDays size={16} className="mr-2" />Today's focus</Button>
-          <Button onClick={onOpenInsights} variant="outline" className="border-[#EFE4D0]"><Sparkles size={16} className="mr-2" />Insights</Button>
+          <Button onClick={onOpenCalendar} variant="outline" className="border-[#EFE4D0]"><LinkIcon size={16} className="mr-2" />{integration.status === "connected" ? copy.calendarConnected : copy.connectCalendar}</Button>
+          <Button disabled={!booked.length} onClick={onHighlightNext} className="bg-[#1F3B6E] text-white hover:bg-[#162B52]"><Video size={16} className="mr-2" />{copy.nextClass}</Button>
+          <Button disabled={!today.length} onClick={onHighlightToday} variant="outline" className="border-[#EFE4D0]"><CalendarDays size={16} className="mr-2" />{copy.todayFocus}</Button>
+          <Button onClick={onOpenInsights} variant="outline" className="border-[#EFE4D0]"><Sparkles size={16} className="mr-2" />{copy.insights}</Button>
         </div>
       </div>
     </div>
@@ -650,9 +747,10 @@ function StudentQuickViewDrawer({ session, student, onClose, onSessionUpdated })
 }
 
 function EmptySlotsPanel({ slots, onInvite }) {
+  const copy = useCalendarCopy();
   return (
     <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
-      <h2 className="font-display text-xl text-[#1F3B6E]">Empty slots and fill rate</h2>
+      <h2 className="font-display text-xl text-[#1F3B6E]">{copy.emptySlotsTitle}</h2>
       <div className="mt-4 grid gap-3">
         {slots.map((slot) => (
           <div key={slot.id} className="rounded-lg border border-[#EFE4D0] p-3">
@@ -674,6 +772,7 @@ function EmptySlotsPanel({ slots, onInvite }) {
 }
 
 export default function TeacherCalendarWorkspace() {
+  const copy = useCalendarCopy();
   const [view, setView] = useState("week");
   const [label, setLabel] = useState("Jul 6-12, 2026");
   const [loading, setLoading] = useState(true);
@@ -743,8 +842,8 @@ export default function TeacherCalendarWorkspace() {
       {blockOpen && <BlockTimeModal sessions={sessions} onClose={() => setBlockOpen(false)} onSaved={(block) => setSessions((items) => [...items, block])} />}
       {inviteSlot && <StudentInviteDrawer slot={inviteSlot} students={students} onClose={() => setInviteSlot(null)} />}
       {selectedSession && <StudentQuickViewDrawer session={selectedSession} student={selectedStudent} onClose={() => setSelectedSession(null)} onSessionUpdated={updateSession} />}
-      {sidePanel === "calendar" && <WorkspaceSidePanel title="Google Calendar" eyebrow="Calendar connection" onClose={() => setSidePanel("")}><GoogleCalendarCard integration={integration} setIntegration={setIntegration} /></WorkspaceSidePanel>}
-      {sidePanel === "insights" && <WorkspaceSidePanel title="Scheduling Insights" eyebrow="Operational intelligence" onClose={() => setSidePanel("")}><SchedulingInsightsPanel insights={insights} /></WorkspaceSidePanel>}
+      {sidePanel === "calendar" && <WorkspaceSidePanel title={copy.googleCalendar} eyebrow={copy.calendarConnection} onClose={() => setSidePanel("")}><GoogleCalendarCard integration={integration} setIntegration={setIntegration} /></WorkspaceSidePanel>}
+      {sidePanel === "insights" && <WorkspaceSidePanel title={copy.schedulingInsights} eyebrow={copy.operationalIntel} onClose={() => setSidePanel("")}><SchedulingInsightsPanel insights={insights} /></WorkspaceSidePanel>}
     </div>
   );
 }

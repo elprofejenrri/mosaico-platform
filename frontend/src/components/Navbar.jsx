@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Menu, X, Globe, GraduationCap, ShieldCheck, UserRound, Users, BookOpen } from "lucide-react";
+import { Menu, X, Globe, GraduationCap, ShieldCheck, UserRound, Users, BookOpen, School } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { Button } from "./ui/button";
 import { MosaicoLogo } from "./MosaicoLogo";
@@ -13,6 +13,7 @@ const navLabels = {
     tutor: "Tutor",
     teacher: "Teacher",
     administrative: "Administrative",
+    schoolAdmin: "School admin",
     wiki: "Wiki",
     technicalWiki: "Technical wiki",
   },
@@ -22,6 +23,7 @@ const navLabels = {
     tutor: "Tutor",
     teacher: "Profesor",
     administrative: "Administrativo",
+    schoolAdmin: "Admin escolar",
     wiki: "Wiki",
     technicalWiki: "Wiki tecnica",
   },
@@ -83,6 +85,7 @@ export const Navbar = () => {
           {navLink("/student", labels.client, "nav-student")}
           {navLink("/tutor", labels.tutor, "nav-tutor")}
           {navLink("/teacher", labels.teacher, "nav-teacher")}
+          {navLink("/school-admin", labels.schoolAdmin, "nav-school-admin")}
           {navLink("/admin", labels.administrative, "nav-admin")}
         </nav>
 
@@ -141,6 +144,7 @@ export const Navbar = () => {
           <Link to="/student" onClick={() => setOpen(false)} className="flex items-center gap-2"><UserRound size={16} />{labels.client}</Link>
           <Link to="/tutor" onClick={() => setOpen(false)} className="flex items-center gap-2"><Users size={16} />{labels.tutor}</Link>
           <Link to="/teacher" onClick={() => setOpen(false)} className="flex items-center gap-2"><GraduationCap size={16} />{labels.teacher}</Link>
+          <Link to="/school-admin" onClick={() => setOpen(false)} className="flex items-center gap-2"><School size={16} />{labels.schoolAdmin}</Link>
           <Link to="/admin" onClick={() => setOpen(false)} className="flex items-center gap-2"><ShieldCheck size={16} />{labels.administrative}</Link>
           {languageSwitch(true)}
           {user ? (

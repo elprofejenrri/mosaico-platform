@@ -105,9 +105,25 @@ Move these to action-triggered panels:
 - detailed history
 - configuration
 
-### 7. Honest Disabled States
+### 7. Independent Navigation Scroll
+
+Long sidebar navigation must scroll independently from the main workspace. Sticky sidebars should use a viewport-height limit, vertical overflow, and contained overscroll so scrolling over the left menu does not move the right-side content.
+
+### 8. Honest Disabled States
 
 If a supporting panel or action is not production-backed, disable it with a clear reason. Do not fake success.
+
+### 9. Platform-Wide Language Control
+
+The `EN / ES` language control must update the full visible experience, not only the top navigation. Portal shells, landing pages, side navigation, access messages, action bars, calendar workspaces, form labels, save/cancel controls, empty states, and administrative headings should read from the active language wherever practical. Technical identifiers, API field names, audit event keys, and stored permission keys can remain stable when they are system data rather than UI copy.
+
+## Role/Profile Switching
+
+Portal role switching should use a single-select dropdown, not a grid of profile buttons. The control must show only the active profile value while closed, and users with multiple effective roles can choose exactly one profile at a time. School Administrative is the education operations profile; Technical Admin is reserved for IAM, configuration, audit, logs, and system governance.
+
+## Feature-Gated Navigation
+
+Left sidebar navigation must respect saved platform feature flags. Disabled feature modules should disappear from the sidebar after configuration is saved and public settings refresh. Draft changes inside the configuration form should not hide navigation until they are saved, so `Cancel changes` always returns the app to the persisted state.
 
 ## Applied Examples
 
