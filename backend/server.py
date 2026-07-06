@@ -1022,6 +1022,7 @@ TECHNICAL_DOCS = {
     "rbac-admin-module": {"title": "RBAC Admin Module", "path": "docs/RBAC_ADMIN_MODULE.md", "section": "roadmap"},
     "super-admin-configuration-center": {"title": "Super Admin Configuration Center", "path": "docs/SUPER_ADMIN_CONFIGURATION_CENTER.md", "section": "architecture"},
     "analytics-observability": {"title": "Analytics and Observability", "path": "docs/ANALYTICS_OBSERVABILITY.md", "section": "architecture"},
+    "ux-interaction-standards": {"title": "UX Interaction Standards", "path": "docs/UX_INTERACTION_STANDARDS.md", "section": "architecture"},
     "mosaico-atlas": {"title": "Mosaico Atlas", "path": "docs/MOSAICO_ATLAS.md", "section": "architecture"},
     "architecture": {"title": "Architecture", "path": "docs/ARCHITECTURE.md", "section": "architecture"},
     "deployment-guide": {"title": "Deployment Guide", "path": "docs/DEPLOYMENT_GUIDE.md", "section": "architecture"},

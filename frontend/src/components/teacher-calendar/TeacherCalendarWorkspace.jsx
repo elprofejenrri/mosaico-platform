@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Progress } from "../ui/progress";
+import WorkspaceSidePanel from "../WorkspaceSidePanel";
 import {
   blockTeacherTime,
   calendarStatuses,
@@ -60,20 +61,6 @@ function Modal({ title, children, onClose }) {
   return (
     <div className="fixed inset-0 z-[80] bg-[#10213F]/45 p-4 backdrop-blur-sm">
       <div className="ml-auto flex h-full max-w-xl flex-col rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-[#EFE4D0] px-5 py-4">
-          <h2 className="font-display text-2xl text-[#1F3B6E]">{title}</h2>
-          <button onClick={onClose} aria-label="Close" className="rounded-md p-2 text-[#5C6680] hover:bg-[#FFF0E6]"><X size={18} /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-5">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function SidePanel({ title, children, onClose }) {
-  return (
-    <div className="fixed inset-0 z-[85] bg-[#10213F]/35 p-4 backdrop-blur-sm">
-      <div className="ml-auto flex h-full w-full max-w-md flex-col rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-[#EFE4D0] px-5 py-4">
           <h2 className="font-display text-2xl text-[#1F3B6E]">{title}</h2>
           <button onClick={onClose} aria-label="Close" className="rounded-md p-2 text-[#5C6680] hover:bg-[#FFF0E6]"><X size={18} /></button>
@@ -711,8 +698,8 @@ export default function TeacherCalendarWorkspace() {
       {blockOpen && <BlockTimeModal sessions={sessions} onClose={() => setBlockOpen(false)} onSaved={(block) => setSessions((items) => [...items, block])} />}
       {inviteSlot && <StudentInviteDrawer slot={inviteSlot} students={students} onClose={() => setInviteSlot(null)} />}
       {selectedSession && <StudentQuickViewDrawer session={selectedSession} student={selectedStudent} onClose={() => setSelectedSession(null)} onSessionUpdated={updateSession} />}
-      {sidePanel === "calendar" && <SidePanel title="Google Calendar" onClose={() => setSidePanel("")}><GoogleCalendarCard integration={integration} setIntegration={setIntegration} /></SidePanel>}
-      {sidePanel === "insights" && <SidePanel title="Scheduling Insights" onClose={() => setSidePanel("")}><SchedulingInsightsPanel insights={insights} /></SidePanel>}
+      {sidePanel === "calendar" && <WorkspaceSidePanel title="Google Calendar" eyebrow="Calendar connection" onClose={() => setSidePanel("")}><GoogleCalendarCard integration={integration} setIntegration={setIntegration} /></WorkspaceSidePanel>}
+      {sidePanel === "insights" && <WorkspaceSidePanel title="Scheduling Insights" eyebrow="Operational intelligence" onClose={() => setSidePanel("")}><SchedulingInsightsPanel insights={insights} /></WorkspaceSidePanel>}
     </div>
   );
 }

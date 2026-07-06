@@ -29,6 +29,7 @@ Implemented in this phase:
 - Critical permission confirmation flow in the UI and backend.
 - Scalable IAM users table with role chips instead of inline role checkboxes.
 - Users view uses a responsive grid/list instead of a wide table, prioritizing User, Access, Status, Activity, and Actions to avoid horizontal scroll.
+- IAM follows the platform center workspace pattern from `docs/UX_INTERACTION_STANDARDS.md`: the users list remains central while user detail, roles, permissions, sessions, and audit history open in a drawer.
 - Debounced search, filters, sorting, pagination, density control, and active filter chips.
 - User detail drawer with General, Roles, Effective Permissions, Activity, Audit History, Login Sessions, and Notes sections.
 - Role assignment happens from the drawer or bulk role modal.

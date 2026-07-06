@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { Button } from "../ui/button";
+import WorkspaceSidePanel from "../WorkspaceSidePanel";
 
 const riskStyles = {
   low: "bg-[#E0F2F0] text-[#1B6F68]",
@@ -211,25 +212,15 @@ function UserDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex justify-end bg-[#10213F]/35">
-      <aside className="h-full w-full max-w-3xl overflow-y-auto bg-white shadow-xl">
-        <div className="sticky top-0 z-10 border-b border-[#EFE4D0] bg-white p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#E8704C]">IAM user detail</p>
-              <h2 className="mt-2 font-display text-3xl text-[#1F3B6E]">{user.name || "Unnamed user"}</h2>
-              <p className="text-sm text-[#5C6680]">{user.email}</p>
-            </div>
-            <Button variant="outline" onClick={onClose} className="border-[#EFE4D0]"><X size={16} /></Button>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {["general", "roles", "permissions", "activity", "audit", "sessions", "notes"].map((item) => (
-              <button key={item} onClick={() => setTab(item)} className={`rounded-md px-3 py-2 text-sm font-semibold capitalize ${tab === item ? "bg-[#1F3B6E] text-white" : "bg-[#FBF7EE] text-[#1F3B6E]"}`}>{item === "permissions" ? "Effective Permissions" : item}</button>
-            ))}
-          </div>
-        </div>
+    <WorkspaceSidePanel title={user.name || "Unnamed user"} eyebrow="IAM user detail" onClose={onClose} maxWidth="max-w-3xl">
+      <p className="text-sm text-[#5C6680]">{user.email}</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {["general", "roles", "permissions", "activity", "audit", "sessions", "notes"].map((item) => (
+          <button key={item} onClick={() => setTab(item)} className={`rounded-md px-3 py-2 text-sm font-semibold capitalize ${tab === item ? "bg-[#1F3B6E] text-white" : "bg-[#FBF7EE] text-[#1F3B6E]"}`}>{item === "permissions" ? "Effective Permissions" : item}</button>
+        ))}
+      </div>
 
-        <div className="grid gap-5 p-5">
+      <div className="mt-5 grid gap-5">
           {tab === "general" && (
             <Panel>
               <div className="grid gap-4 md:grid-cols-2">
@@ -365,9 +356,8 @@ function UserDrawer({
               <textarea disabled className="mt-4 min-h-32 w-full rounded-md border border-[#EFE4D0] p-3 text-sm outline-none disabled:bg-[#FBF7EE]" placeholder="IAM notes require a persisted user notes model." />
             </Panel>
           )}
-        </div>
-      </aside>
-    </div>
+      </div>
+    </WorkspaceSidePanel>
   );
 }
 

@@ -26,6 +26,7 @@ Implemented UI capabilities:
 - Day, week, and month views show a shared status legend and explicit empty-slot placeholders, so teachers can distinguish booked classes from available openings and unfilled gaps.
 - The calendar is now the persistent center of the workspace. Google Calendar and scheduling insights open as lateral panels only when requested.
 - The former fixed "Next class" and "Today's classes" side modules are replaced by action buttons that highlight the relevant class directly inside the calendar.
+- This behavior is now the reference implementation for the platform-wide center workspace pattern documented in `docs/UX_INTERACTION_STANDARDS.md`.
 - Availability is modeled as a time window, not only a single class slot. A window can expose 30, 45, and/or 60 minute class options and applies a configurable cooldown gap between generated options.
 
 ## Product Behavior
