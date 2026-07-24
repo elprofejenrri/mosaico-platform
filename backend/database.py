@@ -15,7 +15,8 @@ logger = logging.getLogger("lily.db")
 _pool: Optional[asyncpg.Pool] = None
 
 TABLE_COLUMNS: Dict[str, List[str]] = {
-    "users": ["user_id", "email", "name", "picture", "role", "created_at", "google_id", "password_hash", "auth_provider", "profile_type", "active", "status", "active_school_id", "updated_at", "last_login_at"],
+    "users": ["user_id", "email", "email_normalized", "name", "picture", "role", "created_at", "google_id", "password_hash", "auth_provider", "auth_provider_user_id", "profile_type", "active", "status", "active_school_id", "updated_at", "last_login_at", "suspended_at", "suspended_by", "suspension_reason"],
+    "auth_identities": ["id", "user_id", "provider", "provider_user_id", "email_normalized", "created_at", "updated_at"],
     "products": [
         "id", "slug", "name_en", "name_es", "description_en", "description_es",
         "duration_min", "sessions_included", "price_usd", "type", "popular",
@@ -54,10 +55,12 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
     "tutor_student_links": ["id", "tutor_user_id", "student_user_id", "school_id", "relationship_type", "status", "authorized_at", "authorized_by", "created_at", "updated_at"],
     "teacher_student_assignments": ["id", "teacher_user_id", "student_user_id", "school_id", "course_id", "class_id", "status", "starts_at", "ends_at", "created_at", "updated_at"],
     "credit_movements": ["id", "actor_user_id", "account_user_id", "school_id", "balance_before", "amount", "balance_after", "movement_type", "reason", "transaction_id", "reference_type", "reference_id", "ip_address", "metadata", "created_at"],
-    "teacher_profiles": ["id", "user_id", "teacher_id", "specialties", "assigned_products", "created_at", "updated_at"],
-    "student_profiles": ["id", "user_id", "phone", "enrolled_products", "notes", "status", "created_at", "updated_at"],
-    "user_profiles": ["id", "user_id", "first_name", "last_name", "public_name", "picture", "native_language", "learning_language", "country", "timezone", "phone", "preferences", "created_at", "updated_at"],
+    "teacher_profiles": ["id", "user_id", "teacher_id", "specialties", "assigned_products", "professional_bio", "languages_taught", "authorized_levels", "teaching_modalities", "experience_summary", "approval_status", "approval_submitted_at", "approved_at", "approved_by", "rejection_reason", "suspended_at", "created_at", "updated_at"],
+    "student_profiles": ["id", "user_id", "phone", "enrolled_products", "notes", "status", "native_language", "learning_language", "self_reported_level", "current_level", "learning_goal", "preferred_class_format", "general_availability", "created_at", "updated_at"],
+    "user_profiles": ["id", "user_id", "first_name", "last_name", "public_name", "display_name", "picture", "avatar_url", "native_language", "learning_language", "country", "country_code", "timezone", "preferred_language", "phone", "preferences", "profile_completion_percentage", "profile_completed_at", "created_at", "updated_at"],
     "user_role_profiles": ["id", "user_id", "role_code", "profile_data", "approval_status", "created_at", "updated_at"],
+    "tutor_profiles": ["id", "user_id", "relationship_context", "created_at", "updated_at"],
+    "onboarding_states": ["id", "user_id", "onboarding_type", "version", "status", "current_step", "completed_steps", "blocked_reason", "started_at", "last_saved_at", "completed_at", "created_at", "updated_at"],
     "external_calendar_connections": ["id", "user_id", "provider", "provider_account_id", "provider_email_masked", "status", "granted_scopes", "access_token_encrypted", "refresh_token_encrypted", "token_expires_at", "connected_at", "last_successful_sync_at", "last_sync_attempt_at", "last_sync_status", "last_sync_error_code", "busy_cache_start_at", "busy_cache_end_at", "revoked_at", "created_at", "updated_at"],
     "external_calendar_selections": ["id", "connection_id", "calendar_id", "display_name", "access_role", "use_for_busy", "use_for_events", "created_at", "updated_at"],
     "external_busy_blocks": ["id", "connection_id", "teacher_user_id", "calendar_id", "starts_at", "ends_at", "source", "fetched_at", "expires_at", "created_at"],
@@ -87,10 +90,11 @@ JSONB_COLUMNS = {
     "payment_transactions": {"metadata"},
     "role_permissions": {"conditions"},
     "credit_movements": {"metadata"},
-    "teacher_profiles": {"specialties", "assigned_products"},
+    "teacher_profiles": {"specialties", "assigned_products", "languages_taught", "authorized_levels", "teaching_modalities"},
     "student_profiles": {"enrolled_products"},
     "user_profiles": {"preferences"},
     "user_role_profiles": {"profile_data"},
+    "onboarding_states": {"completed_steps"},
     "external_calendar_connections": {"granted_scopes"},
     "pages": {"content_blocks"},
     "audit_events": {"before_state", "after_state", "metadata"},
@@ -429,6 +433,7 @@ class Database:
     def __init__(self, pool: asyncpg.Pool):
         self._pool = pool
         self.users = Collection("users", pool)
+        self.auth_identities = Collection("auth_identities", pool)
         self.products = Collection("products", pool)
         self.availability = Collection("availability", pool)
         self.bookings = Collection("bookings", pool)
@@ -450,6 +455,8 @@ class Database:
         self.student_profiles = Collection("student_profiles", pool)
         self.user_profiles = Collection("user_profiles", pool)
         self.user_role_profiles = Collection("user_role_profiles", pool)
+        self.tutor_profiles = Collection("tutor_profiles", pool)
+        self.onboarding_states = Collection("onboarding_states", pool)
         self.external_calendar_connections = Collection("external_calendar_connections", pool)
         self.external_calendar_selections = Collection("external_calendar_selections", pool)
         self.external_busy_blocks = Collection("external_busy_blocks", pool)

@@ -14,6 +14,19 @@ Current coverage includes platform configuration validation, Super Admin wildcar
 python -m py_compile backend\server.py backend\database.py
 ```
 
+## Identity, profile, and onboarding
+
+```powershell
+python -m pytest backend/tests/test_identity_onboarding.py backend/tests/test_identity_migration_contract.py backend/tests/test_profile_policy.py backend/tests/test_rbac_api_contract.py -q
+python backend/audit_identity_profile_onboarding.py
+```
+
+The unit/contract suite covers email normalization, allowed initial roles,
+student/teacher completion differences, resumable-state validation,
+mass-assignment rejection, bounded states, additive migration structure, and
+API/table registration. The audit requires a configured database and emits
+aggregate counts without personal data.
+
 ## Frontend Tests
 
 ```powershell

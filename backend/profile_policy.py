@@ -33,18 +33,22 @@ PROFILE_ROLE_LABELS = {
 }
 
 COMMON_FIELDS = {
-    "first_name", "last_name", "public_name", "picture", "native_language",
-    "learning_language", "country", "timezone", "phone", "preferences",
+    "first_name", "last_name", "public_name", "display_name", "picture",
+    "avatar_url", "native_language", "learning_language", "country",
+    "country_code", "timezone", "preferred_language", "phone", "preferences",
 }
 
 ROLE_FIELDS = {
     "alumno": {
-        "current_level", "learning_goal", "preferred_class_types",
-        "general_availability",
+        "native_language", "learning_language", "self_reported_level",
+        "current_level", "learning_goal", "preferred_class_format",
+        "preferred_class_types", "general_availability",
     },
     "profesor": {
-        "biography", "teaching_languages", "specialties", "authorized_levels",
-        "certifications", "modalities", "intro_video_url",
+        "biography", "professional_bio", "teaching_languages",
+        "languages_taught", "specialties", "authorized_levels",
+        "certifications", "modalities", "teaching_modalities",
+        "experience_summary", "intro_video_url",
     },
     "tutor_padre": {"relationship_summary"},
     "administrador_escolar": {
@@ -56,11 +60,12 @@ ROLE_FIELDS = {
 }
 
 LIST_FIELDS = {
-    "preferred_class_types", "teaching_languages", "specialties",
-    "authorized_levels", "certifications", "modalities",
+    "preferred_class_types", "teaching_languages", "languages_taught",
+    "specialties", "authorized_levels", "certifications", "modalities",
+    "teaching_modalities",
 }
 
-COMMON_REQUIRED = ("first_name", "last_name", "public_name", "country", "timezone")
+COMMON_REQUIRED = ("first_name", "last_name", "country", "timezone")
 ROLE_REQUIRED = {
     "alumno": ("current_level", "learning_goal"),
     "profesor": ("biography", "teaching_languages", "specialties", "modalities"),
@@ -132,11 +137,12 @@ def validate_common_profile(payload: Mapping[str, Any]) -> dict:
     if unknown:
         raise ProfileValidationError(f"Unsupported profile fields: {', '.join(sorted(unknown))}")
     output: dict[str, Any] = {}
-    for field in ("first_name", "last_name", "public_name"):
+    for field in ("first_name", "last_name", "public_name", "display_name"):
         if field in payload:
             output[field] = _text(payload[field], field, 120)
-    if "picture" in payload:
-        output["picture"] = _url(payload["picture"], "picture")
+    for field in ("picture", "avatar_url"):
+        if field in payload:
+            output[field] = _url(payload[field], field)
     for field in ("native_language", "learning_language"):
         if field in payload:
             value = _text(payload[field], field, 20)
@@ -148,6 +154,16 @@ def validate_common_profile(payload: Mapping[str, Any]) -> dict:
         if country and (len(country) != 2 or not country.isalpha()):
             raise ProfileValidationError("country must be a two-letter ISO code")
         output["country"] = country
+    if "country_code" in payload:
+        country = _text(payload["country_code"], "country_code", 2).upper()
+        if country and (len(country) != 2 or not country.isalpha()):
+            raise ProfileValidationError("country_code must be a two-letter ISO code")
+        output["country_code"] = country
+    if "preferred_language" in payload:
+        language = _text(payload["preferred_language"], "preferred_language", 10).lower()
+        if language not in {"en", "es"}:
+            raise ProfileValidationError("preferred_language must be en or es")
+        output["preferred_language"] = language
     if "timezone" in payload:
         timezone = _text(payload["timezone"], "timezone", 80)
         try:
@@ -211,7 +227,7 @@ def validate_role_profile(role: str, payload: Mapping[str, Any]) -> dict:
             if value and not _EMAIL_RE.match(value):
                 raise ProfileValidationError("contact_email is not valid")
             output[field] = value.lower()
-        elif field in {"biography", "learning_goal", "general_availability", "relationship_summary"}:
+        elif field in {"biography", "professional_bio", "experience_summary", "learning_goal", "general_availability", "relationship_summary"}:
             output[field] = _text(value, field, 2000, multiline=True)
         elif field == "contact_phone":
             value = _text(value, field, 30)

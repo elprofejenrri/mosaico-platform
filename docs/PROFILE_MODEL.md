@@ -9,13 +9,16 @@ or ownership boundary.
 
 ## Persistent model
 
-- `users` remains the authentication identity and compatibility source for
-  display name and picture.
+- `auth_identities` maps each verified provider subject to one internal user;
+  it stores no provider token.
+- `users` is the internal account and compatibility source for display name
+  and picture.
 - `user_profiles` stores shared personal data and preferences once per user.
 - `user_role_profiles` stores one validated role extension per user and role.
 - `student_profiles` and `teacher_profiles` remain available to legacy
-  administrative workflows; new profile screens do not remove or redefine
-  those contracts.
+  administrative workflows and now hold the definitive specialized fields.
+- `tutor_profiles` stores only tutor context and never creates student links.
+- `onboarding_states` persists versioned, resumable progress.
 - School assignments, tutor/student relationships, teacher/student
   assignments, effective scopes, and permissions continue to come from their
   existing RBAC tables. They are presented in a profile but cannot be edited
@@ -24,6 +27,9 @@ or ownership boundary.
 Migration `backend/migrations/003_user_profiles.sql` is additive,
 transactional, and idempotent. It safely copies existing identity display data
 into the shared profile table without inventing role-specific facts.
+Migration `backend/migrations/005_identity_profile_onboarding.sql` additively
+extends that foundation without automatically inferring missing profile,
+approval, role, onboarding, or school facts.
 
 ## Persona fields
 
@@ -62,6 +68,10 @@ Completion is computed by the backend from shared and role-specific required
 fields. The response reports `complete`, `incomplete`, or `onboarding`, a
 percentage, missing fields, and a next step. It is never accepted from the
 client.
+
+The definitive completion and onboarding contract, including state machines
+and migration audit procedure, is in
+`docs/USER_PROFILE_ONBOARDING_MODEL.md`.
 
 The persisted `theme` preference (`system`, `light`, or `dark`) is returned
 with the authenticated identity and applied to the profile experience.

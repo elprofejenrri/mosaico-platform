@@ -54,6 +54,20 @@ def test_profile_routes_and_storage_tables_are_registered():
     assert "profile_data" in TABLE_COLUMNS["user_role_profiles"]
 
 
+def test_identity_and_onboarding_contracts_are_registered():
+    assert route("GET", "/api/auth/me/onboarding")
+    assert route("PATCH", "/api/auth/me/onboarding")
+    assert route("POST", "/api/auth/me/onboarding/complete")
+    assert route("GET", "/api/admin/users/{user_id}/onboarding")
+    assert {"auth_identities", "tutor_profiles", "onboarding_states"}.issubset(TABLE_COLUMNS)
+    assert {"provider", "provider_user_id", "email_normalized"}.issubset(
+        TABLE_COLUMNS["auth_identities"]
+    )
+    assert {"status", "current_step", "completed_steps"}.issubset(
+        TABLE_COLUMNS["onboarding_states"]
+    )
+
+
 def test_role_assignment_supports_school_and_expiry():
     assert {"school_id", "status", "assigned_at", "expires_at"}.issubset(TABLE_COLUMNS["user_roles"])
 

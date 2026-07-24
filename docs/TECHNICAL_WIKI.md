@@ -51,6 +51,13 @@ The production profile contract is documented in `docs/PROFILE_MODEL.md`.
 It covers shared identity data, role extensions, completion, teacher approval,
 RBAC-derived relationship data, media uploads, and value-free audit events.
 
+The definitive identity and onboarding foundation is documented in
+`docs/USER_PROFILE_ONBOARDING_MODEL.md`. It separates verified provider
+identities, internal accounts, shared and specialized profiles, canonical
+roles, optional evidence-based school memberships, resumable onboarding, and
+teacher approval. This local technical update does not add a production
+release entry until it is explicitly released.
+
 ## Documentation Rule
 
 Every platform change must update existing documentation or create new documentation.
@@ -114,6 +121,20 @@ and pilot workflow before teachers can connect it.
 Releases are listed in descending order. No reliable tag or formal release
 record existed when this history was introduced, so the first entry records
 only the initial documented baseline delivered by this feature.
+
+<!-- RELEASE: 2026.07.24.4 -->
+### 2026.07.24.4 — Safer account setup and accessible navigation
+
+Summary: MOSAICO now provides clearer account setup foundations and more readable desktop navigation.
+
+Release date: 2026-07-24
+
+- Desktop navigation keeps readable contrast across supported appearance preferences.
+- Student and teacher account setup use separate profile and progress states that can be safely resumed.
+- Teacher profile completion remains separate from operational approval.
+- Account setup prevents unsupported public role selection and preserves existing school assignments.
+- Technical users can review the updated identity, profile, and onboarding model in the platform Wiki.
+<!-- /RELEASE -->
 
 <!-- RELEASE: 2026.07.24.3 -->
 ### 2026.07.24.3 — Localized production release dates

@@ -1,5 +1,18 @@
 [
   {
+    "version": "2026.07.24.4",
+    "releaseDate": "2026-07-24",
+    "title": "Safer account setup and accessible navigation",
+    "summary": "MOSAICO now provides clearer account setup foundations and more readable desktop navigation.",
+    "items": [
+      "Desktop navigation keeps readable contrast across supported appearance preferences.",
+      "Student and teacher account setup use separate profile and progress states that can be safely resumed.",
+      "Teacher profile completion remains separate from operational approval.",
+      "Account setup prevents unsupported public role selection and preserves existing school assignments.",
+      "Technical users can review the updated identity, profile, and onboarding model in the platform Wiki."
+    ]
+  },
+  {
     "version": "2026.07.24.3",
     "releaseDate": "2026-07-24",
     "title": "Localized production release dates",

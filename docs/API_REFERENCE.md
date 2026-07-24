@@ -35,12 +35,15 @@ Returns public site settings.
 
 ### POST `/auth/register`
 
-Creates a local email/password account, creates a learner profile, assigns the default `alumno` role, and returns a persistent session token.
+Creates a local email/password account transactionally and returns a persistent
+session token. Public `profile_type` accepts `student`/`client` or `teacher`.
+Students receive `alumno`; teachers receive `profesor` and remain unapproved.
+Privileged roles and school membership cannot be requested.
 
 Body:
 
 ```json
-{"name":"Ana Gomez","email":"ana@example.com","password":"strong-password","profile_type":"client"}
+{"name":"Ana Gomez","email":"ana@example.com","password":"strong-password","profile_type":"student"}
 ```
 
 ### POST `/auth/login`
@@ -55,7 +58,26 @@ Body:
 
 ### GET `/auth/me`
 
-Returns the authenticated user, effective roles, and effective permission levels.
+Returns the authenticated user and effective roles/permission levels. It
+compatibly adds account status, profile completion, onboarding state, next
+required action, and teacher approval when applicable. Permission grants and
+school scopes remain in `/auth/me/permissions`.
+
+### GET `/auth/me/onboarding`
+
+Returns the authenticated user's versioned onboarding state, completed/current
+steps, backend-calculated missing fields, continuation state, and block reason.
+
+### PATCH `/auth/me/onboarding`
+
+Saves resumable non-terminal progress. Accepts only `currentStep`,
+`completedSteps`, and `status` (`in_progress` or `requires_review`).
+
+### POST `/auth/me/onboarding/complete`
+
+Completes onboarding only after backend profile requirements pass. Returns
+`409 profile_incomplete` with safe missing-field names otherwise. Teacher
+completion moves the account to `pending_approval`; it never approves.
 
 ### GET `/profile`
 
@@ -98,8 +120,14 @@ JPEG, PNG, WebP, or GIF up to 5 MB.
 
 ### PATCH `/admin/profiles/{user_id}/teacher-approval`
 
-Changes a teacher profile to `pending`, `approved`, or `suspended`. Requires an
-authorized teacher-management scope and rejects self-approval.
+Changes a teacher profile to `pending`, `approved`, `rejected`, or `suspended`.
+Rejection requires a reason. The endpoint requires authorized
+teacher-management scope and rejects self-approval.
+
+### GET `/admin/users/{user_id}/onboarding`
+
+Returns profile completion and onboarding state for a user only when the
+requesting administrator has the applicable scoped profile-read permission.
 
 ### POST `/auth/logout`
 

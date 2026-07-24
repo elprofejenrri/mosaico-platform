@@ -57,7 +57,7 @@ export const Navbar = () => {
       key={to}
       to={to}
       data-testid={testid}
-      className={`text-sm tracking-wide transition-colors hover:text-[#E8704C] ${loc.pathname === to ? "text-[#E8704C]" : "text-[#1F3B6E]"}`}
+      className={`text-sm tracking-wide transition-colors hover:text-[#B44325] ${loc.pathname === to ? "text-[#B44325]" : "text-[#1F3B6E]"}`}
     >
       {label}
     </Link>
@@ -98,7 +98,7 @@ export const Navbar = () => {
           }}
           data-testid={mobile ? "nav-profile-selector-m" : "nav-profile-selector"}
           className={`h-10 w-full appearance-none rounded-md border border-[#EFE4D0] bg-white px-3 pr-9 text-sm font-semibold outline-none transition-colors focus:border-[#1F3B6E] focus:ring-2 focus:ring-[#1F3B6E]/15 ${
-            activeProfile ? "text-[#E8704C]" : "text-[#1F3B6E]"
+            activeProfile ? "text-[#B44325]" : "text-[#1F3B6E]"
           }`}
           aria-label={labels.profile}
         >
@@ -148,7 +148,7 @@ export const Navbar = () => {
   return (
     <header
       data-testid="navbar"
-      className="fixed top-0 left-0 right-0 z-50 border-b border-[#EFE4D0]/60 bg-[#FBF7EE]/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/90"
+      className="fixed top-0 left-0 right-0 z-50 border-b border-[#EFE4D0]/60 bg-[#FBF7EE]/95 backdrop-blur-xl"
     >
       <MobileWorkspaceHeader fallbackNavigation={mobileNavigation} fallbackTitle={fallbackTitle} />
       <div className="mx-auto hidden h-16 max-w-7xl items-center justify-between px-6 lg:flex lg:px-10">
@@ -173,7 +173,7 @@ export const Navbar = () => {
               </Link>
               {["admin", "administrador_sitio", "administrador_profesor", "editor_cms"].includes(user.role) && (
                 <Link to="/admin" data-testid="nav-admin">
-                  <Button variant="ghost" className="text-[#E8704C] hover:bg-[#FFF0E6]">{t.nav.admin}</Button>
+                  <Button variant="ghost" className="text-[#B44325] hover:bg-[#FFF0E6]">{t.nav.admin}</Button>
                 </Link>
               )}
               {technicalUser && (

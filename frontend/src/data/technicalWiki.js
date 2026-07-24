@@ -34,6 +34,7 @@ export const technicalWikiSections = [
       { id: "phase-1-backfill-audit", title: "Phase 1 Backfill Audit", path: "backend/backfill_standardization_phase1.sql", status: "Operational", owner: "Engineering" },
       { id: "api-reference", title: "API Reference", path: "docs/API_REFERENCE.md", status: "Reference", owner: "Engineering" },
       { id: "profile-model", title: "Profile Model", path: "docs/PROFILE_MODEL.md", status: "Active", owner: "Product + Engineering + Security" },
+      { id: "user-profile-onboarding-model", title: "User, Profile, and Onboarding Model", path: "docs/USER_PROFILE_ONBOARDING_MODEL.md", status: "Active", owner: "Product + Engineering + Security" },
     ],
   },
   {

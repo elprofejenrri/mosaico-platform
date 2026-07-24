@@ -38,6 +38,17 @@ from profile_policy import (
     validate_common_profile,
     validate_role_profile,
 )
+from identity_onboarding import (
+    IdentityValidationError,
+    ONBOARDING_VERSION,
+    completion_for,
+    initial_role_for_public_registration,
+    normalize_email,
+    onboarding_snapshot,
+    onboarding_type_for_role,
+    validate_onboarding_progress,
+)
+from identity_service import IdentityConflictError, provision_local_identity
 from google_calendar_service import (
     GoogleCalendarConfig,
     GoogleCalendarError,
@@ -257,12 +268,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 class User(BaseModel):
     user_id: str
     email: str
+    email_normalized: Optional[str] = None
     name: str
     picture: Optional[str] = None
     role: str = "alumno"
     google_id: Optional[str] = None
     password_hash: Optional[str] = None
     auth_provider: str = "supabase"
+    auth_provider_user_id: Optional[str] = None
     profile_type: str = "client"
     active: bool = True
     status: str = "active"
@@ -338,7 +351,7 @@ class LocalAuthPayload(BaseModel):
 
 class RegisterPayload(LocalAuthPayload):
     name: str
-    profile_type: str = "client"
+    profile_type: str = "student"
 
 
 ROLE_ALIASES = {
@@ -589,9 +602,15 @@ def _parse_iso(value: str) -> datetime:
 
 
 def _safe_profile_type(profile_type: Optional[str]) -> str:
-    allowed = {"client", "student", "parent", "tutor"}
+    allowed = {"client", "student", "teacher"}
     value = (profile_type or "client").strip().lower()
     return value if value in allowed else "client"
+
+
+def _account_can_authenticate(user_doc: dict) -> bool:
+    return user_doc.get("active") is not False and user_doc.get("status", "active") not in {
+        "suspended", "inactive",
+    }
 
 
 def _public_user(user: User) -> dict:
@@ -732,7 +751,11 @@ async def can(
     linked: bool = False,
     assigned: bool = False,
 ) -> bool:
-    if not user.active or user.status != "active":
+    if not user.active or user.status in {"suspended", "inactive"}:
+        return False
+    if user.status in {"pending_profile", "pending_approval"} and permission_code not in {
+        "profiles.view", "profiles.update", "users.profile.view", "users.profile.edit",
+    }:
         return False
     grants = await _effective_permission_grants(user)
     context = ScopeContext(
@@ -1112,7 +1135,7 @@ async def _get_user_from_local_session(token: str) -> User:
         raise HTTPException(status_code=401, detail="Session expired")
     await db.local_auth_sessions.update_one({"id": session["id"]}, {"$set": {"last_seen_at": _now_iso()}})
     user_doc = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
-    if not user_doc or user_doc.get("active") is False or user_doc.get("status", "active") != "active":
+    if not user_doc or not _account_can_authenticate(user_doc):
         raise HTTPException(status_code=403, detail="User is inactive")
     return User(**user_doc)
 
@@ -1141,23 +1164,117 @@ async def _sync_user_role(
         })
 
 
+async def _ensure_onboarding_scaffold(user_doc: dict, role: str) -> None:
+    """Idempotently create empty profile/onboarding rows without inventing facts."""
+    if role not in {"alumno", "profesor"}:
+        return
+    user_id = user_doc["user_id"]
+    now = _now_iso()
+    common = await db.user_profiles.find_one({"user_id": user_id}, {"_id": 0})
+    if not common:
+        parts = str(user_doc.get("name") or "").strip().split(maxsplit=1)
+        await db.user_profiles.insert_one({
+            "id": f"up_{uuid.uuid4().hex}", "user_id": user_id,
+            "first_name": parts[0] if parts else "",
+            "last_name": parts[1] if len(parts) > 1 else "",
+            "public_name": user_doc.get("name") or "",
+            "display_name": user_doc.get("name") or "",
+            "picture": user_doc.get("picture") or "",
+            "avatar_url": user_doc.get("picture") or "",
+            "native_language": "", "learning_language": "",
+            "country": "", "country_code": "", "timezone": "UTC",
+            "preferred_language": "en", "phone": "",
+            "preferences": {"interface_language": "en"},
+            "profile_completion_percentage": 0, "profile_completed_at": None,
+            "created_at": now, "updated_at": now,
+        })
+    role_profile = await db.user_role_profiles.find_one(
+        {"user_id": user_id, "role_code": role}, {"_id": 0}
+    )
+    if not role_profile:
+        await db.user_role_profiles.insert_one({
+            "id": f"urp_{uuid.uuid4().hex}", "user_id": user_id,
+            "role_code": role, "profile_data": {},
+            "approval_status": "incomplete" if role == "profesor" else "approved",
+            "created_at": now, "updated_at": now,
+        })
+    specialized = (
+        await db.student_profiles.find_one({"user_id": user_id}, {"_id": 0})
+        if role == "alumno"
+        else await db.teacher_profiles.find_one({"user_id": user_id}, {"_id": 0})
+    )
+    if not specialized:
+        if role == "alumno":
+            await db.student_profiles.insert_one({
+                "id": f"sp_{uuid.uuid4().hex}", "user_id": user_id, "phone": "",
+                "enrolled_products": [], "notes": "", "status": "activo",
+                "native_language": "", "learning_language": "",
+                "self_reported_level": "", "current_level": "",
+                "learning_goal": "", "preferred_class_format": "",
+                "general_availability": "", "created_at": now, "updated_at": now,
+            })
+        else:
+            await db.teacher_profiles.insert_one({
+                "id": f"tp_{uuid.uuid4().hex}", "user_id": user_id,
+                "teacher_id": None, "specialties": [], "assigned_products": [],
+                "professional_bio": "", "languages_taught": [],
+                "authorized_levels": [], "teaching_modalities": [],
+                "experience_summary": "", "approval_status": "incomplete",
+                "created_at": now, "updated_at": now,
+            })
+    onboarding_type = onboarding_type_for_role(role)
+    onboarding = await db.onboarding_states.find_one({
+        "user_id": user_id, "onboarding_type": onboarding_type,
+        "version": ONBOARDING_VERSION,
+    }, {"_id": 0})
+    if not onboarding:
+        await db.onboarding_states.insert_one({
+            "id": f"ob_{uuid.uuid4().hex}", "user_id": user_id,
+            "onboarding_type": onboarding_type, "version": ONBOARDING_VERSION,
+            "status": "not_started", "current_step": "profile",
+            "completed_steps": [], "blocked_reason": None, "started_at": None,
+            "last_saved_at": None, "completed_at": None,
+            "created_at": now, "updated_at": now,
+        })
+
+
 async def _get_or_create_user_from_supabase(payload: dict, request: Optional[Request] = None) -> User:
-    user_id = payload.get("sub")
-    email = (payload.get("email") or "").lower()
+    provider_user_id = payload.get("sub")
+    try:
+        email = normalize_email(payload.get("email") or "")
+    except IdentityValidationError as exc:
+        raise HTTPException(status_code=401, detail="Invalid auth token") from exc
     metadata = payload.get("user_metadata") or {}
     name = metadata.get("full_name") or metadata.get("name") or email.split("@")[0]
     picture = metadata.get("avatar_url") or metadata.get("picture")
 
-    if not user_id or not email:
+    if not provider_user_id or not email:
         raise HTTPException(status_code=401, detail="Invalid auth token")
 
-    existing = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    identity = await db.auth_identities.find_one(
+        {"provider": "supabase", "provider_user_id": provider_user_id}, {"_id": 0}
+    )
+    existing = (
+        await db.users.find_one({"user_id": identity["user_id"]}, {"_id": 0})
+        if identity else None
+    )
+    if identity and not existing:
+        raise HTTPException(status_code=409, detail="Authentication identity requires administrative review")
+    if not existing:
+        existing = await db.users.find_one({"auth_provider_user_id": provider_user_id}, {"_id": 0})
+    if not existing:
+        existing = await db.users.find_one({"google_id": provider_user_id}, {"_id": 0})
+    if not existing:
+        existing = await db.users.find_one({"email_normalized": email}, {"_id": 0})
+    if not existing:
+        existing = await db.users.find_one({"email": email}, {"_id": 0})
+    user_id = existing["user_id"] if existing else f"usr_{uuid.uuid4().hex}"
     role = "administrador_sitio" if email in ADMIN_EMAILS else "alumno"
     now = _now_iso()
 
     if existing:
         current_role = _normalize_role(existing.get("role"))
-        updates = {"email": email, "name": name, "picture": picture, "google_id": user_id, "updated_at": now, "last_login_at": now}
+        updates = {"email": email, "email_normalized": email, "name": name, "picture": picture, "google_id": provider_user_id, "auth_provider_user_id": provider_user_id, "updated_at": now, "last_login_at": now}
         if current_role != existing.get("role"):
             updates["role"] = current_role
         if email in ADMIN_EMAILS and current_role != "administrador_sitio":
@@ -1167,11 +1284,13 @@ async def _get_or_create_user_from_supabase(payload: dict, request: Optional[Req
         await db.users.insert_one({
             "user_id": user_id,
             "email": email,
+            "email_normalized": email,
             "name": name,
             "picture": picture,
             "role": role,
-            "google_id": user_id,
+            "google_id": provider_user_id,
             "auth_provider": "supabase",
+            "auth_provider_user_id": provider_user_id,
             "profile_type": "client",
             "active": True,
             "created_at": now,
@@ -1181,8 +1300,15 @@ async def _get_or_create_user_from_supabase(payload: dict, request: Optional[Req
 
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     await _sync_user_role(user_id, user_doc.get("role", role))
+    await _ensure_onboarding_scaffold(user_doc, _normalize_role(user_doc.get("role", role)))
+    if not identity:
+        await db.auth_identities.insert_one({
+            "id": f"ai_{uuid.uuid4().hex}", "user_id": user_id,
+            "provider": "supabase", "provider_user_id": provider_user_id,
+            "email_normalized": email, "created_at": now, "updated_at": now,
+        })
     await _record_login(user_id, email, "google", request)
-    if user_doc.get("active") is False or user_doc.get("status", "active") != "active":
+    if not _account_can_authenticate(user_doc):
         raise HTTPException(status_code=403, detail="User is inactive")
     return User(**user_doc)
 
@@ -1341,6 +1467,7 @@ TECHNICAL_DOCS = {
     "phase-1-backfill-audit": {"title": "Phase 1 Backfill Audit", "path": "backend/backfill_standardization_phase1.sql", "section": "data"},
     "api-reference": {"title": "API Reference", "path": "docs/API_REFERENCE.md", "section": "data"},
     "profile-model": {"title": "Profile Model", "path": "docs/PROFILE_MODEL.md", "section": "data"},
+    "user-profile-onboarding-model": {"title": "User, Profile, and Onboarding Model", "path": "docs/USER_PROFILE_ONBOARDING_MODEL.md", "section": "data"},
     "environment-variables": {"title": "Environment Variables", "path": "docs/ENVIRONMENT_VARIABLES.md", "section": "configuration"},
     "backend-env-example": {"title": "Backend Env Example", "path": "backend/.env.example", "section": "configuration"},
     "technical-wiki": {"title": "Technical Wiki", "path": "docs/TECHNICAL_WIKI.md", "section": "configuration"},
@@ -1902,49 +2029,32 @@ async def version():
 
 @api.post("/auth/register")
 async def auth_register(payload: RegisterPayload, request: Request):
-    email = payload.email.strip().lower()
+    try:
+        email = normalize_email(payload.email)
+        role = initial_role_for_public_registration(payload.profile_type)
+    except IdentityValidationError as exc:
+        await _record_audit_event(
+            "auth.register.denied", "user", result="denied",
+            denial_reason="invalid_public_account_type",
+            metadata={"requested_type": str(payload.profile_type)[:40]},
+            request=request, risk_level="high",
+        )
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     password = payload.password
     name = payload.name.strip()
-    if not email or "@" not in email:
-        raise HTTPException(status_code=400, detail="Valid email is required")
     if len(password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
-    existing = await db.users.find_one({"email": email}, {"_id": 0})
-    if existing:
-        raise HTTPException(status_code=409, detail="Email already exists")
     now = _now_iso()
-    user_id = f"local-{uuid.uuid4()}"
-    profile_type = _safe_profile_type(payload.profile_type)
-    doc = {
-        "user_id": user_id,
-        "email": email,
-        "name": name,
-        "picture": "",
-        "role": "alumno",
-        "google_id": None,
-        "password_hash": _hash_password(password),
-        "auth_provider": "local",
-        "profile_type": profile_type,
-        "active": True,
-        "created_at": now,
-        "updated_at": now,
-        "last_login_at": now,
-    }
-    await db.users.insert_one(doc)
-    await _sync_user_role(user_id, "alumno")
-    if profile_type in {"client", "student", "parent", "tutor"}:
-        await db.student_profiles.insert_one({
-            "id": f"sp_{user_id}",
-            "user_id": user_id,
-            "phone": "",
-            "enrolled_products": [],
-            "notes": f"Self-registered profile type: {profile_type}",
-            "status": "activo",
-            "created_at": now,
-            "updated_at": now,
-        })
+    try:
+        doc = await provision_local_identity(
+            db._pool, email=email, name=name, password_hash=_hash_password(password),
+            role=role, now=now,
+        )
+    except IdentityConflictError as exc:
+        raise HTTPException(status_code=409, detail="Email already exists") from exc
+    user_id = doc["user_id"]
     user = User(**doc)
     session = await _create_local_session(user, request)
     await _record_login(user_id, email, "local_password_register", request)
@@ -1954,7 +2064,7 @@ async def auth_register(payload: RegisterPayload, request: Request):
         entity_id=user_id,
         actor_user_id=user_id,
         target_user_id=user_id,
-        metadata={"provider": "local", "profile_type": profile_type, "default_role": "alumno"},
+        metadata={"provider": "local", "profile_type": doc["profile_type"], "default_role": role},
         request=request,
     )
     user_doc = _public_user(user)
@@ -1974,7 +2084,7 @@ async def auth_login(payload: LocalAuthPayload, request: Request):
             risk_level="high",
         )
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    if user_doc.get("active") is False or user_doc.get("status", "active") != "active":
+    if not _account_can_authenticate(user_doc):
         await _record_audit_event(
             "auth.login.failed", "session", actor_user_id=user_doc["user_id"],
             target_user_id=user_doc["user_id"], result="denied", denial_reason="inactive_user",
@@ -2017,6 +2127,17 @@ async def auth_me(user: User = Depends(get_current_user)):
     doc["permissions"] = await _effective_permission_levels(user)
     profile = await db.user_profiles.find_one({"user_id": user.user_id}, {"_id": 0})
     doc["profile_preferences"] = (profile or {}).get("preferences") or {}
+    role_names = doc["roles"]
+    onboarding_role = "profesor" if "profesor" in role_names else "alumno" if "alumno" in role_names else None
+    if onboarding_role:
+        state = await _onboarding_payload(user, onboarding_role)
+        doc["accountStatus"] = user.status
+        doc["profileStatus"] = "complete" if state["profileCompletion"]["complete"] else "incomplete"
+        doc["profileCompletionPercentage"] = state["profileCompletion"]["percentage"]
+        doc["onboarding"] = state["onboarding"]
+        doc["nextRequiredAction"] = state["onboarding"]["nextStep"]
+        if onboarding_role == "profesor":
+            doc["teacherApprovalStatus"] = await _teacher_profile_approval_status(user.user_id)
     return doc
 
 
@@ -2044,6 +2165,175 @@ async def auth_me_permissions(user: User = Depends(get_current_user)):
             for item in role_assignments
         ],
     }
+
+
+async def _onboarding_payload(user: User, role: Optional[str] = None) -> dict:
+    effective_roles = await _effective_role_names(user)
+    selected_role = role or ("profesor" if "profesor" in effective_roles else "alumno")
+    if selected_role not in {"alumno", "profesor"} or selected_role not in effective_roles:
+        raise HTTPException(403, "The requested onboarding is not assigned to this account")
+    onboarding_type = onboarding_type_for_role(selected_role)
+    common_doc = await db.user_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+    common = {
+        **common_doc,
+        "country_code": common_doc.get("country_code") or common_doc.get("country") or "",
+        "preferred_language": common_doc.get("preferred_language")
+        or (common_doc.get("preferences") or {}).get("interface_language")
+        or "",
+    }
+    if selected_role == "alumno":
+        specialized = await db.student_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+        role_doc = await db.user_role_profiles.find_one(
+            {"user_id": user.user_id, "role_code": "alumno"}, {"_id": 0}
+        ) or {}
+        specialized = {**(role_doc.get("profile_data") or {}), **specialized}
+    else:
+        specialized = await db.teacher_profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+        role_doc = await db.user_role_profiles.find_one(
+            {"user_id": user.user_id, "role_code": "profesor"}, {"_id": 0}
+        ) or {}
+        legacy = role_doc.get("profile_data") or {}
+        specialized = {
+            **legacy,
+            **specialized,
+            "professional_bio": specialized.get("professional_bio") or legacy.get("biography") or "",
+            "languages_taught": specialized.get("languages_taught") or legacy.get("teaching_languages") or [],
+            "teaching_modalities": specialized.get("teaching_modalities") or legacy.get("modalities") or [],
+        }
+    completion = completion_for(common, specialized, selected_role)
+    record = await db.onboarding_states.find_one({
+        "user_id": user.user_id,
+        "onboarding_type": onboarding_type,
+        "version": ONBOARDING_VERSION,
+    }, {"_id": 0})
+    if not record:
+        now = _now_iso()
+        record = {
+            "id": f"ob_{uuid.uuid4().hex}", "user_id": user.user_id,
+            "onboarding_type": onboarding_type, "version": ONBOARDING_VERSION,
+            "status": "not_started", "current_step": "profile",
+            "completed_steps": [], "blocked_reason": None, "started_at": None,
+            "last_saved_at": None, "completed_at": None,
+            "created_at": now, "updated_at": now,
+        }
+        await db.onboarding_states.insert_one(record)
+    return {
+        "userId": user.user_id,
+        "role": selected_role,
+        "accountStatus": user.status,
+        "profileCompletion": completion,
+        "onboarding": onboarding_snapshot(record, completion["missingFields"]),
+        "teacherApprovalStatus": (
+            await _teacher_profile_approval_status(user.user_id)
+            if selected_role == "profesor" else None
+        ),
+    }
+
+
+@api.get("/auth/me/onboarding")
+async def get_my_onboarding(
+    role: Optional[str] = None,
+    user: User = Depends(get_current_user),
+):
+    return await _onboarding_payload(user, canonical_profile_role(role) if role else None)
+
+
+@api.patch("/auth/me/onboarding")
+async def save_my_onboarding(
+    payload: dict,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    current = await _onboarding_payload(user)
+    try:
+        updates = validate_onboarding_progress(payload, current["onboarding"]["type"])
+    except IdentityValidationError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    now = _now_iso()
+    updates.update({
+        "started_at": current["onboarding"]["startedAt"] or now,
+        "last_saved_at": now,
+        "updated_at": now,
+    })
+    await db.onboarding_states.update_one({
+        "user_id": user.user_id,
+        "onboarding_type": current["onboarding"]["type"],
+        "version": current["onboarding"]["version"],
+    }, {"$set": updates})
+    await _record_audit_event(
+        "onboarding.progress.saved", "onboarding", entity_id=user.user_id,
+        actor_user_id=user.user_id, target_user_id=user.user_id,
+        metadata={"changed_fields": sorted(updates.keys() & {"status", "current_step", "completed_steps"})},
+        request=request,
+    )
+    return await _onboarding_payload(user, current["role"])
+
+
+@api.post("/auth/me/onboarding/complete")
+async def complete_my_onboarding(
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    current = await _onboarding_payload(user)
+    if not current["profileCompletion"]["complete"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "profile_incomplete",
+                "message": "Required profile fields are missing",
+                "details": {"missingFields": current["profileCompletion"]["missingFields"]},
+            },
+        )
+    now = _now_iso()
+    await db.onboarding_states.update_one({
+        "user_id": user.user_id,
+        "onboarding_type": current["onboarding"]["type"],
+        "version": current["onboarding"]["version"],
+    }, {"$set": {
+        "status": "completed", "current_step": "completed",
+        "completed_at": now, "last_saved_at": now, "updated_at": now,
+    }})
+    account_status = "pending_approval" if current["role"] == "profesor" else "active"
+    await db.users.update_one(
+        {"user_id": user.user_id}, {"$set": {"status": account_status, "updated_at": now}}
+    )
+    await db.user_profiles.update_one(
+        {"user_id": user.user_id},
+        {"$set": {"profile_completion_percentage": 100, "profile_completed_at": now, "updated_at": now}},
+    )
+    if current["role"] == "profesor":
+        await db.teacher_profiles.update_one(
+            {"user_id": user.user_id},
+            {"$set": {"approval_status": "pending", "approval_submitted_at": now, "updated_at": now}},
+        )
+        await db.user_role_profiles.update_one(
+            {"user_id": user.user_id, "role_code": "profesor"},
+            {"$set": {"approval_status": "pending", "updated_at": now}},
+        )
+    await _record_audit_event(
+        "onboarding.completed", "onboarding", entity_id=user.user_id,
+        actor_user_id=user.user_id, target_user_id=user.user_id,
+        metadata={"onboarding_type": current["onboarding"]["type"]}, request=request,
+    )
+    refreshed = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
+    return await _onboarding_payload(User(**refreshed), current["role"])
+
+
+@api.get("/admin/users/{user_id}/onboarding")
+async def get_user_onboarding_admin(
+    user_id: str,
+    request: Request,
+    current: User = Depends(get_current_user),
+):
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, "User not found")
+    await authorize(
+        current, "users.profile.view", request=request, resource_type="profile",
+        resource_id=user_id, resource_owner_id=user_id,
+        school_id=target.get("active_school_id"),
+    )
+    return await _onboarding_payload(User(**target))
 
 
 _SUPPORTED_PROFILE_ROLES = set(PROFILE_ROLE_LABELS)
@@ -2255,6 +2545,38 @@ async def update_my_profile(
     else:
         await db.user_role_profiles.insert_one(role_after)
 
+    if role == "alumno":
+        student_fields = {
+            key: value for key, value in detail_updates.items()
+            if key in {
+                "native_language", "learning_language", "self_reported_level",
+                "current_level", "learning_goal", "preferred_class_format",
+                "general_availability",
+            } and key != "current_level"
+        }
+        if student_fields:
+            await db.student_profiles.update_one(
+                {"user_id": user.user_id}, {"$set": {**student_fields, "updated_at": now}}
+            )
+    elif role == "profesor":
+        aliases = {
+            "biography": "professional_bio",
+            "teaching_languages": "languages_taught",
+            "modalities": "teaching_modalities",
+        }
+        teacher_fields = {}
+        for key, value in detail_updates.items():
+            target_key = aliases.get(key, key)
+            if target_key in {
+                "professional_bio", "languages_taught", "authorized_levels",
+                "teaching_modalities", "experience_summary",
+            }:
+                teacher_fields[target_key] = value
+        if teacher_fields:
+            await db.teacher_profiles.update_one(
+                {"user_id": user.user_id}, {"$set": {**teacher_fields, "updated_at": now}}
+            )
+
     identity_updates = {"updated_at": now}
     if any(field in common_updates for field in ("first_name", "last_name", "public_name")):
         identity_updates["name"] = (
@@ -2314,6 +2636,17 @@ async def update_my_profile(
         metadata={"role": role, "changed_fields": safe_audit_fields(changed_fields)},
         visibility="self",
     )
+    onboarding = await _onboarding_payload(user, role) if role in {"alumno", "profesor"} else None
+    if onboarding:
+        completion = onboarding["profileCompletion"]
+        await db.user_profiles.update_one(
+            {"user_id": user.user_id},
+            {"$set": {
+                "profile_completion_percentage": completion["percentage"],
+                "profile_completed_at": now if completion["complete"] else None,
+                "updated_at": now,
+            }},
+        )
     refreshed = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
     return await _profile_payload(User(**refreshed), role)
 
@@ -2396,8 +2729,11 @@ async def update_teacher_profile_approval(
     if user_id == current.user_id:
         raise HTTPException(403, "Teachers cannot approve or suspend their own profile")
     status = str(payload.get("status") or "").strip().lower()
-    if status not in {"pending", "approved", "suspended"}:
-        raise HTTPException(422, "status must be pending, approved, or suspended")
+    if status not in {"pending", "approved", "rejected", "suspended"}:
+        raise HTTPException(422, "status must be pending, approved, rejected, or suspended")
+    rejection_reason = str(payload.get("reason") or "").strip()
+    if status == "rejected" and not rejection_reason:
+        raise HTTPException(422, "A rejection reason is required")
     target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     if not target:
         raise HTTPException(404, "User not found")
@@ -2432,6 +2768,23 @@ async def update_teacher_profile_approval(
             "created_at": now,
             "updated_at": now,
         })
+    teacher_updates = {"approval_status": status, "updated_at": now}
+    if status == "approved":
+        teacher_updates.update({"approved_at": now, "approved_by": current.user_id, "rejection_reason": ""})
+    elif status == "rejected":
+        teacher_updates.update({"rejection_reason": rejection_reason, "approved_at": None, "approved_by": None})
+    elif status == "suspended":
+        teacher_updates["suspended_at"] = now
+    teacher_profile = await db.teacher_profiles.find_one({"user_id": user_id}, {"_id": 0})
+    if teacher_profile:
+        await db.teacher_profiles.update_one({"user_id": user_id}, {"$set": teacher_updates})
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "status": "active" if status == "approved" else "pending_approval",
+            "updated_at": now,
+        }},
+    )
     await _record_audit_event(
         "profile.teacher.approval_changed", "profile", entity_id=user_id,
         actor_user_id=current.user_id, target_user_id=user_id,

@@ -6,7 +6,7 @@ The schema is defined in `backend/schema.sql` and applied on backend startup. It
 
 Current production platform tables include:
 
-- Identity and access: `users`, `roles`, `permissions`, `role_permissions`, `user_roles`, `local_auth_sessions`, `login_history`.
+- Identity and access: `auth_identities`, `users`, `roles`, `permissions`, `role_permissions`, `user_roles`, `local_auth_sessions`, `login_history`.
 - Education commerce: `products`, `payment_transactions`, `bookings`, `availability`, `teachers`, `teacher_profiles`, `student_profiles`.
 - Teacher calendar integration: `external_calendar_connections`, `external_calendar_selections`, `external_busy_blocks`, `calendar_event_links`, `google_calendar_oauth_states`.
 - Content: `pages`, `blog_posts`, `media_assets`, `files`, `site_settings`.
@@ -43,6 +43,14 @@ Important fields:
 - `created_at`
 - `updated_at`
 - `last_login_at`
+- `email_normalized`
+- `auth_provider_user_id`
+- account and suspension state fields
+
+### `auth_identities`
+
+Verified provider-to-user mappings. `(provider, provider_user_id)` is unique.
+Provider tokens and secrets are never stored here.
 
 ### `local_auth_sessions`
 
@@ -129,6 +137,8 @@ Teacher records used by public teacher lists, products, availability, and bookin
 ### `teacher_profiles`
 
 Optional profile relationship between an authenticated user and a teacher identity.
+It also stores professional biography, taught languages, authorized levels,
+modalities, experience, and the bounded teacher approval state.
 
 ### `student_profiles`
 
@@ -138,6 +148,9 @@ Student profile data:
 - enrolled products
 - notes
 - status
+- native and learning languages
+- self-reported and operational levels
+- learning goal, class format, and general availability
 
 ### `user_profiles`
 
@@ -158,6 +171,21 @@ profile endpoint.
 
 The additive production migration is
 `backend/migrations/003_user_profiles.sql`.
+
+### `tutor_profiles`
+
+Minimal tutor context, unique per user. Student relationships remain exclusively
+in `tutor_student_links` and are never created automatically.
+
+### `onboarding_states`
+
+Versioned resumable onboarding state, unique by user/type/version. It stores
+step identifiers and completion state, not duplicated personal profile data.
+
+Migration `backend/migrations/005_identity_profile_onboarding.sql` adds the
+definitive identity/profile/onboarding foundation. Run
+`backend/audit_identity_profile_onboarding.py` before applying it to an
+existing database; the script emits aggregate counts only.
 
 ### `products`
 
