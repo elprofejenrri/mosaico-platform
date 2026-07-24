@@ -39,10 +39,16 @@ Stripe
 
 Backend
   |
-  | Optional calendar API
+  | Per-teacher OAuth, free/busy and MOSAICO-owned event sync
   v
 Google Calendar / Meet
 ```
+
+Teacher Calendar authorization is independent from Supabase login. Credentials
+are encrypted in PostgreSQL and used only by backend services. Free/busy data
+contains no personal event details. The legacy administrator-configured shared
+calendar is retained only as a compatibility path and is never reused as
+teacher consent.
 
 ## Frontend
 
@@ -131,6 +137,11 @@ Core tables:
 - `products`
 - `availability`
 - `bookings`
+- `external_calendar_connections`
+- `external_calendar_selections`
+- `external_busy_blocks`
+- `calendar_event_links`
+- `google_calendar_oauth_states`
 - `blog_posts`
 - `pages`
 - `media_assets`
@@ -206,6 +217,11 @@ The backend creates the bucket on startup if needed. If the bucket already exist
 
 ## Deployment Architecture
 
+Teacher free/busy can be refreshed by an optional Render Cron Job running
+`python backend/sync_google_calendars.py`. Google push-notification webhooks are
+deferred until channel validation, renewal, expiry and recovery can be delivered
+together.
+
 Deployment target:
 
 ```text
@@ -222,4 +238,3 @@ Blueprint:
 ```text
 render.yaml
 ```
-

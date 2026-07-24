@@ -28,6 +28,8 @@
 - `learning.roadmaps.publish`
 - `users.profile.view`
 - `users.profile.edit`
+- `profiles.view`
+- `profiles.update`
 - `users.roles.assign`
 - `roles.management.view`
 - `roles.management.create`
@@ -67,3 +69,13 @@ backend applies the same rule to the allowlisted document responses. The protect
 permission.
 
 The portal selector shows one active profile at a time through a dropdown. Users with multiple roles can switch between Client, Tutor, Teacher, School Administrative, and Technical Admin when their effective permissions allow those portals.
+
+## Teacher Google Calendar
+
+`calendar.teacher.sync_google` is a self-scoped teacher permission for connecting,
+selecting calendars, synchronizing, disconnecting and retrying the current
+teacher's assigned class events. Backend ownership is always derived from the
+authenticated user and teacher/class records; client-supplied user, teacher,
+calendar or school identity is never authoritative. Pending teachers may
+connect after completing their profile, but class-event creation requires an
+approved teacher profile.

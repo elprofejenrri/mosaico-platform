@@ -28,8 +28,12 @@ import { useApp } from "../../context/AppContext";
 import {
   blockTeacherTime,
   calendarStatuses,
+  connectGoogleCalendar,
+  disconnectGoogleCalendar,
   getTeacherCalendarWorkspace,
+  listGoogleCalendars,
   saveTeacherAvailability,
+  saveGoogleCalendarSettings,
   sendStudentInvitations,
   syncGoogleCalendar,
   updateClassSession,
@@ -81,6 +85,15 @@ const calendarCopy = {
     syncNow: "Sync now",
     conflictReview: "Google Calendar conflict needs review.",
     emptySlotsTitle: "Empty slots and fill rate",
+    unavailable: "This integration is not enabled for your account yet.",
+    privacy: "MOSAICO reads occupied times only. Personal event titles, descriptions, guests, and locations are not imported.",
+    account: "Connected account",
+    busyCalendars: "Calendars used to block availability",
+    destinationCalendar: "Calendar for MOSAICO classes",
+    saveCalendars: "Save calendar selection",
+    reconnectRequired: "Reconnect Google Calendar to continue syncing.",
+    disconnectWarning: "Future MOSAICO classes will remain booked. Existing Google events will stay in Google Calendar and will no longer be updated.",
+    never: "Never",
   },
   es: {
     statuses: { booked: "Reservado", available: "Disponible", blocked: "Bloqueado", cancelled: "Cancelado", completed: "Completado", conflict: "Conflicto", empty: "Espacio vacío" },
@@ -120,6 +133,15 @@ const calendarCopy = {
     syncNow: "Sincronizar",
     conflictReview: "conflicto de Google Calendar requiere revisión.",
     emptySlotsTitle: "Espacios vacíos y tasa de ocupación",
+    unavailable: "Esta integración todavía no está habilitada para tu cuenta.",
+    privacy: "MOSAICO sólo consulta periodos ocupados. No importa títulos, descripciones, invitados ni ubicaciones de eventos personales.",
+    account: "Cuenta conectada",
+    busyCalendars: "Calendarios que bloquean disponibilidad",
+    destinationCalendar: "Calendario para clases de MOSAICO",
+    saveCalendars: "Guardar selección de calendarios",
+    reconnectRequired: "Vuelve a conectar Google Calendar para continuar sincronizando.",
+    disconnectWarning: "Las clases futuras seguirán reservadas. Los eventos existentes permanecerán en Google Calendar y ya no se actualizarán.",
+    never: "Nunca",
   },
 };
 
@@ -462,39 +484,156 @@ function MonthView({ sessions, emptySlots, onOpen, onInvite, highlightedSessionI
 function GoogleCalendarCard({ integration, setIntegration }) {
   const copy = useCalendarCopy();
   const [loading, setLoading] = useState(false);
-  const sync = async (nextState = {}) => {
+  const [calendars, setCalendars] = useState([]);
+  const [busyCalendarIds, setBusyCalendarIds] = useState([]);
+  const [destinationCalendarId, setDestinationCalendarId] = useState("");
+  const [error, setError] = useState("");
+  const selectedBusyCalendars = useMemo(
+    () => integration.selectedBusyCalendars || [],
+    [integration.selectedBusyCalendars],
+  );
+
+  useEffect(() => {
+    setBusyCalendarIds(selectedBusyCalendars.map((item) => item.id));
+    setDestinationCalendarId(integration.destinationCalendar?.id || "");
+    if (!integration.connected) {
+      setCalendars([]);
+      return;
+    }
+    let active = true;
+    listGoogleCalendars()
+      .then((items) => {
+        if (active) setCalendars(items);
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError.appError?.message || "Could not load calendars.");
+      });
+    return () => { active = false; };
+  }, [integration.connected, integration.destinationCalendar?.id, selectedBusyCalendars]);
+
+  const run = async (action, successMessage) => {
     setLoading(true);
+    setError("");
     try {
-      const next = await syncGoogleCalendar(nextState);
-      setIntegration(next);
-      toast.success("Google Calendar sync updated.");
-    } catch {
-      toast.error("Calendar sync failed.");
+      const next = await action();
+      if (next) setIntegration(next);
+      toast.success(successMessage);
+    } catch (requestError) {
+      const message = requestError.appError?.message || "Calendar request failed.";
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
+
+  const toggleBusyCalendar = (calendarId) => {
+    setBusyCalendarIds((current) => (
+      current.includes(calendarId)
+        ? current.filter((item) => item !== calendarId)
+        : [...current, calendarId]
+    ));
+  };
+
+  const saveSelection = () => run(
+    () => saveGoogleCalendarSettings(busyCalendarIds, destinationCalendarId),
+    "Calendar selection saved.",
+  );
+
+  const disconnect = () => {
+    const futureCount = integration.futureSyncedClassCount || 0;
+    const classNotice = futureCount
+      ? `\n\n${futureCount} future synchronized class${futureCount === 1 ? "" : "es"}.`
+      : "";
+    if (!window.confirm(`${copy.disconnectWarning}${classNotice}\n\n${copy.disconnect}?`)) return;
+    run(disconnectGoogleCalendar, "Google Calendar disconnected.");
+  };
+
+  if (!integration.featureEnabled && !integration.connected) {
+    return (
+      <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#5C6680]">{copy.googleCalendar}</p>
+        <h2 className="mt-1 font-display text-xl text-[#1F3B6E]">{copy.calendarConnection}</h2>
+        <p className="mt-3 rounded-md bg-[#FBF7EE] p-3 text-sm text-[#5C6680]">{copy.unavailable}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#5C6680]">{copy.googleCalendar}</p>
-          <h2 className="mt-1 font-display text-xl text-[#1F3B6E]">{integration.status === "connected" ? copy.calendarConnected : copy.connectCalendar}</h2>
-          <p className="mt-1 text-sm text-[#5C6680]">{integration.lastSyncedAt || "Never"}</p>
+          <h2 className="mt-1 font-display text-xl text-[#1F3B6E]">{integration.connected ? copy.calendarConnected : copy.connectCalendar}</h2>
+          <p className="mt-1 text-sm text-[#5C6680]">
+            {integration.connected
+              ? `${copy.account}: ${integration.account}`
+              : copy.privacy}
+          </p>
         </div>
-        <StatusBadge status={integration.status === "connected" ? "completed" : "conflict"} />
+        <StatusBadge status={integration.connected ? "completed" : "blocked"} />
       </div>
-      <div className="mt-4 grid gap-2">
-        <Select value={integration.syncDirection || "busy-only"} onChange={(event) => sync({ syncDirection: event.target.value })}>
-          <option value="busy-only">Import busy events only</option>
-          <option value="export">Export Mosaico classes</option>
-          <option value="two-way">Two-way sync</option>
-        </Select>
-        <Button disabled={loading} onClick={() => sync()} className="bg-[#1F3B6E] text-white hover:bg-[#162B52]"><RefreshCw size={16} className="mr-2" />{loading ? "..." : copy.syncNow}</Button>
-        <Button onClick={() => sync({ status: integration.status === "connected" ? "not-connected" : "connected" })} variant="outline" className="border-[#EFE4D0]">
-          <LinkIcon size={16} className="mr-2" />{integration.status === "connected" ? copy.disconnect : copy.connectGoogle}
-        </Button>
-        {integration.conflicts > 0 && <p className="rounded-md bg-[#FFF9E8] p-3 text-sm text-[#9A6A00]">{integration.conflicts} {copy.conflictReview}</p>}
+      <p className="mt-4 rounded-md bg-[#EAF4FF] p-3 text-sm text-[#1F5F9D]">{copy.privacy}</p>
+      {integration.status === "reconnect_required" && (
+        <p className="mt-3 rounded-md bg-[#FFF9E8] p-3 text-sm text-[#9A6A00]" role="alert">{copy.reconnectRequired}</p>
+      )}
+      {error && <p className="mt-3 rounded-md bg-[#FFE7E2] p-3 text-sm text-[#B42318]" role="alert">{error}</p>}
+      <div className="mt-4 grid gap-3">
+        {!integration.connected ? (
+          <Button
+            disabled={loading || !integration.configured}
+            onClick={() => run(connectGoogleCalendar, "Opening Google consent...")}
+            className="bg-[#1F3B6E] text-white hover:bg-[#162B52]"
+          >
+            <LinkIcon size={16} className="mr-2" />{copy.connectGoogle}
+          </Button>
+        ) : (
+          <>
+            <fieldset className="rounded-md border border-[#EFE4D0] p-3">
+              <legend className="px-1 text-sm font-semibold text-[#1F3B6E]">{copy.busyCalendars}</legend>
+              <div className="mt-2 grid gap-2">
+                {calendars.map((calendar) => (
+                  <label key={calendar.id} className="flex items-start gap-3 rounded-md p-2 hover:bg-[#FBF7EE]">
+                    <input
+                      type="checkbox"
+                      checked={busyCalendarIds.includes(calendar.id)}
+                      onChange={() => toggleBusyCalendar(calendar.id)}
+                      className="mt-1 h-4 w-4 accent-[#E8704C]"
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold">{calendar.name}</span>
+                      <span className="block text-xs text-[#5C6680]">{calendar.primary ? "Primary · " : ""}{calendar.accessRole}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <Field label={copy.destinationCalendar}>
+              <Select value={destinationCalendarId} onChange={(event) => setDestinationCalendarId(event.target.value)}>
+                <option value="">Select a calendar</option>
+                {calendars.filter((calendar) => calendar.canUseForEvents).map((calendar) => (
+                  <option key={calendar.id} value={calendar.id}>{calendar.name}{calendar.primary ? " (Primary)" : ""}</option>
+                ))}
+              </Select>
+            </Field>
+            <Button
+              disabled={loading || !busyCalendarIds.length || !destinationCalendarId}
+              onClick={saveSelection}
+              className="bg-[#E8704C] text-white hover:bg-[#C95630]"
+            >
+              <Check size={16} className="mr-2" />{copy.saveCalendars}
+            </Button>
+            <Button disabled={loading || !destinationCalendarId} onClick={() => run(syncGoogleCalendar, "Google Calendar synchronized.")} className="bg-[#1F3B6E] text-white hover:bg-[#162B52]">
+              <RefreshCw size={16} className="mr-2" />{loading ? "..." : copy.syncNow}
+            </Button>
+            <p className="text-xs text-[#5C6680]">
+              {copy.syncNow}: {integration.lastSuccessfulSyncAt ? new Date(integration.lastSuccessfulSyncAt).toLocaleString() : copy.never}
+            </p>
+            <Button disabled={loading} onClick={disconnect} variant="outline" className="border-[#EFE4D0]">
+              <LinkIcon size={16} className="mr-2" />{copy.disconnect}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -541,7 +680,7 @@ function CalendarActionCenter({ integration, sessions, onOpenCalendar, onHighlig
           <p className="mt-1 text-sm text-[#5C6680]">{copy.centerHelp}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onOpenCalendar} variant="outline" className="border-[#EFE4D0]"><LinkIcon size={16} className="mr-2" />{integration.status === "connected" ? copy.calendarConnected : copy.connectCalendar}</Button>
+          {(integration.featureEnabled || integration.connected) && <Button onClick={onOpenCalendar} variant="outline" className="border-[#EFE4D0]"><LinkIcon size={16} className="mr-2" />{integration.connected ? copy.calendarConnected : copy.connectCalendar}</Button>}
           <Button disabled={!booked.length} onClick={onHighlightNext} className="bg-[#1F3B6E] text-white hover:bg-[#162B52]"><Video size={16} className="mr-2" />{copy.nextClass}</Button>
           <Button disabled={!today.length} onClick={onHighlightToday} variant="outline" className="border-[#EFE4D0]"><CalendarDays size={16} className="mr-2" />{copy.todayFocus}</Button>
           <Button onClick={onOpenInsights} variant="outline" className="border-[#EFE4D0]"><Sparkles size={16} className="mr-2" />{copy.insights}</Button>
@@ -787,6 +926,21 @@ export default function TeacherCalendarWorkspace() {
   const [selectedSession, setSelectedSession] = useState(null);
   const [highlightedSessionId, setHighlightedSessionId] = useState("");
   const [sidePanel, setSidePanel] = useState("");
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const calendarResult = url.searchParams.get("calendar");
+    if (!calendarResult) return;
+    if (calendarResult === "connected") {
+      toast.success("Google Calendar connected. Select calendars to finish setup.");
+      setSidePanel("calendar");
+    } else {
+      toast.error("Google Calendar could not be connected. Please try again.");
+    }
+    url.searchParams.delete("calendar");
+    url.searchParams.delete("code");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   useEffect(() => {
     getTeacherCalendarWorkspace()

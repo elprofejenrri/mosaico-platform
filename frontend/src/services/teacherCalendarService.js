@@ -1,4 +1,7 @@
-// TODO: Replace this isolated preview service with the production teacher schedule API.
+import { api } from "../lib/api";
+
+// TODO: Replace the remaining isolated schedule preview methods with production
+// APIs. Google Calendar connection/sync below is backend-backed.
 // Expected backend endpoints are documented in docs/production-execution-plan.md under P4.
 const delay = (ms = 350) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -208,20 +211,36 @@ const emptySlots = [
   { id: "empty-3", date: "2026-07-11", start: "10:00", end: "12:00", demand: "High", suggestion: "Saturday has high demand" },
 ];
 
-let integration = {
-  status: "connected",
-  lastSyncedAt: "Today 08:42",
-  syncDirection: "two-way",
-  conflicts: 1,
+const unavailableIntegration = {
+  connected: false,
+  status: "not_connected",
+  featureEnabled: false,
+  configured: false,
+  account: "",
+  selectedBusyCalendars: [],
+  destinationCalendar: null,
 };
+
+export async function getGoogleCalendarStatus() {
+  try {
+    const response = await api.get("/integrations/google-calendar/status");
+    return response.data;
+  } catch (error) {
+    return {
+      ...unavailableIntegration,
+      errorCode: error.appError?.code || "calendar_unavailable",
+    };
+  }
+}
 
 export async function getTeacherCalendarWorkspace() {
   await delay(250);
+  const integration = await getGoogleCalendarStatus();
   return {
     sessions: [...sessions],
     students,
     emptySlots,
-    integration: { ...integration },
+    integration,
     insights: {
       weekHours: 18,
       monthHours: 64,
@@ -307,12 +326,34 @@ export async function sendStudentInvitations(slot, selectedStudentIds, message) 
 }
 
 export async function syncGoogleCalendar(nextState = {}) {
-  await delay(500);
-  integration = {
-    ...integration,
-    ...nextState,
-    status: nextState.status || "connected",
-    lastSyncedAt: "Just now",
-  };
-  return { ...integration };
+  if (Object.keys(nextState).length) {
+    throw new Error("Calendar state is managed by the backend.");
+  }
+  await api.post("/integrations/google-calendar/sync");
+  return getGoogleCalendarStatus();
+}
+
+export async function connectGoogleCalendar() {
+  const response = await api.post("/integrations/google-calendar/connect");
+  window.location.assign(response.data.authorizationUrl);
+}
+
+export async function listGoogleCalendars() {
+  const response = await api.get("/integrations/google-calendar/calendars");
+  return response.data.calendars || [];
+}
+
+export async function saveGoogleCalendarSettings(busyCalendarIds, destinationCalendarId) {
+  const response = await api.put("/integrations/google-calendar/settings", {
+    busyCalendarIds,
+    destinationCalendarId,
+  });
+  return response.data;
+}
+
+export async function disconnectGoogleCalendar() {
+  const response = await api.delete("/integrations/google-calendar/disconnect", {
+    params: { confirm: true },
+  });
+  return response.data;
 }

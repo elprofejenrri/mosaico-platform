@@ -41,7 +41,14 @@ The wiki gives technical operators a navigable, in-product view of the platform 
 - database standardization plan
 - backfill audit script
 - API reference
+- unified profile model
 - environment configuration
+
+## Unified profile architecture
+
+The production profile contract is documented in `docs/PROFILE_MODEL.md`.
+It covers shared identity data, role extensions, completion, teacher approval,
+RBAC-derived relationship data, media uploads, and value-free audit events.
 
 ## Documentation Rule
 
@@ -85,11 +92,36 @@ implementation and security detail.
 The detailed outcome list is authoritative. The summary must accurately
 condense those outcomes and must not introduce a conflicting claim.
 
+## Teacher Google Calendar integration
+
+The local implementation provides separate per-teacher OAuth, encrypted token
+storage, verified calendar selection, privacy-preserving free/busy cache,
+fail-closed booking validation, and idempotent MOSAICO event synchronization.
+It is controlled by both `GOOGLE_CALENDAR_INTEGRATION_ENABLED` and
+`teacher_google_calendar`, which default to disabled.
+
+See `docs/GOOGLE_CALENDAR_INTEGRATION.md` for scopes, privacy, Google Cloud
+setup, migration, cron, recovery, rollback, and manual validation. The
+integration ships disabled and requires the governed external configuration
+and pilot workflow before teachers can connect it.
+
 ## Production release history
 
 Releases are listed in descending order. No reliable tag or formal release
 record existed when this history was introduced, so the first entry records
 only the initial documented baseline delivered by this feature.
+
+<!-- RELEASE: 2026.07.24.1 -->
+### 2026.07.24.1 — Unified profiles and teacher calendar readiness
+
+Summary: MOSAICO now provides clearer profile management and the protected foundation for optional teacher calendar synchronization.
+
+- Users can review and maintain shared profile information from a dedicated profile workspace.
+- Role-specific profile details and teacher approval status are presented consistently across workspaces.
+- The active profile selector remains available as a responsive dropdown.
+- Teachers have a privacy-focused calendar connection experience that remains unavailable until the governed integration is enabled.
+- Booking safeguards can account for connected teacher availability without exposing personal calendar details.
+<!-- /RELEASE -->
 
 <!-- RELEASE: 2026.07.23.3 -->
 ### 2026.07.23.3 — Technical release access restored

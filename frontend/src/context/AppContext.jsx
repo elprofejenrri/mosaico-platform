@@ -136,6 +136,17 @@ export const AppProvider = ({ children }) => {
     document.documentElement.lang = lang;
   }, [lang]);
 
+  useEffect(() => {
+    const theme = user?.profile_preferences?.theme || "system";
+    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      document.documentElement.classList.toggle("dark", theme === "dark" || (theme === "system" && media?.matches));
+    };
+    applyTheme();
+    media?.addEventListener?.("change", applyTheme);
+    return () => media?.removeEventListener?.("change", applyTheme);
+  }, [user?.profile_preferences?.theme]);
+
   const setLanguage = (nextLang) => setLang(nextLang === "es" ? "es" : "en");
   const toggleLang = () => setLang((l) => (l === "en" ? "es" : "en"));
 

@@ -193,11 +193,31 @@ If missing, checkout endpoints return a configuration error.
 
 ## Google Calendar
 
-Calendar integration is managed in Admin Settings and requires:
+The legacy shared calendar is managed in Admin Settings. It is not consent for
+the per-teacher integration and must not be used as a teacher refresh token.
 
-- Client ID
-- Client Secret
-- Refresh token
-- Calendar ID
+The per-teacher integration is documented in
+`docs/GOOGLE_CALENDAR_INTEGRATION.md`. Safe rollout order:
 
-Use the admin test invite action after configuring.
+1. Configure Google Cloud consent, scopes and exact backend redirect.
+2. Add backend/cron environment variables without enabling the switch.
+3. Apply migration `004_google_calendar_teacher_integration.sql`.
+4. Deploy with `GOOGLE_CALENDAR_INTEGRATION_ENABLED=false` and
+   `teacher_google_calendar=false`.
+5. Enable the backend switch for an approved test account.
+6. Run unit/build checks and the manual privacy/conflict/idempotency matrix.
+7. Enable the governed platform flag for a teacher pilot.
+8. Configure Render Cron to run:
+
+```powershell
+python backend/sync_google_calendars.py
+```
+
+Operational signals are aggregate sync successes/failures, latency, rate limits,
+refresh/reconnect state, event operations, conflicts and exhausted retries.
+Never log tokens, full account email, calendar/event titles, descriptions or
+attendees.
+
+Functional rollback: set `teacher_google_calendar=false`, then disable
+`GOOGLE_CALENDAR_INTEGRATION_ENABLED`. Do not drop tables or delete Google events
+as part of rollback.

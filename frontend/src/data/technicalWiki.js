@@ -32,6 +32,7 @@ export const technicalWikiSections = [
       { id: "database-standardization-plan", title: "Database Standardization Plan", path: "docs/DATABASE_STANDARDIZATION_PLAN.md", status: "Active", owner: "Engineering" },
       { id: "phase-1-backfill-audit", title: "Phase 1 Backfill Audit", path: "backend/backfill_standardization_phase1.sql", status: "Operational", owner: "Engineering" },
       { id: "api-reference", title: "API Reference", path: "docs/API_REFERENCE.md", status: "Reference", owner: "Engineering" },
+      { id: "profile-model", title: "Profile Model", path: "docs/PROFILE_MODEL.md", status: "Active", owner: "Product + Engineering + Security" },
     ],
   },
   {

@@ -17,7 +17,12 @@ This applies to preview actions in:
 - Teacher follow-up, availability preview, materials, evaluations, and earnings preview surfaces.
 - Administrative approval, credits, lesson, family, school setup, and note surfaces that are not already backed by real APIs.
 
-The teacher calendar workspace keeps service-backed actions active, including availability, blocked time, invitations, class status updates, and Google Calendar mock-service sync. Auxiliary actions that only showed toast feedback are disabled until real models exist.
+The teacher calendar workspace keeps preview-service actions active for manual
+availability, blocked time, invitations and class status updates. Google
+Calendar connect, selection, free/busy sync and disconnect are backend-backed
+behind disabled-by-default feature controls; they no longer simulate a
+connection. Auxiliary actions that only showed toast feedback remain disabled
+until real models exist.
 
 High-risk local mutations are also blocked. Tutor credit purchase, tutor credit assignment, tutor class booking with credit deduction, and administrative credit grants no longer change local balances. They require a production credit ledger, payment checkout, booking lifecycle, and audit events before being enabled.
 

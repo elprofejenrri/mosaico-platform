@@ -90,3 +90,15 @@ def test_finance_cannot_edit_academic_progress():
     assert not permission_allows(
         ROLE_GRANTS["finanzas"], "classes.record_progress", context()
     )
+
+
+def test_each_productive_persona_can_manage_only_its_own_profile():
+    for role in (
+        "alumno", "tutor_padre", "profesor",
+        "administrador_escolar", "finanzas",
+    ):
+        own = context(resource_owner_id="actor")
+        other = context(resource_owner_id="other")
+        assert permission_allows(ROLE_GRANTS[role], "profiles.view", own)
+        assert permission_allows(ROLE_GRANTS[role], "profiles.update", own)
+        assert not permission_allows(ROLE_GRANTS[role], "profiles.update", other)

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Menu, X, Globe, BookOpen, ChevronDown } from "lucide-react";
+import { Menu, X, Globe, BookOpen, ChevronDown, UserCircle } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { Button } from "./ui/button";
 import { MosaicoLogo } from "./MosaicoLogo";
@@ -121,7 +121,7 @@ export const Navbar = () => {
   return (
     <header
       data-testid="navbar"
-      className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-[#FBF7EE]/80 border-b border-[#EFE4D0]/60"
+      className="fixed top-0 left-0 right-0 z-50 border-b border-[#EFE4D0]/60 bg-[#FBF7EE]/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/90"
     >
       <div className="max-w-7xl mx-auto px-6 lg:px-10 h-16 flex items-center justify-between">
         <MosaicoLogo size="text-2xl" />
@@ -137,6 +137,11 @@ export const Navbar = () => {
             <>
               <Link to="/dashboard" data-testid="nav-dashboard">
                 <Button variant="ghost" className="text-[#1F3B6E] hover:bg-[#FFF0E6]">{t.nav.dashboard}</Button>
+              </Link>
+              <Link to="/profile" data-testid="nav-profile">
+                <Button variant="ghost" className="text-[#1F3B6E] hover:bg-[#FFF0E6]">
+                  <UserCircle size={16} className="mr-2" />{labels.profile}
+                </Button>
               </Link>
               {["admin", "administrador_sitio", "administrador_profesor", "editor_cms"].includes(user.role) && (
                 <Link to="/admin" data-testid="nav-admin">
@@ -181,13 +186,14 @@ export const Navbar = () => {
       </div>
 
       {open && (
-        <div className="md:hidden border-t border-[#EFE4D0] bg-[#FBF7EE] px-6 py-6 flex flex-col gap-4">
+        <div className="md:hidden flex flex-col gap-4 border-t border-[#EFE4D0] bg-[#FBF7EE] px-6 py-6 dark:border-slate-800 dark:bg-slate-950">
           {navLink("/", labels.platform, "nav-home-m")}
           {profileSelector(true)}
           {languageSwitch(true)}
           {user ? (
             <>
               <Link to="/dashboard" onClick={() => setOpen(false)}>{t.nav.dashboard}</Link>
+              <Link to="/profile" onClick={() => setOpen(false)} className="flex items-center gap-2"><UserCircle size={16} />{labels.profile}</Link>
               {["admin", "administrador_sitio", "administrador_profesor", "editor_cms"].includes(user.role) && <Link to="/admin" onClick={() => setOpen(false)}>{t.nav.admin}</Link>}
               {technicalUser && <Link to="/technical/wiki" onClick={() => setOpen(false)} className="flex items-center gap-2"><BookOpen size={16} />{labels.technicalWiki}</Link>}
               <Button onClick={async () => { await logout(); setOpen(false); navigate("/"); }} variant="outline" data-testid="logout-btn-m">

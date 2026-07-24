@@ -6,6 +6,8 @@ Admins operate the school side of MOSAICO. They manage users, credits, lessons, 
 
 ## Key Routes
 
+- `/profile`: administrative or technical personal profile. Schools, scopes,
+  access level, and permissions are read-only and derived from RBAC.
 - `/admin`: overview.
 - `/admin/iam`: Identity & Access Management for users, roles, permissions, sessions, and audit history.
 - `/admin/users`: compatibility entry into IAM users.

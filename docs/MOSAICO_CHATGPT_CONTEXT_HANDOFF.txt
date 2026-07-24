@@ -1,9 +1,9 @@
 MOSAICO PLATFORM - CHATGPT CONTEXT HANDOFF
-Date: 2026-07-05
+Date: 2026-07-23
 Repository: mosaico-platform
 Local path: C:\Users\ezara\OneDrive\Documentos\Proyectos\lilyespanol-clon-20260625-152123
 Current branch: main
-Latest pushed commit at time of this handoff: 1396904 Upgrade admin RBAC to IAM workspace
+Latest pushed commit at time of this handoff: a013455 Restore technical admin release access
 
 Purpose of this document
 ========================
@@ -11,6 +11,346 @@ Purpose of this document
 This TXT file is intended to be uploaded or pasted into ChatGPT to give full working context for building prompts, following the roadmap, and continuing product/engineering planning for Mosaico.
 
 Mosaico is being evolved from a polished MVP/mockup into a real production-grade education platform. The operating rule is to build phase by phase, avoid fake actions, preserve production safety, keep documentation updated with every change, and use the in-app technical wiki / Mosaico Atlas as a visible source of truth for technical roles.
+
+IMPORTANT: AUTHORITATIVE CURRENT SNAPSHOT - 2026-07-23
+=====================================================
+
+This section supersedes any older status statement later in this document when
+the two conflict. The remainder of the file preserves detailed historical,
+product, architectural, operational, and roadmap context.
+
+Safety and confidentiality:
+- This handoff intentionally contains no passwords, tokens, private keys,
+  database connection strings, Supabase service keys, Stripe secrets, personal
+  test credentials, or production user records.
+- Environment variable names are documented, but their values are not.
+- Never ask ChatGPT to invent missing production configuration.
+- Never paste secrets into prompts, commits, screenshots, or release notes.
+
+Verified repository and production state:
+- Repository: mosaico-platform.
+- Branch: main.
+- Latest local commit and origin/main: a013455f280bb310e133ff17e9383d99b3e180f9.
+- Commit a013455: Restore technical admin release access.
+- Previous release commit de7b4cc: Ship scoped RBAC and production release history.
+- Frontend production URL: https://mosaico-web.onrender.com
+- Backend production URL: https://mosaico-api.onrender.com
+- API root: https://mosaico-api.onrender.com/api/
+- Technical Wiki route: https://mosaico-web.onrender.com/technical/wiki
+- Production API health was verified after a013455:
+  - current Render commit matched a013455;
+  - API ok=true;
+  - database=true;
+  - storage_configured=true;
+  - dev_auth_enabled=false.
+- Existing environment observation: strict_production_guards reports false.
+  Production should define MOSAICO_ENV=production or APP_ENV=production and
+  keep CORS and Supabase configuration locked down.
+
+Latest production release history:
+- 2026.07.23.3 - Technical release access restored.
+  - The Wiki option is visible to authorized technical administrators.
+  - Technical administrators can open the Releases tab and review production
+    outcomes.
+- 2026.07.23.2 - School-aware access and simpler profiles.
+  - Available workspaces are combined into one responsive profile dropdown.
+  - School teams can manage access for the correct school.
+  - Finance has a dedicated workspace.
+  - Google sign-in displays actionable failures instead of silently failing.
+  - RBAC integrity checks are part of release safety.
+- 2026.07.23.1 - In-app production history.
+  - Technical users can review safe production outcomes inside MOSAICO.
+  - Release entries are accessible expandable sections, newest first.
+  - JSON and Markdown release representations are validated for synchronization.
+
+In-application release documentation:
+- Route: /technical/wiki.
+- Navigation: Wiki for authorized technical users.
+- Tab name: Releases.
+- Source used by the frontend:
+  frontend/src/data/productionReleases.json
+- JavaScript export:
+  frontend/src/data/productionReleases.js
+- Restricted Markdown source of truth:
+  docs/TECHNICAL_WIKI.md
+- Synchronization validator:
+  scripts/validate-release-history.js
+- Validation command from frontend:
+  npm run validate:releases
+- Repository rule: every production release must update JSON and Markdown in
+  the same change set, newest first, with safe user-visible outcomes only.
+
+Technical Wiki access correction:
+- Super Admin role: administrador_sitio.
+- Technical Admin role: administrador_profesor.
+- Both are recognized as technical users by frontend/src/lib/access.js.
+- administrador_profesor receives technical.wiki.view at level 5, global scope.
+- The backend already allowed technical document reads for this role; a013455
+  aligned frontend visibility and the persisted permission catalog.
+- Production verification after deploy:
+  - /technical/wiki returned HTTP 200;
+  - production bundle contained release 2026.07.23.3;
+  - production bundle contained technical.wiki.view and Releases tab markers;
+  - production role_permissions contained active technical.wiki.view for
+    administrador_profesor, level 5, scope global.
+
+Current profile selector behavior:
+- The header no longer shows every role workspace as separate navigation links.
+- Available workspaces appear in one responsive dropdown.
+- Options are filtered by effective role/permission access.
+- The current route determines the selected profile.
+- Supported portal destinations include:
+  - Student: /student
+  - Tutor/Parent: /tutor
+  - Teacher: /teacher
+  - School Administrative: /school-admin
+  - Finance: /finance
+  - Technical/Super Admin: /admin
+- The dropdown works in desktop and mobile navigation.
+- It is a navigation selector, not a mechanism for granting roles.
+
+Google authentication status:
+- Supabase OAuth is the Google authentication provider.
+- startGoogleAuth is asynchronous and invokes signInWithOAuth with provider
+  google.
+- Redirect target is /auth/callback on the current frontend origin.
+- The account chooser is requested with prompt=select_account.
+- Local session tokens are cleared before starting Google OAuth.
+- Placeholder or missing Supabase browser configuration is detected.
+- Start and callback failures display a user-visible toast instead of appearing
+  to do nothing.
+- After successful authentication, the app loads:
+  - GET /api/auth/me
+  - GET /api/auth/me/permissions
+- Portal destination is chosen from effective roles.
+- Production bundle and callback route were verified, but a complete Google
+  account-consent flow still depends on the Supabase Google provider, authorized
+  redirect URLs, Google OAuth client configuration, and the user's browser.
+
+RBAC v2 current state:
+- Canonical policy module: backend/rbac_policy.py.
+- Canonical stable MVP roles:
+  - ADMIN / administrador_sitio / global
+  - STUDENT / alumno / self
+  - STUDENT_TUTOR / tutor_padre / linked
+  - TEACHER / profesor / assigned
+  - SCHOOL_ADMIN / administrador_escolar / school
+  - FINANCE / finanzas / multi_school
+- Compatibility roles such as administrador_profesor, coordinador, editor_cms,
+  and viewer remain supported by the broader platform.
+- Scope vocabulary:
+  self, linked, assigned, school, multi_school, global.
+- Permission evaluation is deny-by-default.
+- Frontend permission helpers improve UX but are not the security boundary.
+- Backend authorization loads verified ownership, school, tutor links, teacher
+  assignments, active state, and assignment expiry before allowing an action.
+- Anonymous protected requests return 401.
+- Authenticated out-of-scope requests return 403 and can generate audit evidence.
+
+RBAC v2 data structures:
+- roles: stable code, scope type, system/protected flags, status.
+- permissions: stable code, catalog metadata, risk, system flag.
+- role_permissions: permission, level, allowed, scope, JSON conditions.
+- user_roles: user, role, school, status, active flag, assigner, assignment
+  time, expiry.
+- schools.
+- user_school_memberships.
+- tutor_student_links.
+- teacher_student_assignments.
+- bookings.school_id.
+- payment_transactions.school_id and refund-related fields.
+- credit_movements append-only financial ledger.
+- audit_events authorization fields: actor role, school, permission, result,
+  denial reason, request ID.
+
+RBAC migration and production database status:
+- Repeatable schema source: backend/schema.sql.
+- Controlled migration: backend/migrations/002_rbac_v2.sql.
+- The RBAC v2 migration was applied successfully to the configured production
+  database before deploying de7b4cc.
+- It is transactional, additive, and idempotent; it does not delete business
+  records.
+- No production data backfill was required.
+- Aggregate pre-release audit found no active SCHOOL_ADMIN, FINANCE, or tutor
+  role assignment that needed an inferred school.
+- No fake Escuela A/Escuela B records are seeded during normal server startup.
+- Local/test fixtures remain isolated in backend/seed_rbac_test_data.py and the
+  script refuses production environments.
+- Production RBAC validator result after a013455:
+  - errors=0;
+  - warnings=0;
+  - users_without_roles=0;
+  - orphan_user_roles=0;
+  - orphan_role_permissions=0;
+  - inactive_users_with_active_roles=0;
+  - invalid_scopes=0;
+  - scoped_roles_without_school=0;
+  - financial_records_without_school=0;
+  - credit_movements_without_actor=0;
+  - duplicate_memberships=0;
+  - audit_without_permission=0.
+- Aggregate counts at verification time:
+  - users=12;
+  - user_roles=18;
+  - roles=10;
+  - permissions=147;
+  - role_permissions=314;
+  - schools=0.
+- Counts are operational observations, not permanent product assumptions.
+
+RBAC operational tools:
+- Read-only integrity check:
+  python backend/validate_rbac.py
+- Safe repair preview:
+  python backend/repair_rbac.py
+- Explicit repair:
+  python backend/repair_rbac.py --apply
+- Deterministic local/test fixtures:
+  python backend/seed_rbac_test_data.py
+- The fixture seeder must only run with a local/test/development environment.
+
+Important RBAC/API capabilities:
+- GET /api/auth/me/permissions
+- GET /api/admin/users/{user_id}/effective-permissions
+- GET /api/admin/rbac/schools
+- GET /api/admin/rbac/roles
+- GET /api/admin/rbac/permissions
+- GET /api/admin/rbac/users
+- POST /api/admin/rbac/users/bulk-roles
+- GET /api/admin/rbac/audit-logs
+- GET /api/finance/payments
+- PATCH /api/finance/payments/{session_id}/{confirm|reject|refund}
+- GET /api/finance/credits/{account_user_id}/movements
+- POST /api/finance/credits/{account_user_id}/movements
+- GET /api/payments/status/{session_id} requires authentication and scope.
+- Administrative user, booking, finance, and audit reads are scope-filtered.
+- Role/permission mutations with global impact remain restricted to Admón.
+
+Finance workspace:
+- Route: /finance.
+- Intended for finanzas and authorized global administrators.
+- Supports scoped payment review.
+- Supports explicit payment confirmation, rejection, and refund operations.
+- Refund operations require a reason, confirmation, original payment context,
+  and a stable idempotency key.
+- Credit adjustments use an append-only movement ledger.
+- Credit movements require a reason and unique transaction ID and record
+  before/after balances.
+- Finance does not receive academic mutation permissions by default.
+
+Frontend authorization architecture:
+- frontend/src/context/AppContext.jsx loads the authenticated user and effective
+  permissions/grants/schools.
+- frontend/src/lib/access.js contains portal and technical-user helpers.
+- frontend/src/hooks/usePermissions.js exposes can, cannot, scopes, levels,
+  and grants.
+- frontend/src/components/PermissionGate.jsx is a reusable UI authorization
+  boundary.
+- frontend/src/App.js defines routes and protected portal access.
+- frontend/src/components/Navbar.jsx builds navigation from effective access.
+- frontend/src/pages/Platform.jsx contains persona workspaces including Finance.
+- Backend enforcement remains mandatory for every protected action.
+
+Authentication model:
+- Supabase sessions are supported for OAuth.
+- Local email/password sessions are supported with hashed passwords and
+  persistent local session tokens.
+- Development authentication is allowed only when explicitly enabled outside
+  strict production.
+- Production bundle is configured with REACT_APP_DEV_AUTH=false.
+- /api/auth/me returns the user identity/profile.
+- /api/auth/me/permissions returns roles, effective permissions, grants, schools,
+  and assignment metadata used by the frontend.
+- Login and OAuth callback route users to the best available portal:
+  Super Admin, Finance, School Admin, Teacher, Tutor, then Student.
+
+Deployment and "magic":
+- User-defined release phrase: magic.
+- When the user says magic:
+  - inspect branch, upstream, and dirty files;
+  - preserve unrelated user files;
+  - update/create documentation;
+  - update synchronized production release history;
+  - run relevant tests, build, and diff checks;
+  - evaluate migration/backfill need;
+  - commit;
+  - merge only when a real branch requires it;
+  - push origin/main;
+  - verify Render production commit and health;
+  - verify important public routes and protected endpoint behavior;
+  - run read-only production integrity checks where relevant;
+  - do not break production.
+- Do not interpret magic as permission for destructive or ambiguous data edits.
+- Repository release rules are in AGENTS.md.
+
+Latest validation evidence:
+- Frontend release history validation: 3 synchronized releases, newest
+  2026.07.23.3.
+- Frontend Jest: 2 suites, 4 tests passed.
+- Frontend optimized production build compiled successfully.
+- Focused backend RBAC/API contract tests: 22 passed.
+- Prior full backend run: 33 passed and 16 integration tests skipped because a
+  local API was intentionally absent.
+- Python compilation passed.
+- git diff --check passed.
+- Public unauthenticated smoke tests returned 401 for protected permission,
+  RBAC school, and finance endpoints.
+- /login, /auth/callback, and /technical/wiki returned HTTP 200 as SPA routes.
+
+Known limitations and honest status:
+- Google Calendar integration remains a service abstraction/partial mock; real
+  OAuth token storage, sync policy, conflict handling, import/export, background
+  jobs, and audit behavior are unfinished.
+- Several learning, credit, booking, teacher earnings, messaging, roadmap,
+  testing, badges, lesson workflow, and reporting surfaces still contain mock,
+  preview, or incomplete production behavior as described later in this file.
+- Do not enable fake success actions.
+- Do not infer a school for existing users or financial records without an
+  authoritative product/data rule.
+- No school record existed in production at the last aggregate RBAC validation.
+  School-scoped roles must be assigned only after real school records exist.
+- Strict production guards should be enabled through Render environment
+  configuration.
+- Authenticated end-to-end testing for every persona is still desirable.
+- Render free-tier cold starts can temporarily delay health/navigation checks.
+
+Files changed in the two latest production releases:
+- AGENTS.md
+- backend/database.py
+- backend/schema.sql
+- backend/migrations/002_rbac_v2.sql
+- backend/rbac_policy.py
+- backend/repair_rbac.py
+- backend/seed_rbac_test_data.py
+- backend/server.py
+- backend/validate_rbac.py
+- backend/tests/test_lily_api.py
+- backend/tests/test_rbac_api_contract.py
+- backend/tests/test_rbac_policy.py
+- docs/API_REFERENCE.md
+- docs/OPERATIONS_RUNBOOK.md
+- docs/RBAC_V2_IMPLEMENTATION.md
+- docs/TECHNICAL_WIKI.md
+- docs/rbac-permissions.md
+- frontend/package.json
+- frontend/src/App.js
+- frontend/src/components/Navbar.jsx
+- frontend/src/components/PermissionGate.jsx
+- frontend/src/components/admin-rbac/AdminRbacWorkspace.jsx
+- frontend/src/context/AppContext.jsx
+- frontend/src/data/productionReleases.js
+- frontend/src/data/productionReleases.json
+- frontend/src/data/productionReleases.test.js
+- frontend/src/data/technicalWiki.js
+- frontend/src/hooks/usePermissions.js
+- frontend/src/lib/access.js
+- frontend/src/lib/access.test.js
+- frontend/src/lib/supabase.js
+- frontend/src/pages/AuthCallback.jsx
+- frontend/src/pages/Login.jsx
+- frontend/src/pages/Platform.jsx
+- frontend/src/pages/TechnicalWiki.jsx
+- scripts/validate-release-history.js
 
 
 Product Summary
@@ -33,10 +373,16 @@ Mosaico is an online Spanish learning platform with multiple user personas:
 4. Administrative / Principal
    - Non-technical school administrator.
    - Can approve users, give credits, create lessons, review teachers, operate bookings and reports, manage school-side processes.
+   - Current canonical role: administrador_escolar.
+   - Current portal route: /school-admin.
+   - Product label: School Administrative / Administrativo escolar.
 
 5. Super Admin / Technical Admin
    - Technical and governance profile.
    - Can manage platform configuration, IAM/RBAC, audit logs, activity logs, technical wiki, Mosaico Atlas, system health, analytics, and sensitive settings.
+   - Super Admin canonical role: administrador_sitio.
+   - Technical Admin canonical role: administrador_profesor.
+   - Product label for technical workspace: Technical Admin / Admin tecnico.
 
 
 Current Technical Architecture
@@ -73,11 +419,149 @@ Important production URL docs:
 - docs/OPERATIONS_RUNBOOK.md
 
 
+Current Live vs Placeholder Status
+==================================
+
+This section is the most important memory update. It separates production-backed functionality from preview/mock surfaces.
+
+Ready or close to go-live foundation:
+
+1. Authentication foundation
+   - Local email/password login exists.
+   - Persistent local sessions exist.
+   - Session data is checked through /api/auth/me.
+   - Supabase Google auth integration exists as target/partial integration.
+   - Production hardening still needs final social-login completion, environment audit, and session administration UI.
+
+2. RBAC / IAM foundation
+   - Users can have multiple roles through user_roles.
+   - Roles and permissions are catalog-backed.
+   - Permissions are additive.
+   - Backend computes effective permissions.
+   - Frontend route guards use effective roles/permissions.
+   - Protected system roles and self-demotion safeguards exist.
+   - Main IAM UI exists at /admin/iam and /admin/roles-permissions.
+   - Latest IAM naming direction: module should be treated as Identity & Access Management, not merely Manage Users.
+
+3. School Administrative profile
+   - New role: administrador_escolar.
+   - New portal: /school-admin.
+   - Purpose: non-technical education administrator / school principal.
+   - Can access academic operations such as classes, roadmaps, approvals, credits, lessons, students, teachers, bookings, families, and reports when permissions allow.
+   - Does not receive technical IAM, platform settings, audit, or system-health permissions by default.
+   - Technical Admin remains separate for IAM/configuration/audit/system governance.
+
+4. Technical Admin / Super Admin configuration
+   - Super Admin Configuration Center exists at /admin/configuration.
+   - Settings persist to backend/database.
+   - Sensitive setting changes are audit logged.
+   - Sticky save/cancel bar exists so long forms can be saved while scrolling.
+   - Public-safe feature flags are exposed through /api/settings/public.
+   - Saved feature flags now remove disabled feature modules from the left sidebar.
+   - Draft feature flag changes do not hide navigation until saved.
+
+5. Audit logs and activity logs
+   - Audit and activity log backend surfaces exist.
+   - Configuration changes create audit/activity records.
+   - Admin UI exists for audit/activity logs.
+   - More product workflows still need to emit complete audit/activity events once their backend persistence is built.
+
+6. Product analytics / observability foundation
+   - Analytics event model exists.
+   - Error response format and error tracking foundation exist.
+   - Admin analytics dashboard exists, but many metrics still depend on mock or early data until booking/credit/learning domains are fully persisted.
+
+7. Technical Wiki and Mosaico Atlas
+   - Technical Wiki exists for technical roles.
+   - Mosaico Atlas exists in-app as a source of truth.
+   - Atlas content has been improved from placeholder toward real product/business/platform context.
+   - Some Atlas editorial workflows are still not fully production-backed.
+
+8. Teacher Calendar UI standard
+   - Teacher calendar workspace has day/week/month views.
+   - It distinguishes booked, available, empty gap, blocked, conflict, completed, and cancelled states.
+   - It supports explicit empty-slot placeholders.
+   - Week/month layout was improved to reduce overlap and horizontal scroll.
+   - Next class / today classes side modules were reduced in favor of action buttons that highlight calendar items.
+   - Google Calendar sync remains mock/placeholder until OAuth credentials, calendar API integration, token storage, event import/export policy, conflict handling, and webhook/background sync are implemented.
+
+9. Localization / language controller
+   - EN/ES controller now affects more than the top bar.
+   - Platform shell, side navigation, access messages, configuration labels, save/cancel controls, and teacher calendar copy were localized further.
+   - Some deep module copy and legacy/mock copy may still need localization cleanup.
+
+10. Responsive/navigation hardening
+   - Administrative left menu is grouped into collapsible categories.
+   - Sidebar has independent scrolling behavior.
+   - IAM user table was improved to reduce horizontal scroll.
+   - Role/profile controller is now a dropdown showing one active profile at a time.
+
+Still placeholder, preview-only, or not ready for live transactions:
+
+1. Credits / wallet / payments
+   - Many credit screens are still product previews.
+   - High-risk fake credit mutations were intentionally disabled.
+   - Real credit ledger, credit accounts, grant/reason policy, purchases, refunds, family/student balances, and Stripe checkout still need to be built.
+   - Do not re-enable credit success toasts without backend persistence and audit logs.
+
+2. Booking and class lifecycle
+   - Booking UI exists in several portals.
+   - Real booking lifecycle is not fully production-backed.
+   - Need models/APIs for booking, class sessions, availability blocks/slots, cancellation, no-show, reschedule, completion, feedback, and credit reservation/charging.
+   - Teacher calendar currently visualizes realistic state but does not complete the full backend scheduling domain.
+
+3. Google Calendar sync
+   - UI exists and can show connected/conflict states.
+   - Current sync is mock/placeholder.
+   - Need Google OAuth, token storage, calendar list/select, import busy events as blocks, export confirmed Mosaico classes, conflict rules, manual sync, background sync, and audit logs.
+
+4. Student learning roadmap, badges, tests, and unlocks
+   - Student roadmap UI exists.
+   - Badges, levels, tests, practice tests, unlockable credits, and progress are still mostly mock/preview.
+   - Need real learning domain models, APIs, attempts/results, badge rules, unlock logic, and analytics.
+
+5. Lesson CMS / academic content workflow
+   - Lesson/admin screens exist.
+   - Full lesson lifecycle is not yet production-backed.
+   - Need draft/review/approved/published/archived workflow, required fields, role approvals, audit logs, and relation to roadmap/levels/tests.
+
+6. Tutor/parent family management
+   - Tutor portal UI exists.
+   - Family/student relationship models, guardian permissions, shared wallet rules, and scoped access enforcement still need backend completion.
+
+7. Teacher earnings
+   - Earnings screen exists.
+   - Payouts/commissions are placeholders.
+   - Need payout model, completed-class source of truth, payout status, adjustments, and accounting policy.
+
+8. Reports and analytics
+   - Admin reports/analytics UI exists.
+   - Some metrics are mock or early approximations.
+   - Need real queries once booking, credits, learning, and teacher domains are persisted.
+
+9. Notifications/messaging
+   - UI surfaces exist.
+   - Real inbox/email/WhatsApp notification workflows are not fully implemented.
+   - Need notification preferences, templates, delivery providers, retries, and audit/activity linkage.
+
+10. Public website payments/demo flows
+   - Public pitch and package pages are present.
+   - Some payment flows remain demo/scaffold.
+   - Do not treat payments as live until Stripe environment, checkout session creation, webhook fulfillment, and credit ledger integration are complete.
+
+
 Recent Git History
 ==================
 
 Latest commits on main:
 
+- a013455 Restore technical admin release access
+- de7b4cc Ship scoped RBAC and production release history
+- 8c6b47b Add school admin profile and feature-gated navigation
+- 892b949 Fix teacher calendar responsive views
+- 5de8cf6 Standardize workspace side panels
+- 636e69f Improve localization and teacher calendar focus
+- 39a67e5 Improve IAM responsive navigation
 - 1396904 Upgrade admin RBAC to IAM workspace
 - 996eac7 Harden preview actions and Atlas docs
 - a45baf0 Build Mosaico platform admin foundation
@@ -118,6 +602,49 @@ Operating Rules Established With User
 
 4. Product principle:
    - A visible button should either perform a real persisted action, be explicitly disabled with a clear reason, or be isolated behind a named service/mock abstraction with TODO/backend dependency documented.
+
+
+Latest Implemented Changes As Of 2026-07-23
+===========================================
+
+1. School Administrative role/profile
+   - Added backend role seed for administrador_escolar.
+   - Added aliases school_admin and school_administrative.
+   - Added permission levels for class sessions, learning roadmaps, lessons, credits, reports, students, teachers, and activity logs.
+   - Added frontend portal /school-admin.
+   - Added school admin routes for approvals, credits, classes, roadmaps, lessons, students, teachers, bookings, families, and reports.
+   - Updated top navigation to include School admin / Admin escolar.
+   - Updated access helper so school admin is distinct from technical admin.
+
+2. Role/profile selector
+   - Replaced multi-button role switcher with a single dropdown.
+   - The dropdown shows one active profile at a time.
+   - Users with multiple effective roles can select one portal/profile at a time.
+
+3. Technical Admin separation
+   - Technical Admin navigation now focuses on IAM, analytics, Atlas, reports, roles/access, configuration, audit logs, activity logs, and system health.
+   - School operations moved toward /school-admin.
+
+4. Feature-gated navigation
+   - /api/settings/public returns safe feature_flags only, not private configuration.
+   - Sidebar hides disabled modules after saved configuration refreshes.
+   - Current flag-to-navigation behavior:
+     - student_roadmap hides roadmap items.
+     - teacher_calendar hides teacher calendar.
+     - credits_wallet hides credits/payments-related items.
+     - ai_tutor hides AI Tutor.
+     - community hides Community.
+
+5. Configuration Center UX
+   - Sticky save/cancel bar remains available while scrolling.
+   - Save refreshes public settings so sidebar visibility follows persisted feature flags.
+
+6. Localization
+   - EN/ES control now covers more of platform shell, side navigation, access-denied messages, configuration labels, and teacher calendar copy.
+
+7. Documentation and tests
+   - Updated role/RBAC/UX/configuration docs.
+   - Added backend test for public settings feature flag exposure.
 
 
 Production-Backed Foundations Already Implemented
@@ -251,6 +778,23 @@ Teacher:
 - /teacher/materials
 - /teacher/evaluations
 - /teacher/earnings
+
+School Administrative:
+- /school-admin
+- /school-admin/approvals
+- /school-admin/credits
+- /school-admin/classes
+- /school-admin/roadmaps
+- /school-admin/lessons
+- /school-admin/students
+- /school-admin/teachers
+- /school-admin/bookings
+- /school-admin/families
+- /school-admin/reports
+- /school-admin/roles
+
+Finance:
+- /finance
 
 Admin:
 - /admin
@@ -533,6 +1077,7 @@ Important documentation files:
 - docs/PREVIEW_ACTION_AUDIT.md
 - docs/final-production-report.md
 - docs/RBAC_ADMIN_MODULE.md
+- docs/RBAC_V2_IMPLEMENTATION.md
 - docs/rbac-permissions.md
 - docs/admin-guide.md
 - docs/teacher-guide.md
@@ -552,6 +1097,14 @@ Important documentation files:
 - docs/testing-guide.md
 - docs/security-checklist.md
 - docs/release-process.md
+- AGENTS.md
+- backend/migrations/002_rbac_v2.sql
+- backend/rbac_policy.py
+- backend/validate_rbac.py
+- backend/repair_rbac.py
+- backend/seed_rbac_test_data.py
+- frontend/src/data/productionReleases.json
+- scripts/validate-release-history.js
 
 Technical docs are registered in backend/server.py under TECHNICAL_DOCS so they can be shown in the technical wiki.
 
@@ -797,10 +1350,17 @@ Whitespace/diff check:
 - git diff --check
 
 Latest checks before latest push:
+- npm run validate:releases passed with 3 synchronized releases
+- npm test -- --watchAll=false passed: 2 suites, 4 tests
 - npm run build passed
 - py_compile passed
-- backend test suite passed: 10 passed
+- focused backend RBAC/API contract suite passed: 22 tests
+- prior complete backend suite passed: 33 tests, 16 integration tests skipped
+  when no local API was running
 - git diff --check passed
+- production RBAC validation passed: 0 errors, 0 warnings
+- production API, database, storage, login, callback, Technical Wiki route,
+  protected anonymous access, and deployed commit checks passed
 
 
 How To Continue Prompting ChatGPT
@@ -855,8 +1415,11 @@ RBAC:
 Super Admin:
 - Technical/global governance role, canonical role name administrador_sitio.
 
-Admin / Administrative Principal:
-- Non-technical school administrator who can operate approvals, credits, users, lessons, and school workflows. Canonical role often administrador_profesor or administrative profile depending on context.
+School Administrative / Administrative Principal:
+- Non-technical education administrator who operates academic workflows, approvals, credits, lessons, classes, roadmaps, teachers, students, families, bookings, and reports. Canonical role name administrador_escolar. Main route: /school-admin.
+
+Technical Admin:
+- Technical/platform governance administrator for IAM, settings, audit logs, activity logs, system health, configuration, and platform controls. Canonical role name administrador_profesor.
 
 Client:
 - Student/learner persona, sometimes also parent/tutor context depending on portal.
@@ -877,3 +1440,25 @@ Mosaico should become a real education platform where:
 - Credits, bookings, lessons, tests, badges, and reports are persisted, permissioned, auditable, and measurable.
 - The platform can be shown to remote stakeholders without relying on fake success actions.
 - The roadmap and documentation remain visible inside the platform through Technical Wiki and Mosaico Atlas.
+
+
+Teacher Google Calendar Local Implementation
+============================================
+
+- Separate per-teacher Calendar OAuth; Supabase login tokens and the legacy
+  shared admin calendar are not reused.
+- Backend Authorization Code Flow uses signed, expiring, one-use state.
+- Access and refresh tokens are encrypted with a configured Fernet key.
+- Calendar IDs are verified against Google; busy sources may be read-only and
+  the single class-event destination must be owned.
+- Only free/busy intervals are cached; personal event content is not imported.
+- Availability/booking checks fail closed on provider uncertainty or conflict.
+- MOSAICO event synchronization uses deterministic IDs and persisted retry state.
+- Disconnect preserves MOSAICO classes and existing Google events.
+- Optional cron entry: backend/sync_google_calendars.py.
+- Additive migration: backend/migrations/004_google_calendar_teacher_integration.sql.
+- Contract and setup: docs/GOOGLE_CALENDAR_INTEGRATION.md.
+- Backend switch GOOGLE_CALENDAR_INTEGRATION_ENABLED and platform flag
+  teacher_google_calendar both default to false.
+- The work remains local until `magic`: no release entry, commit, push,
+  migration, deployment, backfill, or production flag change has occurred.

@@ -57,6 +57,50 @@ Body:
 
 Returns the authenticated user, effective roles, and effective permission levels.
 
+### GET `/profile`
+
+Returns the authenticated user's shared profile and the selected effective
+role profile. Optional query parameter: `role`. The role must already be
+assigned to the authenticated user.
+
+The response includes completion, account/approval status, authorized schools,
+effective scopes, linked students where applicable, recent activity, and audit
+history only when RBAC permits it.
+
+### PATCH `/profile`
+
+Persists shared and role-specific fields for the authenticated user. Identity,
+role, school, approval, and ownership are derived server-side. Unknown and
+cross-persona fields return `422`.
+
+```json
+{
+  "role": "alumno",
+  "common": {
+    "first_name": "Ana",
+    "last_name": "Gomez",
+    "public_name": "Ana",
+    "country": "MX",
+    "timezone": "America/Cancun",
+    "preferences": {"theme": "system"}
+  },
+  "details": {
+    "current_level": "A2",
+    "learning_goal": "Conversational Spanish"
+  }
+}
+```
+
+### POST `/profile/photo`
+
+Uploads the authenticated user's profile photo as multipart form data. Accepts
+JPEG, PNG, WebP, or GIF up to 5 MB.
+
+### PATCH `/admin/profiles/{user_id}/teacher-approval`
+
+Changes a teacher profile to `pending`, `approved`, or `suspended`. Requires an
+authorized teacher-management scope and rejects self-approval.
+
 ### POST `/auth/logout`
 
 Revokes the current local session token when present and signs the user out client-side.
@@ -75,6 +119,58 @@ Query parameters:
 
 - `date`
 - `teacher_id`
+- `duration_min` (`30`, `45`, or `60`)
+
+When a selected teacher has opted into Google Calendar, results subtract
+external busy periods. Provider failures fail closed and do not expose the
+reason for unavailability to students.
+
+## Teacher Google Calendar
+
+All self-service operations require the active teacher's
+`calendar.teacher.sync_google` permission. Tokens never appear in responses.
+
+### GET `/integrations/google-calendar/status`
+
+Returns safe connection, masked-account, calendar-selection, and sync state.
+
+### POST `/integrations/google-calendar/connect`
+
+Creates signed, expiring, one-time state and returns the Google authorization
+URL.
+
+### GET `/integrations/google-calendar/callback`
+
+Backend OAuth callback. Consumes state, exchanges the code, encrypts credentials
+and redirects without exposing the authorization code to frontend resources.
+
+### GET `/integrations/google-calendar/calendars`
+
+Lists safe calendar metadata and whether each calendar can be used for busy
+queries or as an owned destination.
+
+### PUT `/integrations/google-calendar/settings`
+
+Accepts only `busyCalendarIds` and `destinationCalendarId`. Every ID is
+revalidated against the connected Google account.
+
+### POST `/integrations/google-calendar/sync`
+
+Refreshes the bounded free/busy cache and returns aggregate state only.
+
+### DELETE `/integrations/google-calendar/disconnect?confirm=true`
+
+Revokes authorization when possible, clears local credentials/cache, and leaves
+MOSAICO classes and existing Google events unchanged.
+
+### POST `/integrations/google-calendar/events/{booking_id}/retry`
+
+Retries a MOSAICO event for a class assigned to the current teacher.
+
+### GET `/teachers/me/calendar-availability`
+
+Requires `time_min` and `time_max` ISO timestamps. Returns generic occupied
+intervals without personal event content.
 
 ### GET `/blog`
 

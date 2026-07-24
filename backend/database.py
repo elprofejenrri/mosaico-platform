@@ -27,6 +27,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "duration_min", "scheduled_date", "scheduled_time", "timezone", "status",
         "meeting_link", "notes", "payment_session_id", "teacher_id", "teacher_name",
         "created_at", "end_time", "student_profile_id", "school_id", "updated_at",
+        "starts_at", "ends_at",
     ],
     "blog_posts": [
         "id", "slug", "title_en", "title_es", "excerpt_en", "excerpt_es",
@@ -55,6 +56,13 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
     "credit_movements": ["id", "actor_user_id", "account_user_id", "school_id", "balance_before", "amount", "balance_after", "movement_type", "reason", "transaction_id", "reference_type", "reference_id", "ip_address", "metadata", "created_at"],
     "teacher_profiles": ["id", "user_id", "teacher_id", "specialties", "assigned_products", "created_at", "updated_at"],
     "student_profiles": ["id", "user_id", "phone", "enrolled_products", "notes", "status", "created_at", "updated_at"],
+    "user_profiles": ["id", "user_id", "first_name", "last_name", "public_name", "picture", "native_language", "learning_language", "country", "timezone", "phone", "preferences", "created_at", "updated_at"],
+    "user_role_profiles": ["id", "user_id", "role_code", "profile_data", "approval_status", "created_at", "updated_at"],
+    "external_calendar_connections": ["id", "user_id", "provider", "provider_account_id", "provider_email_masked", "status", "granted_scopes", "access_token_encrypted", "refresh_token_encrypted", "token_expires_at", "connected_at", "last_successful_sync_at", "last_sync_attempt_at", "last_sync_status", "last_sync_error_code", "busy_cache_start_at", "busy_cache_end_at", "revoked_at", "created_at", "updated_at"],
+    "external_calendar_selections": ["id", "connection_id", "calendar_id", "display_name", "access_role", "use_for_busy", "use_for_events", "created_at", "updated_at"],
+    "external_busy_blocks": ["id", "connection_id", "teacher_user_id", "calendar_id", "starts_at", "ends_at", "source", "fetched_at", "expires_at", "created_at"],
+    "calendar_event_links": ["id", "class_id", "reservation_id", "teacher_user_id", "connection_id", "calendar_id", "google_event_id", "google_event_etag", "idempotency_key", "sync_status", "last_synced_at", "last_error_code", "created_at", "updated_at"],
+    "google_calendar_oauth_states": ["id", "user_id", "nonce_hash", "expires_at", "used_at", "created_at"],
     "pages": ["id", "title", "slug", "language", "status", "meta_title", "meta_description", "content_blocks", "hero_image", "created_by", "updated_by", "published_date", "created_at", "updated_at"],
     "media_assets": ["id", "file_name", "url", "type", "alt_text", "uploaded_by", "created_at", "updated_at"],
     "login_history": ["id", "user_id", "email", "provider", "ip_address", "user_agent", "created_at"],
@@ -81,6 +89,9 @@ JSONB_COLUMNS = {
     "credit_movements": {"metadata"},
     "teacher_profiles": {"specialties", "assigned_products"},
     "student_profiles": {"enrolled_products"},
+    "user_profiles": {"preferences"},
+    "user_role_profiles": {"profile_data"},
+    "external_calendar_connections": {"granted_scopes"},
     "pages": {"content_blocks"},
     "audit_events": {"before_state", "after_state", "metadata"},
     "activity_logs": {"metadata"},
@@ -106,6 +117,7 @@ BOOL_COLUMNS = {
     "permissions": {"active", "is_system"},
     "role_permissions": {"allowed"},
     "user_roles": {"active"},
+    "external_calendar_selections": {"use_for_busy", "use_for_events"},
     "atlas_comments": {"resolved"},
 }
 
@@ -436,6 +448,13 @@ class Database:
         self.credit_movements = Collection("credit_movements", pool)
         self.teacher_profiles = Collection("teacher_profiles", pool)
         self.student_profiles = Collection("student_profiles", pool)
+        self.user_profiles = Collection("user_profiles", pool)
+        self.user_role_profiles = Collection("user_role_profiles", pool)
+        self.external_calendar_connections = Collection("external_calendar_connections", pool)
+        self.external_calendar_selections = Collection("external_calendar_selections", pool)
+        self.external_busy_blocks = Collection("external_busy_blocks", pool)
+        self.calendar_event_links = Collection("calendar_event_links", pool)
+        self.google_calendar_oauth_states = Collection("google_calendar_oauth_states", pool)
         self.pages = Collection("pages", pool)
         self.media_assets = Collection("media_assets", pool)
         self.login_history = Collection("login_history", pool)

@@ -38,6 +38,22 @@ STRIPE_API_KEY=
 STRIPE_WEBHOOK_SECRET=
 ```
 
+Optional teacher Google Calendar variables:
+
+```env
+GOOGLE_CALENDAR_INTEGRATION_ENABLED=false
+GOOGLE_CALENDAR_CLIENT_ID=
+GOOGLE_CALENDAR_CLIENT_SECRET=
+GOOGLE_CALENDAR_REDIRECT_URI=
+GOOGLE_CALENDAR_FRONTEND_RETURN_URL=
+GOOGLE_CALENDAR_ENCRYPTION_KEY=
+GOOGLE_CALENDAR_STATE_SECRET=
+GOOGLE_CALENDAR_SYNC_WINDOW_DAYS=60
+GOOGLE_CALENDAR_CACHE_TTL_SECONDS=300
+GOOGLE_CALENDAR_REQUEST_TIMEOUT_SECONDS=12
+GOOGLE_CALENDAR_MAX_RETRIES=3
+```
+
 Optional development variable:
 
 ```env
@@ -62,6 +78,20 @@ Do not enable `DEV_AUTH` in production.
 | `LOCAL_AUTH_SESSION_MINUTES` | No | Local email/password session duration. Defaults to 10080 minutes, or 7 days |
 | `STRIPE_API_KEY` | No | Stripe secret key |
 | `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook signing secret |
+| `GOOGLE_CALENDAR_INTEGRATION_ENABLED` | No | Backend kill switch; defaults to `false` |
+| `GOOGLE_CALENDAR_CLIENT_ID` | When enabled | Google Web OAuth client ID |
+| `GOOGLE_CALENDAR_CLIENT_SECRET` | When enabled | Google Web OAuth client secret; backend only |
+| `GOOGLE_CALENDAR_REDIRECT_URI` | When enabled | Exact HTTPS backend callback registered in Google Cloud |
+| `GOOGLE_CALENDAR_FRONTEND_RETURN_URL` | When enabled | Teacher Calendar route after callback |
+| `GOOGLE_CALENDAR_ENCRYPTION_KEY` | When enabled | Fernet key for token encryption at rest |
+| `GOOGLE_CALENDAR_STATE_SECRET` | When enabled | Independent secret for signed OAuth state |
+| `GOOGLE_CALENDAR_SYNC_WINDOW_DAYS` | No | Free/busy horizon, clamped to 1–90 days |
+| `GOOGLE_CALENDAR_CACHE_TTL_SECONDS` | No | Busy-cache freshness, clamped to 30–3600 seconds |
+| `GOOGLE_CALENDAR_REQUEST_TIMEOUT_SECONDS` | No | Provider timeout, clamped to 2–30 seconds |
+| `GOOGLE_CALENDAR_MAX_RETRIES` | No | Bounded transient retries, clamped to 0–5 |
+
+Generate a valid Fernet key and a separate high-entropy state secret outside the
+repository. Never expose them through `REACT_APP_*`, logs, or frontend settings.
 
 ## Frontend Variables
 

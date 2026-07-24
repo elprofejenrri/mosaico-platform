@@ -49,3 +49,20 @@ npm run build
 - Analytics event creation.
 - Error response shape.
 - Teacher availability slot generation.
+
+## Google Calendar integration
+
+Automated tests use mocked/pure provider behavior only:
+
+```powershell
+python -m pytest backend/tests/test_google_calendar_service.py backend/tests/test_google_calendar_api_contract.py -q
+```
+
+Coverage includes minimal scopes, token encryption, masked account output,
+free/busy normalization, overlap/contiguous boundaries, IANA conversion,
+ambiguous/nonexistent DST rejection, generic event privacy, deterministic
+idempotency, endpoint ownership contracts, single-use state, fail-closed
+provider behavior, advisory booking locks, and disconnect retention.
+
+Do not call destructive real-calendar operations from automated tests. The
+approved manual test matrix is in `docs/GOOGLE_CALENDAR_INTEGRATION.md`.

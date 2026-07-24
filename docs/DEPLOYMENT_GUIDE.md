@@ -53,6 +53,20 @@ Purpose: real users, real payments, real operations.
 
 Use platform configuration feature flags to hide modules that are not production-backed. Do not expose mock workflows to real users without a clear preview label.
 
+For teacher Google Calendar, apply the additive migration
+`backend/migrations/004_google_calendar_teacher_integration.sql`, configure the
+backend-only variables from `docs/ENVIRONMENT_VARIABLES.md`, and optionally add
+a Render Cron Job running:
+
+```text
+python backend/sync_google_calendars.py
+```
+
+Deploy with both calendar controls disabled. Enable the backend environment
+switch for a controlled test first, then enable `teacher_google_calendar` after
+privacy, conflict, DST and idempotency validation. Disabling either control is
+the functional rollback.
+
 ## Rollback
 
 - Use Render deploy rollback for frontend/backend.

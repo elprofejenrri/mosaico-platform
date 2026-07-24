@@ -15,6 +15,7 @@ import Login from "./pages/Login";
 import TechnicalWiki from "./pages/TechnicalWiki";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import AuthCallback from "./pages/AuthCallback";
+import Profile from "./pages/Profile";
 import { Toaster } from "sonner";
 import { StickyBookCta } from "./components/StickyBookCta";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -96,6 +97,7 @@ function AppRouter() {
           <Route path="/admin/settings" element={<AdminPortal module="settings" />} />
           <Route path="/technical/wiki" element={<TechnicalWiki />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/faq" element={<Faq />} />
           <Route path="/blog" element={<Blog />} />

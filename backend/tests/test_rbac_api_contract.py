@@ -43,6 +43,16 @@ def test_rbac_tables_are_registered_in_database_adapter():
         assert table in TABLE_COLUMNS
 
 
+def test_profile_routes_and_storage_tables_are_registered():
+    assert route("GET", "/api/profile")
+    assert route("PATCH", "/api/profile")
+    assert route("POST", "/api/profile/photo")
+    assert route("PATCH", "/api/admin/profiles/{user_id}/teacher-approval")
+    assert {"user_profiles", "user_role_profiles"}.issubset(TABLE_COLUMNS)
+    assert "preferences" in TABLE_COLUMNS["user_profiles"]
+    assert "profile_data" in TABLE_COLUMNS["user_role_profiles"]
+
+
 def test_role_assignment_supports_school_and_expiry():
     assert {"school_id", "status", "assigned_at", "expires_at"}.issubset(TABLE_COLUMNS["user_roles"])
 

@@ -16,7 +16,7 @@ import httpx
 import jwt
 import stripe
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Header, Depends, UploadFile, File
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -28,6 +28,24 @@ from rbac_policy import (
     ROLE_GRANTS,
     ScopeContext,
     permission_allows,
+)
+from profile_policy import (
+    PROFILE_ROLE_LABELS,
+    ProfileValidationError,
+    canonical_profile_role,
+    profile_completion,
+    safe_audit_fields,
+    validate_common_profile,
+    validate_role_profile,
+)
+from google_calendar_service import (
+    GoogleCalendarConfig,
+    GoogleCalendarError,
+    GoogleCalendarService,
+    interval_conflicts,
+    local_time_window,
+    parse_utc,
+    safe_return_url,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -201,19 +219,28 @@ async def request_id_middleware(request: Request, call_next):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     request_id = getattr(request.state, "request_id", f"req_{uuid.uuid4().hex}")
-    message = exc.detail if isinstance(exc.detail, str) else "Request could not be completed."
-    code = "http_error"
-    if exc.status_code == 401:
+    detail = exc.detail if isinstance(exc.detail, dict) else {}
+    message = (
+        exc.detail
+        if isinstance(exc.detail, str)
+        else detail.get("message") or "Request could not be completed."
+    )
+    code = detail.get("code") or "http_error"
+    details = detail.get("details") or {}
+    if exc.status_code == 401 and not detail.get("code"):
         code = "unauthorized"
-    elif exc.status_code == 403:
+    elif exc.status_code == 403 and not detail.get("code"):
         code = "forbidden"
-    elif exc.status_code == 404:
+    elif exc.status_code == 404 and not detail.get("code"):
         code = "not_found"
-    elif exc.status_code >= 500:
+    elif exc.status_code >= 500 and not detail.get("code"):
         code = "server_error"
     if exc.status_code >= 500:
         await _record_error_event(request, request_id, code, message, exc.status_code)
-    return JSONResponse(status_code=exc.status_code, content=_error_payload(code, message, request_id))
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=_error_payload(code, message, request_id, details),
+    )
 
 
 @app.exception_handler(Exception)
@@ -473,6 +500,7 @@ ROLE_PERMISSION_LEVELS: Dict[str, Dict[str, int]] = {
         "reports.analytics.view": 4, "reports.analytics.export": 4, "settings.platform.view": 4,
         "settings.view": 4, "logs.activity.view": 4, "logs.view": 4, "audit.logs.view": 5, "audit.view": 5,
         "atlas.view": 4, "atlas.export": 4, "technical.wiki.view": 5,
+        "profiles.view": 4, "profiles.update": 4,
     },
     "administrador_escolar": {
         "dashboard.general.view": 4, "users.profile.view": 3, "users.profile.edit": 3,
@@ -497,7 +525,8 @@ ROLE_PERMISSION_LEVELS: Dict[str, Dict[str, int]] = {
         "dashboard:view": 1, "teachers:own": 2, "students:view": 2,
         "bookings:assigned": 2, "lessons:create": 2,
         "calendar.teacher.view": 2, "calendar.teacher.create": 2, "calendar.teacher.edit": 2,
-        "calendar.teacher.block": 2, "calendar.teacher.invite_students": 2,
+        "calendar.teacher.block": 2, "calendar.teacher.sync_google": 2,
+        "calendar.teacher.invite_students": 2,
         "classes.sessions.view": 2, "classes.sessions.feedback": 2,
         "students.profile.view": 1, "students.progress.view": 1,
         "teachers.availability.view": 2, "teachers.availability.manage": 2,
@@ -571,6 +600,46 @@ def _public_user(user: User) -> dict:
     return doc
 
 
+_TEACHER_PENDING_PROFILE_PERMISSIONS = {
+    "dashboard.personal.view",
+    "profiles.view",
+    "profiles.update",
+    "users.view",
+    "users.update",
+    "teachers.view",
+    "teachers.update",
+    "calendar.teacher.sync_google",
+}
+
+
+def _teacher_profile_permission_allowed_while_pending(permission: Optional[str]) -> bool:
+    """Pending/suspended teachers may maintain their profile, not teach."""
+    return bool(
+        permission
+        and (
+            permission in _TEACHER_PENDING_PROFILE_PERMISSIONS
+            or permission.startswith("teachers.profile.")
+            or permission in {"users.profile.view", "users.profile.edit"}
+        )
+    )
+
+
+async def _teacher_profile_is_approved(user_id: str) -> bool:
+    return await _teacher_profile_approval_status(user_id) == "approved"
+
+
+async def _teacher_profile_approval_status(user_id: str) -> str:
+    profile = await db.user_role_profiles.find_one(
+        {"user_id": user_id, "role_code": "profesor"}, {"_id": 0}
+    )
+    if profile:
+        return profile.get("approval_status") or "pending"
+    # Compatibility bridge: an existing active teacher record is the
+    # authoritative pre-profile indication that the teacher was approved.
+    teacher = await db.teachers.find_one({"user_id": user_id}, {"_id": 0})
+    return "approved" if teacher and teacher.get("active", True) else "pending"
+
+
 async def _effective_role_names(user: User) -> List[str]:
     docs = await db.user_roles.find({"user_id": user.user_id}, {"_id": 0}).to_list(100)
     now = datetime.now(timezone.utc)
@@ -599,14 +668,19 @@ async def _effective_role_names(user: User) -> List[str]:
 async def _effective_permission_levels(user: User) -> Dict[str, int]:
     effective: Dict[str, int] = {}
     for role in await _effective_role_names(user):
+        teacher_restricted = role == "profesor" and not await _teacher_profile_is_approved(user.user_id)
         fallback = ROLE_PERMISSION_LEVELS.get(role, {})
         docs = await db.role_permissions.find({"role_name": role}, {"_id": 0}).to_list(1000)
         if not docs:
             for permission, level in fallback.items():
+                if teacher_restricted and not _teacher_profile_permission_allowed_while_pending(permission):
+                    continue
                 effective[permission] = max(effective.get(permission, 0), int(level))
         for doc in docs:
             permission = doc.get("permission")
             level = int(doc.get("level") or 0) if doc.get("allowed", True) else 0
+            if teacher_restricted and not _teacher_profile_permission_allowed_while_pending(permission):
+                continue
             if permission and level > 0:
                 effective[permission] = max(effective.get(permission, 0), level)
     return effective
@@ -616,16 +690,21 @@ async def _effective_permission_grants(user: User) -> Dict[str, List[str]]:
     """Return effective permission scopes, excluding inactive grants and roles."""
     grants: Dict[str, set] = {}
     for role in await _effective_role_names(user):
+        teacher_restricted = role == "profesor" and not await _teacher_profile_is_approved(user.user_id)
         fallback_scopes = ROLE_GRANTS.get(role, {})
         docs = await db.role_permissions.find({"role_name": role}, {"_id": 0}).to_list(1000)
         if not docs:
             for permission, scope in fallback_scopes.items():
+                if teacher_restricted and not _teacher_profile_permission_allowed_while_pending(permission):
+                    continue
                 grants.setdefault(permission, set()).add(scope)
         for doc in docs:
             if not doc.get("allowed", True) or int(doc.get("level") or 0) <= 0:
                 continue
             permission = doc.get("permission")
             scope = doc.get("scope") or "self"
+            if teacher_restricted and not _teacher_profile_permission_allowed_while_pending(permission):
+                continue
             if permission:
                 grants.setdefault(permission, set()).add(scope)
     return {permission: sorted(scopes) for permission, scopes in grants.items()}
@@ -1235,6 +1314,7 @@ TECHNICAL_DOCS = {
     "phase-1-execution-plan": {"title": "Phase 1 Execution Plan", "path": "docs/PHASE_1_EXECUTION_PLAN.md", "section": "roadmap"},
     "product-documentation": {"title": "Product Documentation", "path": "docs/PRODUCT_DOCUMENTATION.md", "section": "roadmap"},
     "teacher-calendar-workspace": {"title": "Teacher Calendar Workspace", "path": "docs/TEACHER_CALENDAR_WORKSPACE.md", "section": "roadmap"},
+    "google-calendar-integration": {"title": "Google Calendar Integration", "path": "docs/GOOGLE_CALENDAR_INTEGRATION.md", "section": "architecture"},
     "production-readiness-audit": {"title": "Production Readiness Audit", "path": "docs/production-readiness-audit.md", "section": "roadmap"},
     "production-execution-plan": {"title": "Production Execution Plan", "path": "docs/production-execution-plan.md", "section": "roadmap"},
     "preview-action-audit": {"title": "Preview Action Audit", "path": "docs/PREVIEW_ACTION_AUDIT.md", "section": "roadmap"},
@@ -1251,6 +1331,7 @@ TECHNICAL_DOCS = {
     "database-standardization-plan": {"title": "Database Standardization Plan", "path": "docs/DATABASE_STANDARDIZATION_PLAN.md", "section": "data"},
     "phase-1-backfill-audit": {"title": "Phase 1 Backfill Audit", "path": "backend/backfill_standardization_phase1.sql", "section": "data"},
     "api-reference": {"title": "API Reference", "path": "docs/API_REFERENCE.md", "section": "data"},
+    "profile-model": {"title": "Profile Model", "path": "docs/PROFILE_MODEL.md", "section": "data"},
     "environment-variables": {"title": "Environment Variables", "path": "docs/ENVIRONMENT_VARIABLES.md", "section": "configuration"},
     "backend-env-example": {"title": "Backend Env Example", "path": "backend/.env.example", "section": "configuration"},
     "technical-wiki": {"title": "Technical Wiki", "path": "docs/TECHNICAL_WIKI.md", "section": "configuration"},
@@ -1925,6 +2006,8 @@ async def auth_me(user: User = Depends(get_current_user)):
     doc = _public_user(user)
     doc["roles"] = await _effective_role_names(user)
     doc["permissions"] = await _effective_permission_levels(user)
+    profile = await db.user_profiles.find_one({"user_id": user.user_id}, {"_id": 0})
+    doc["profile_preferences"] = (profile or {}).get("preferences") or {}
     return doc
 
 
@@ -1952,6 +2035,402 @@ async def auth_me_permissions(user: User = Depends(get_current_user)):
             for item in role_assignments
         ],
     }
+
+
+_SUPPORTED_PROFILE_ROLES = set(PROFILE_ROLE_LABELS)
+
+
+def _default_common_profile(user: User) -> dict:
+    parts = (user.name or "").strip().split(maxsplit=1)
+    return {
+        "first_name": parts[0] if parts else "",
+        "last_name": parts[1] if len(parts) > 1 else "",
+        "public_name": user.name or "",
+        "picture": user.picture or "",
+        "native_language": "",
+        "learning_language": "",
+        "country": "",
+        "timezone": "UTC",
+        "phone": "",
+        "preferences": {
+            "interface_language": "en",
+            "theme": "system",
+            "email_notifications": True,
+            "learning_reminders": True,
+            "reduced_motion": False,
+            "high_contrast": False,
+        },
+    }
+
+
+async def _profile_role_for_request(user: User, requested_role: Optional[str]) -> tuple[str, List[str]]:
+    effective_roles = await _effective_role_names(user)
+    available = [role for role in effective_roles if role in _SUPPORTED_PROFILE_ROLES]
+    role = canonical_profile_role(requested_role or user.role)
+    if role not in available:
+        role = available[0] if available else ""
+    if not role:
+        raise HTTPException(403, "No supported profile is assigned to this account")
+    if requested_role and canonical_profile_role(requested_role) not in available:
+        raise HTTPException(403, "The requested profile is not assigned to this account")
+    return role, available
+
+
+async def _profile_payload(user: User, requested_role: Optional[str] = None) -> dict:
+    role, available_roles = await _profile_role_for_request(user, requested_role)
+    common_doc = await db.user_profiles.find_one({"user_id": user.user_id}, {"_id": 0})
+    common = _default_common_profile(user)
+    if common_doc:
+        common.update({key: value for key, value in common_doc.items() if key in common})
+        common["preferences"] = {
+            **_default_common_profile(user)["preferences"],
+            **(common_doc.get("preferences") or {}),
+        }
+    role_doc = await db.user_role_profiles.find_one(
+        {"user_id": user.user_id, "role_code": role}, {"_id": 0}
+    )
+    details = dict((role_doc or {}).get("profile_data") or {})
+    completion = profile_completion(common, details, role)
+    approval_status = await _teacher_profile_approval_status(user.user_id) if role == "profesor" else "active"
+    schools = []
+    for school_id in await _authorized_school_ids(user):
+        school = await db.schools.find_one({"id": school_id}, {"_id": 0})
+        schools.append({
+            "id": school_id,
+            "name": (school or {}).get("name") or school_id,
+            "status": (school or {}).get("status") or "active",
+        })
+    linked_students = []
+    if role == "tutor_padre":
+        links = await db.tutor_student_links.find(
+            {"tutor_user_id": user.user_id, "status": "active"}, {"_id": 0}
+        ).to_list(200)
+        for link in links:
+            student = await db.users.find_one(
+                {"user_id": link.get("student_user_id")}, {"_id": 0}
+            )
+            if student:
+                linked_students.append({
+                    "userId": student["user_id"],
+                    "name": student.get("name") or student.get("email"),
+                    "status": student.get("status") or "active",
+                    "relationship": link.get("relationship_type") or "guardian",
+                    "schoolId": link.get("school_id"),
+                })
+    grants = await _effective_permission_grants(user)
+    scopes = sorted({scope for permission_scopes in grants.values() for scope in permission_scopes})
+    activity = await db.activity_logs.find(
+        {"actor_user_id": user.user_id}, {"_id": 0}
+    ).to_list(20)
+    activity.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+    can_view_audit = (
+        await _has_permission(user, "audit.view")
+        or await _has_permission(user, "audit.logs.view")
+        or await _has_permission(user, "*", 100)
+    )
+    audit = []
+    if can_view_audit:
+        actor_audit = await db.audit_events.find(
+            {"actor_user_id": user.user_id}, {"_id": 0}
+        ).to_list(20)
+        target_audit = await db.audit_events.find(
+            {"target_user_id": user.user_id}, {"_id": 0}
+        ).to_list(20)
+        audit = list({item["id"]: item for item in actor_audit + target_audit}.values())
+        audit.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+        audit = audit[:20]
+    return {
+        "userId": user.user_id,
+        "email": user.email,
+        "authProvider": user.auth_provider,
+        "role": role,
+        "roleLabel": PROFILE_ROLE_LABELS[role],
+        "availableRoles": [
+            {"code": item, "label": PROFILE_ROLE_LABELS[item]} for item in available_roles
+        ],
+        "accountStatus": user.status,
+        "approvalStatus": approval_status,
+        "completion": completion,
+        "createdAt": user.created_at.isoformat() if isinstance(user.created_at, datetime) else user.created_at,
+        "lastLoginAt": user.last_login_at,
+        "common": common,
+        "details": details,
+        "schools": schools,
+        "scopes": scopes,
+        "linkedStudents": linked_students,
+        "activity": activity[:10],
+        "audit": audit,
+        "canViewAudit": can_view_audit,
+        "canEdit": await can(user, "profiles.update", resource_owner_id=user.user_id),
+    }
+
+
+@api.get("/profile")
+async def get_my_profile(
+    request: Request,
+    role: Optional[str] = None,
+    user: User = Depends(get_current_user),
+):
+    await authorize(
+        user, "profiles.view", request=request, resource_type="profile",
+        resource_id=user.user_id, resource_owner_id=user.user_id,
+    )
+    return await _profile_payload(user, role)
+
+
+@api.patch("/profile")
+async def update_my_profile(
+    payload: dict,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    role, _ = await _profile_role_for_request(user, payload.get("role"))
+    await authorize(
+        user,
+        "profiles.update",
+        request=request,
+        resource_type="profile",
+        resource_id=user.user_id,
+        resource_owner_id=user.user_id,
+    )
+    if set(payload) - {"role", "common", "details"}:
+        raise HTTPException(400, "Unsupported profile payload")
+    try:
+        common_updates = validate_common_profile(payload.get("common") or {})
+        detail_updates = validate_role_profile(role, payload.get("details") or {})
+    except ProfileValidationError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not common_updates and not detail_updates:
+        raise HTTPException(400, "No editable profile fields supplied")
+
+    now = _now_iso()
+    common_before = await db.user_profiles.find_one({"user_id": user.user_id}, {"_id": 0})
+    default_common = _default_common_profile(user)
+    current_common = {**default_common, **(common_before or {})}
+    if "preferences" in common_updates:
+        common_updates["preferences"] = {
+            **(current_common.get("preferences") or {}),
+            **common_updates["preferences"],
+        }
+    common_after = {**current_common, **common_updates, "updated_at": now}
+    common_after.setdefault("id", f"up_{uuid.uuid4().hex}")
+    common_after.setdefault("user_id", user.user_id)
+    common_after.setdefault("created_at", now)
+    if common_before:
+        await db.user_profiles.update_one(
+            {"user_id": user.user_id}, {"$set": common_after}
+        )
+    else:
+        await db.user_profiles.insert_one(common_after)
+
+    role_before = await db.user_role_profiles.find_one(
+        {"user_id": user.user_id, "role_code": role}, {"_id": 0}
+    )
+    role_data = {**((role_before or {}).get("profile_data") or {}), **detail_updates}
+    role_after = {
+        "id": (role_before or {}).get("id") or f"urp_{uuid.uuid4().hex}",
+        "user_id": user.user_id,
+        "role_code": role,
+        "profile_data": role_data,
+        "approval_status": (role_before or {}).get("approval_status") or (
+            await _teacher_profile_approval_status(user.user_id)
+            if role == "profesor" else "approved"
+        ),
+        "created_at": (role_before or {}).get("created_at") or now,
+        "updated_at": now,
+    }
+    if role_before:
+        await db.user_role_profiles.update_one(
+            {"id": role_after["id"]}, {"$set": role_after}
+        )
+    else:
+        await db.user_role_profiles.insert_one(role_after)
+
+    identity_updates = {"updated_at": now}
+    if any(field in common_updates for field in ("first_name", "last_name", "public_name")):
+        identity_updates["name"] = (
+            common_after.get("public_name")
+            or " ".join(filter(None, [common_after.get("first_name"), common_after.get("last_name")]))
+            or user.name
+        )
+    if "picture" in common_updates:
+        identity_updates["picture"] = common_after.get("picture") or ""
+    await db.users.update_one({"user_id": user.user_id}, {"$set": identity_updates})
+
+    changed_fields = set(common_updates) | set(detail_updates)
+    event_groups = {
+        "profile.photo.changed": {"picture"},
+        "profile.language.changed": {"native_language", "learning_language"},
+        "profile.country.changed": {"country"},
+        "profile.phone.changed": {"phone", "contact_phone"},
+        "profile.preferences.changed": {"preferences"},
+    }
+    emitted = set()
+    for event_type, fields in event_groups.items():
+        matching = changed_fields & fields
+        if matching:
+            emitted.update(matching)
+            await _record_audit_event(
+                event_type,
+                "profile",
+                entity_id=user.user_id,
+                actor_user_id=user.user_id,
+                target_user_id=user.user_id,
+                permission_code="profiles.update",
+                metadata={"role": role, "changed_fields": safe_audit_fields(matching)},
+                request=request,
+            )
+    remaining = changed_fields - emitted
+    if remaining:
+        await _record_audit_event(
+            "profile.administrative.updated" if role in {
+                "administrador_escolar", "finanzas", "administrador_profesor", "administrador_sitio"
+            } else "profile.updated",
+            "profile",
+            entity_id=user.user_id,
+            actor_user_id=user.user_id,
+            target_user_id=user.user_id,
+            permission_code="profiles.update",
+            metadata={"role": role, "changed_fields": safe_audit_fields(remaining)},
+            request=request,
+        )
+    await _record_activity_log(
+        "profile.updated",
+        "update",
+        "profile",
+        f"{PROFILE_ROLE_LABELS[role]} profile updated",
+        actor_user_id=user.user_id,
+        actor_name=user.name,
+        target_id=user.user_id,
+        metadata={"role": role, "changed_fields": safe_audit_fields(changed_fields)},
+        visibility="self",
+    )
+    refreshed = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
+    return await _profile_payload(User(**refreshed), role)
+
+
+@api.post("/profile/photo")
+async def upload_my_profile_photo(
+    request: Request,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+):
+    await authorize(
+        user, "profiles.update", request=request, resource_type="profile",
+        resource_id=user.user_id, resource_owner_id=user.user_id,
+    )
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file")
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(400, f"File too large (max {_MAX_UPLOAD_BYTES // 1024 // 1024} MB)")
+    content_type = (file.content_type or "").lower()
+    if content_type not in _ALLOWED_MIME:
+        raise HTTPException(400, "Profile photo must be JPEG, PNG, WebP, or GIF")
+    extension = (
+        file.filename.rsplit(".", 1)[-1].lower()
+        if file.filename and "." in file.filename
+        else content_type.split("/")[-1]
+    )
+    path = f"{APP_NAME}/profiles/{user.user_id}/{uuid.uuid4().hex}.{extension}"
+    try:
+        result = await _put_object(path, data, content_type)
+    except Exception as exc:
+        logger.exception("profile photo upload failed")
+        raise HTTPException(502, f"Storage error: {exc}") from exc
+    photo_url = result["public_url"]
+    now = _now_iso()
+    await db.files.insert_one({
+        "id": str(uuid.uuid4()),
+        "storage_path": result["path"],
+        "original_filename": file.filename,
+        "content_type": content_type,
+        "size": result.get("size", len(data)),
+        "uploaded_by": user.user_id,
+        "is_deleted": False,
+        "created_at": now,
+    })
+    profile = await db.user_profiles.find_one({"user_id": user.user_id}, {"_id": 0})
+    if profile:
+        await db.user_profiles.update_one(
+            {"user_id": user.user_id}, {"$set": {"picture": photo_url, "updated_at": now}}
+        )
+    else:
+        common = {
+            **_default_common_profile(user),
+            "id": f"up_{uuid.uuid4().hex}",
+            "user_id": user.user_id,
+            "picture": photo_url,
+            "created_at": now,
+            "updated_at": now,
+        }
+        await db.user_profiles.insert_one(common)
+    await db.users.update_one(
+        {"user_id": user.user_id}, {"$set": {"picture": photo_url, "updated_at": now}}
+    )
+    await _record_audit_event(
+        "profile.photo.changed", "profile", entity_id=user.user_id,
+        actor_user_id=user.user_id, target_user_id=user.user_id,
+        permission_code="profiles.update", metadata={"changed_fields": ["picture"]},
+        request=request,
+    )
+    return {"url": photo_url}
+
+
+@api.patch("/admin/profiles/{user_id}/teacher-approval")
+async def update_teacher_profile_approval(
+    user_id: str,
+    payload: dict,
+    request: Request,
+    current: User = Depends(get_current_user),
+):
+    if user_id == current.user_id:
+        raise HTTPException(403, "Teachers cannot approve or suspend their own profile")
+    status = str(payload.get("status") or "").strip().lower()
+    if status not in {"pending", "approved", "suspended"}:
+        raise HTTPException(422, "status must be pending, approved, or suspended")
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, "User not found")
+    allowed = await can(
+        current, "teachers.update", resource_owner_id=user_id,
+        school_id=target.get("active_school_id"),
+    ) or await can(
+        current, "teachers.profile.edit", resource_owner_id=user_id,
+        school_id=target.get("active_school_id"),
+    )
+    if not allowed:
+        await authorize(
+            current, "teachers.update", request=request, resource_type="profile",
+            resource_id=user_id, resource_owner_id=user_id,
+            school_id=target.get("active_school_id"),
+        )
+    now = _now_iso()
+    before = await db.user_role_profiles.find_one(
+        {"user_id": user_id, "role_code": "profesor"}, {"_id": 0}
+    )
+    if before:
+        await db.user_role_profiles.update_one(
+            {"id": before["id"]}, {"$set": {"approval_status": status, "updated_at": now}}
+        )
+    else:
+        await db.user_role_profiles.insert_one({
+            "id": f"urp_{uuid.uuid4().hex}",
+            "user_id": user_id,
+            "role_code": "profesor",
+            "profile_data": {},
+            "approval_status": status,
+            "created_at": now,
+            "updated_at": now,
+        })
+    await _record_audit_event(
+        "profile.teacher.approval_changed", "profile", entity_id=user_id,
+        actor_user_id=current.user_id, target_user_id=user_id,
+        school_id=target.get("active_school_id"), permission_code="teachers.update",
+        metadata={"changed_fields": ["approval_status"], "status": status},
+        risk_level="high", request=request,
+    )
+    return {"userId": user_id, "approvalStatus": status}
 
 @api.post("/auth/logout")
 async def auth_logout(request: Request, authorization: Optional[str] = Header(default=None)):
@@ -1988,8 +2467,134 @@ async def get_product(product_id: str):
     return p
 
 # ---- Availability
+async def _calendar_runtime_active() -> bool:
+    if not await _teacher_calendar_feature_enabled():
+        return False
+    return GoogleCalendarConfig.from_env().ready
+
+
+async def _teacher_user_id(teacher_id: Optional[str]) -> Optional[str]:
+    if not teacher_id:
+        return None
+    teacher = await db.teachers.find_one({"id": teacher_id, "active": True}, {"_id": 0})
+    return teacher.get("user_id") if teacher else None
+
+
+async def _validate_external_teacher_slot(
+    teacher_id: Optional[str],
+    date_value: str,
+    time_value: str,
+    duration_minutes: int,
+    timezone_name: str,
+    *,
+    require_fresh: bool,
+    ignore_exact_interval: Optional[tuple[datetime, datetime]] = None,
+) -> None:
+    if not teacher_id or not await _calendar_runtime_active():
+        return
+    teacher_user_id = await _teacher_user_id(teacher_id)
+    if not teacher_user_id:
+        return
+    service = GoogleCalendarService(db, GoogleCalendarConfig.from_env())
+    connection = await service.connection_for_user(teacher_user_id)
+    if not connection or connection.get("status") != "connected":
+        return
+    try:
+        starts_at, ends_at = local_time_window(
+            date_value,
+            time_value,
+            int(duration_minutes),
+            timezone_name,
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            422,
+            detail={
+                "code": "booking_time_invalid",
+                "message": str(exc),
+            },
+        ) from exc
+    try:
+        blocks = await service.busy_blocks(
+            teacher_user_id,
+            starts_at,
+            ends_at,
+            require_fresh=require_fresh,
+        )
+    except GoogleCalendarError as exc:
+        # Provider errors must never be interpreted as a free slot.
+        raise _calendar_http_error(exc) from exc
+    if ignore_exact_interval:
+        ignore_start, ignore_end = ignore_exact_interval
+        blocks = [
+            block
+            for block in blocks
+            if not (
+                parse_utc(block.get("start")) == ignore_start.astimezone(timezone.utc)
+                and parse_utc(block.get("end")) == ignore_end.astimezone(timezone.utc)
+            )
+        ]
+    if interval_conflicts(starts_at, ends_at, blocks):
+        raise HTTPException(
+            409,
+            detail={
+                "code": "calendar_slot_conflict",
+                "message": "This time is no longer available. Select another time.",
+            },
+        )
+
+
+async def _sync_booking_to_teacher_calendar(
+    booking: dict,
+    *,
+    operation: str = "upsert",
+) -> dict:
+    if not booking.get("teacher_id") or not await _calendar_runtime_active():
+        return {"status": "disabled"}
+    teacher_user_id = await _teacher_user_id(booking.get("teacher_id"))
+    if not teacher_user_id or not await _teacher_profile_is_approved(teacher_user_id):
+        return {"status": "teacher_not_approved"}
+    try:
+        starts_at, ends_at = local_time_window(
+            booking.get("scheduled_date", ""),
+            booking.get("scheduled_time", ""),
+            int(booking.get("duration_min") or 60),
+            booking.get("timezone") or "UTC",
+        )
+    except (ValueError, TypeError):
+        return {"status": "failed", "errorCode": "booking_time_invalid"}
+    service = GoogleCalendarService(db, GoogleCalendarConfig.from_env())
+    event_booking = {
+        **booking,
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "language": booking.get("language") or "Spanish",
+        "location": booking.get("meeting_link") or "",
+    }
+    try:
+        return await service.sync_booking_event(
+            teacher_user_id,
+            event_booking,
+            operation=operation,
+        )
+    except GoogleCalendarError as exc:
+        await service.mark_event_failure(teacher_user_id, event_booking, exc.code)
+        logger.warning(
+            "Teacher calendar event sync failed booking=%s code=%s",
+            booking.get("id"),
+            exc.code,
+        )
+        return {"status": "retrying", "errorCode": exc.code}
+
+
 @api.get("/availability")
-async def get_availability(date: Optional[str] = None, teacher_id: Optional[str] = None):
+async def get_availability(
+    date: Optional[str] = None,
+    teacher_id: Optional[str] = None,
+    duration_min: int = 60,
+):
+    if duration_min not in {30, 45, 60}:
+        raise HTTPException(422, "duration_min must be 30, 45, or 60")
     q: dict = {"available": True}
     if date:
         q["date"] = date
@@ -1997,6 +2602,52 @@ async def get_availability(date: Optional[str] = None, teacher_id: Optional[str]
         # show slots assigned to this teacher OR unassigned (open) slots
         q["$or"] = [{"teacher_id": teacher_id}, {"teacher_id": {"$exists": False}}, {"teacher_id": None}]
     slots = await db.availability.find(q, {"_id": 0}).to_list(1000)
+    if teacher_id and slots and await _calendar_runtime_active():
+        teacher_user_id = await _teacher_user_id(teacher_id)
+        if teacher_user_id:
+            profile = await db.user_profiles.find_one(
+                {"user_id": teacher_user_id}, {"_id": 0}
+            )
+            teacher_timezone = (profile or {}).get("timezone") or "UTC"
+            service = GoogleCalendarService(db, GoogleCalendarConfig.from_env())
+            connection = await service.connection_for_user(teacher_user_id)
+            if connection and connection.get("status") == "connected":
+                try:
+                    windows = [
+                        local_time_window(
+                            slot["date"],
+                            slot["start_time"],
+                            duration_min,
+                            teacher_timezone,
+                        )
+                        for slot in slots
+                    ]
+                    await service.busy_blocks(
+                        teacher_user_id,
+                        min(item[0] for item in windows),
+                        max(item[1] for item in windows),
+                        require_fresh=False,
+                    )
+                except (GoogleCalendarError, ValueError, TypeError):
+                    # Fail closed without exposing provider state to students.
+                    return []
+            visible = []
+            for slot in slots:
+                try:
+                    await _validate_external_teacher_slot(
+                        teacher_id,
+                        slot["date"],
+                        slot["start_time"],
+                        duration_min,
+                        teacher_timezone,
+                        require_fresh=False,
+                    )
+                except HTTPException:
+                    # Public availability omits conflicts and provider-uncertain
+                    # slots without revealing why a teacher is unavailable.
+                    continue
+                visible.append(slot)
+            slots = visible
     slots.sort(key=lambda s: (s["date"], s["start_time"]))
     return slots
 
@@ -2044,6 +2695,30 @@ async def create_checkout(request: Request, payload: dict, user: User = Depends(
         if not teacher:
             raise HTTPException(400, "Invalid teacher")
         teacher_name = teacher["name"]
+        if date and time and int(product.get("duration_min") or 0) > 0:
+            try:
+                await _validate_external_teacher_slot(
+                    teacher_id,
+                    date,
+                    time,
+                    int(product["duration_min"]),
+                    tz,
+                    require_fresh=True,
+                )
+            except HTTPException as exc:
+                if exc.status_code == 409:
+                    await _record_audit_event(
+                        "calendar.slot.conflict",
+                        "booking",
+                        actor_user_id=user.user_id,
+                        target_user_id=teacher.get("user_id"),
+                        permission_code="bookings.create",
+                        result="denied",
+                        metadata={"stage": "checkout"},
+                        request=request,
+                        risk_level="high",
+                    )
+                raise
 
     stripe_key = await _get_stripe_key()
     if not stripe_key:
@@ -2093,6 +2768,115 @@ async def create_checkout(request: Request, payload: dict, user: User = Depends(
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     return {"url": session.url, "session_id": session.id}
+
+
+async def _insert_booking_idempotently(doc: dict) -> tuple[dict, bool]:
+    """Serialize booking creation by payment session across backend instances."""
+    session_id = str(doc.get("payment_session_id") or "")
+    starts_at = ends_at = None
+    if doc.get("teacher_id"):
+        try:
+            starts_at, ends_at = local_time_window(
+                doc.get("scheduled_date", ""),
+                doc.get("scheduled_time", ""),
+                int(doc.get("duration_min") or 60),
+                doc.get("timezone") or "UTC",
+            )
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                422,
+                detail={"code": "booking_time_invalid", "message": str(exc)},
+            ) from exc
+        doc["starts_at"] = starts_at.isoformat()
+        doc["ends_at"] = ends_at.isoformat()
+    if not session_id:
+        await db.bookings.insert_one(doc)
+        return doc, True
+    async with db._pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext($1))",
+                f"booking:{session_id}",
+            )
+            existing = await conn.fetchrow(
+                "SELECT * FROM bookings WHERE payment_session_id = $1 LIMIT 1",
+                session_id,
+            )
+            if existing:
+                return dict(existing), False
+            if doc.get("teacher_id"):
+                slot_key = (
+                    f"teacher-slot:{doc['teacher_id']}:{doc.get('scheduled_date')}:"
+                    f"{doc.get('scheduled_time')}"
+                )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext($1))",
+                    slot_key,
+                )
+                overlapping = await conn.fetchval(
+                    """
+                    SELECT COUNT(*)
+                    FROM bookings
+                    WHERE teacher_id = $1
+                      AND status NOT IN ('cancelled', 'canceled')
+                      AND (
+                        (starts_at IS NOT NULL AND ends_at IS NOT NULL
+                         AND starts_at::timestamptz < $3::timestamptz
+                         AND ends_at::timestamptz > $2::timestamptz)
+                        OR
+                        (starts_at IS NULL AND scheduled_date = $4 AND scheduled_time = $5)
+                      )
+                    """,
+                    doc.get("teacher_id"),
+                    starts_at.isoformat(),
+                    ends_at.isoformat(),
+                    doc.get("scheduled_date"),
+                    doc.get("scheduled_time"),
+                )
+                if overlapping:
+                    raise HTTPException(
+                        409,
+                        detail={
+                            "code": "booking_slot_conflict",
+                            "message": "This time is no longer available. Select another time.",
+                        },
+                    )
+                await _validate_external_teacher_slot(
+                    doc.get("teacher_id"),
+                    doc.get("scheduled_date", ""),
+                    doc.get("scheduled_time", ""),
+                    int(doc.get("duration_min") or 60),
+                    doc.get("timezone") or "UTC",
+                    require_fresh=True,
+                )
+            row = await conn.fetchrow(
+                """
+                INSERT INTO bookings (
+                    id, user_id, user_email, user_name, product_id, product_name,
+                    duration_min, scheduled_date, scheduled_time, timezone, status,
+                    meeting_link, notes, payment_session_id, teacher_id, teacher_name,
+                    created_at, end_time, student_profile_id, updated_at, school_id
+                    , starts_at, ends_at
+                ) VALUES (
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
+                    $17,$18,$19,$20,$21,$22,$23
+                )
+                RETURNING *
+                """,
+                *[
+                    doc.get(key)
+                    for key in (
+                        "id", "user_id", "user_email", "user_name", "product_id",
+                        "product_name", "duration_min", "scheduled_date",
+                        "scheduled_time", "timezone", "status", "meeting_link",
+                        "notes", "payment_session_id", "teacher_id", "teacher_name",
+                        "created_at", "end_time", "student_profile_id", "updated_at",
+                        "school_id", "starts_at", "ends_at",
+                    )
+                ],
+            )
+            return dict(row), True
+
 
 @api.get("/payments/status/{session_id}")
 async def payment_status(
@@ -2148,19 +2932,68 @@ async def payment_status(
             doc = booking.model_dump()
             doc["created_at"] = doc["created_at"].isoformat()
             doc["school_id"] = txn.get("school_id")
-            await db.bookings.insert_one(doc)
-
-            # Google Calendar: create event + send invite email
             try:
-                gcal = await _create_gcal_event(doc, product)
-                if gcal.get("meet_link"):
-                    await db.bookings.update_one(
-                        {"id": doc["id"]},
-                        {"$set": {"meeting_link": gcal["meet_link"]}},
+                doc, booking_created_now = await _insert_booking_idempotently(doc)
+            except HTTPException as exc:
+                if exc.status_code == 409:
+                    await _record_audit_event(
+                        "calendar.slot.conflict",
+                        "booking",
+                        actor_user_id=user["user_id"],
+                        target_user_id=await _teacher_user_id(meta.get("teacher_id")),
+                        school_id=txn.get("school_id"),
+                        permission_code="bookings.create",
+                        result="denied",
+                        metadata={"stage": "confirmation"},
+                        request=request,
+                        risk_level="high",
                     )
-                    logger.info(f"gcal event created for booking {doc['id']}")
-            except Exception as e:
-                logger.warning(f"gcal event create error: {e}")
+                raise
+            if not booking_created_now:
+                await db.payment_transactions.update_one(
+                    {"session_id": session_id}, {"$set": {"booking_created": True}}
+                )
+                return {
+                    "payment_status": payment_state,
+                    "status": checkout_state,
+                    "amount_total": session.amount_total,
+                    "currency": session.currency,
+                }
+
+            # Prefer the opt-in per-teacher integration. The legacy global
+            # integration remains a compatibility fallback while its feature
+            # is disabled or the teacher has no individual connection.
+            calendar_result = await _sync_booking_to_teacher_calendar(doc)
+            if calendar_result.get("status") not in {"disabled", "disconnected"}:
+                await _record_audit_event(
+                    f"calendar.event.{calendar_result.get('status')}",
+                    "booking",
+                    entity_id=doc["id"],
+                    actor_user_id=user["user_id"],
+                    target_user_id=await _teacher_user_id(doc.get("teacher_id")),
+                    school_id=doc.get("school_id"),
+                    permission_code="bookings.create",
+                    metadata={
+                        "operation": "create",
+                        "sync_status": calendar_result.get("status"),
+                        "error_code": calendar_result.get("errorCode"),
+                    },
+                    request=request,
+                    risk_level="high",
+                )
+            if calendar_result.get("status") == "disabled":
+                try:
+                    gcal = await _create_gcal_event(doc, product)
+                    if gcal.get("meet_link"):
+                        await db.bookings.update_one(
+                            {"id": doc["id"]},
+                            {"$set": {"meeting_link": gcal["meet_link"]}},
+                        )
+                except Exception:
+                    logger.warning(
+                        "Legacy calendar event creation failed booking=%s",
+                        doc["id"],
+                    )
             # mark slot taken (prefer teacher-specific slot if available)
             if meta.get("date") and meta.get("time"):
                 tslot = {"date": meta["date"], "start_time": meta["time"]}
@@ -2408,7 +3241,13 @@ async def update_booking(
     request: Request,
     user: User = Depends(get_current_user),
 ):
-    allowed = {k: v for k, v in payload.items() if k in ("status", "meeting_link", "notes")}
+    allowed_fields = {
+        "status", "meeting_link", "notes", "scheduled_date", "scheduled_time",
+        "timezone", "duration_min", "teacher_id",
+    }
+    if set(payload) - allowed_fields:
+        raise HTTPException(400, "Unsupported booking fields")
+    allowed = {k: v for k, v in payload.items() if k in allowed_fields}
     before = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
     if not before:
         raise HTTPException(404, "Booking not found")
@@ -2420,6 +3259,72 @@ async def update_booking(
         resource_owner_id=before.get("user_id"), school_id=before.get("school_id"),
         assigned=bool(teacher and before.get("teacher_id") == teacher.get("id")),
     )
+    prospective = {**before, **allowed}
+    if allowed.get("teacher_id"):
+        next_teacher = await db.teachers.find_one(
+            {"id": allowed["teacher_id"], "active": True}, {"_id": 0}
+        )
+        if not next_teacher:
+            raise HTTPException(422, "Invalid teacher")
+        prospective["teacher_name"] = next_teacher.get("name")
+        allowed["teacher_name"] = next_teacher.get("name")
+    schedule_changed = bool(
+        set(allowed)
+        & {"scheduled_date", "scheduled_time", "timezone", "duration_min", "teacher_id"}
+    ) or allowed.get("status") == "rescheduled"
+    if schedule_changed and prospective.get("teacher_id"):
+        try:
+            starts_at, ends_at = local_time_window(
+                prospective.get("scheduled_date", ""),
+                prospective.get("scheduled_time", ""),
+                int(prospective.get("duration_min") or 60),
+                prospective.get("timezone") or "UTC",
+            )
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                422,
+                detail={"code": "booking_time_invalid", "message": str(exc)},
+            ) from exc
+        ignore_interval = None
+        if prospective.get("teacher_id") == before.get("teacher_id"):
+            teacher_user_id = await _teacher_user_id(before.get("teacher_id"))
+            link = (
+                await db.calendar_event_links.find_one(
+                    {
+                        "class_id": booking_id,
+                        "teacher_user_id": teacher_user_id,
+                        "sync_status": "synced",
+                    },
+                    {"_id": 0},
+                )
+                if teacher_user_id
+                else None
+            )
+            if link:
+                try:
+                    ignore_interval = local_time_window(
+                        before.get("scheduled_date", ""),
+                        before.get("scheduled_time", ""),
+                        int(before.get("duration_min") or 60),
+                        before.get("timezone") or "UTC",
+                    )
+                except (ValueError, TypeError):
+                    ignore_interval = None
+        await _validate_external_teacher_slot(
+            prospective.get("teacher_id"),
+            prospective.get("scheduled_date", ""),
+            prospective.get("scheduled_time", ""),
+            int(prospective.get("duration_min") or 60),
+            prospective.get("timezone") or "UTC",
+            require_fresh=True,
+            ignore_exact_interval=ignore_interval,
+        )
+        allowed["starts_at"] = starts_at.isoformat()
+        allowed["ends_at"] = ends_at.isoformat()
+    elif schedule_changed:
+        allowed["starts_at"] = None
+        allowed["ends_at"] = None
+    allowed["updated_at"] = _now_iso()
     await db.bookings.update_one({"id": booking_id}, {"$set": allowed})
     after = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
     if before and allowed.get("status") and allowed.get("status") != before.get("status"):
@@ -2438,6 +3343,39 @@ async def update_booking(
         school_id=before.get("school_id"), permission_code=permission, before=before, after=after,
         request=request, risk_level=_permission_risk(permission),
     )
+    calendar_sync = {"status": "unchanged"}
+    teacher_changed = before.get("teacher_id") != after.get("teacher_id")
+    if teacher_changed:
+        await _sync_booking_to_teacher_calendar(before, operation="cancel")
+        calendar_sync = await _sync_booking_to_teacher_calendar(after)
+    elif allowed.get("status") in {"cancelled", "canceled"}:
+        calendar_sync = await _sync_booking_to_teacher_calendar(after, operation="cancel")
+    elif schedule_changed or (
+        allowed.get("status") in {"confirmed", "scheduled"}
+        and allowed.get("status") != before.get("status")
+    ):
+        calendar_sync = await _sync_booking_to_teacher_calendar(after)
+    if calendar_sync.get("status") != "unchanged":
+        await _record_audit_event(
+            f"calendar.event.{calendar_sync.get('status')}",
+            "booking",
+            entity_id=booking_id,
+            actor_user_id=user.user_id,
+            school_id=after.get("school_id"),
+            permission_code=permission,
+            metadata={
+                "operation": (
+                    "cancel"
+                    if allowed.get("status") in {"cancelled", "canceled"}
+                    else "upsert"
+                ),
+                "sync_status": calendar_sync.get("status"),
+                "error_code": calendar_sync.get("errorCode"),
+            },
+            request=request,
+            risk_level="high",
+        )
+    after["calendarSync"] = calendar_sync
     return after
 
 @api.get("/admin/students")
@@ -3967,6 +4905,7 @@ DEFAULT_SETTINGS = {
         "feature_flags": {
             "student_roadmap": True,
             "teacher_calendar": True,
+            "teacher_google_calendar": False,
             "credits_wallet": False,
             "ai_tutor": False,
             "community": False,
@@ -4035,11 +4974,454 @@ async def _get_settings() -> dict:
     if not doc:
         await db.site_settings.insert_one(dict(DEFAULT_SETTINGS))
         return dict(DEFAULT_SETTINGS)
-    # Ensure all expected keys exist (forward compat)
-    for k, v in DEFAULT_SETTINGS.items():
-        if k not in doc:
-            doc[k] = v
-    return doc
+    # Deep defaults make newly introduced nested feature flags available without
+    # overwriting any persisted configuration.
+    return _deep_merge_settings(DEFAULT_SETTINGS, doc)
+
+
+# ---- Per-teacher Google Calendar integration
+def _calendar_http_error(exc: GoogleCalendarError) -> HTTPException:
+    return HTTPException(
+        status_code=exc.status_code,
+        detail={"code": exc.code, "message": str(exc)},
+    )
+
+
+async def _teacher_calendar_feature_enabled() -> bool:
+    settings = await _get_settings()
+    flags = (
+        (settings.get("platform_config") or {}).get("feature_flags") or {}
+    )
+    return flags.get("teacher_google_calendar") is True
+
+
+async def _teacher_calendar_service(*, require_enabled: bool = True) -> GoogleCalendarService:
+    service = GoogleCalendarService(db, GoogleCalendarConfig.from_env())
+    if require_enabled:
+        if not await _teacher_calendar_feature_enabled():
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "calendar_feature_disabled",
+                    "message": "Google Calendar integration is disabled.",
+                },
+            )
+        try:
+            service.require_ready()
+        except GoogleCalendarError as exc:
+            raise _calendar_http_error(exc) from exc
+    return service
+
+
+async def _authorize_teacher_calendar(
+    user: User,
+    request: Optional[Request] = None,
+    *,
+    require_complete_profile: bool = True,
+) -> None:
+    roles = await _effective_role_names(user)
+    if "profesor" not in roles or not user.active or user.status != "active":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "calendar_teacher_required",
+                "message": "An active teacher account is required.",
+            },
+        )
+    await authorize(
+        user,
+        "calendar.teacher.sync_google",
+        request=request,
+        resource_type="external_calendar_connection",
+        resource_id=user.user_id,
+        resource_owner_id=user.user_id,
+    )
+    if not require_complete_profile:
+        return
+    profile = await _profile_payload(user, "profesor")
+    if profile.get("completion", {}).get("status") != "complete":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "teacher_profile_incomplete",
+                "message": "Complete the teacher profile before connecting Google Calendar.",
+                "details": {
+                    "missingFields": profile.get("completion", {}).get("missingFields", [])
+                },
+            },
+        )
+
+
+async def _calendar_audit(
+    event_type: str,
+    user_id: str,
+    request: Optional[Request],
+    *,
+    metadata: Optional[dict] = None,
+    result: str = "success",
+) -> None:
+    actor = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    await _record_audit_event(
+        event_type,
+        "external_calendar_connection",
+        entity_id=user_id,
+        actor_user_id=user_id,
+        actor_name=(actor or {}).get("name"),
+        target_user_id=user_id,
+        permission_code="calendar.teacher.sync_google",
+        result=result,
+        metadata=metadata or {},
+        risk_level="high",
+        request=request,
+    )
+
+
+@api.get("/integrations/google-calendar/status")
+async def google_calendar_status(
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    await _authorize_teacher_calendar(
+        user, request, require_complete_profile=False
+    )
+    service = await _teacher_calendar_service(require_enabled=False)
+    status = await service.status(user.user_id)
+    status["featureEnabled"] = (
+        status["featureEnabled"] and await _teacher_calendar_feature_enabled()
+    )
+    return status
+
+
+@api.post("/integrations/google-calendar/connect")
+async def google_calendar_connect(
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    await _authorize_teacher_calendar(user, request)
+    service = await _teacher_calendar_service()
+    try:
+        authorization_url = await service.create_authorization_url(user.user_id)
+    except GoogleCalendarError as exc:
+        await _calendar_audit(
+            "calendar.connection.failed",
+            user.user_id,
+            request,
+            metadata={"error_code": exc.code, "stage": "start"},
+            result="failed",
+        )
+        raise _calendar_http_error(exc) from exc
+    await _calendar_audit("calendar.connection.started", user.user_id, request)
+    return {"authorizationUrl": authorization_url}
+
+
+@api.get("/integrations/google-calendar/callback")
+async def google_calendar_callback(
+    request: Request,
+    state: str = "",
+    code: str = "",
+    error: str = "",
+):
+    service = await _teacher_calendar_service(require_enabled=False)
+    return_url = service.config.frontend_return_url
+    user_id: Optional[str] = None
+    try:
+        if not await _teacher_calendar_feature_enabled():
+            raise GoogleCalendarError(
+                "calendar_feature_disabled",
+                "Google Calendar integration is disabled.",
+                status_code=404,
+            )
+        service.require_ready()
+        if not state:
+            raise GoogleCalendarError(
+                "calendar_oauth_state_missing",
+                "Calendar authorization state is missing.",
+                status_code=400,
+            )
+        user_id = await service.consume_state(state)
+        if error:
+            await _calendar_audit(
+                "calendar.connection.failed",
+                user_id,
+                request,
+                metadata={"error_code": "calendar_consent_denied", "stage": "consent"},
+                result="failed",
+            )
+            return RedirectResponse(
+                safe_return_url(return_url, "error", "calendar_consent_denied"),
+                status_code=303,
+            )
+        if not code:
+            raise GoogleCalendarError(
+                "calendar_oauth_code_missing",
+                "Google did not return an authorization code.",
+                status_code=400,
+            )
+        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        if not user_doc or not user_doc.get("active") or user_doc.get("status") != "active":
+            raise GoogleCalendarError(
+                "calendar_account_inactive",
+                "The MOSAICO account is not active.",
+                status_code=403,
+            )
+        try:
+            await _authorize_teacher_calendar(User(**user_doc), request)
+        except HTTPException as exc:
+            raise GoogleCalendarError(
+                "calendar_teacher_not_authorized",
+                "The MOSAICO teacher account is not authorized for this connection.",
+                status_code=403,
+            ) from exc
+        await service.complete_authorization(user_id, code)
+        await _calendar_audit("calendar.connection.completed", user_id, request)
+        return RedirectResponse(
+            safe_return_url(return_url, "connected"),
+            status_code=303,
+        )
+    except GoogleCalendarError as exc:
+        logger.warning("Google Calendar callback failed with code=%s", exc.code)
+        if user_id:
+            await _calendar_audit(
+                "calendar.connection.failed",
+                user_id,
+                request,
+                metadata={"error_code": exc.code, "stage": "callback"},
+                result="failed",
+            )
+        return RedirectResponse(
+            safe_return_url(return_url, "error", exc.code),
+            status_code=303,
+        )
+
+
+@api.get("/integrations/google-calendar/calendars")
+async def google_calendar_list(
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    await _authorize_teacher_calendar(user, request)
+    service = await _teacher_calendar_service()
+    try:
+        return {"calendars": await service.list_calendars(user.user_id)}
+    except GoogleCalendarError as exc:
+        raise _calendar_http_error(exc) from exc
+
+
+@api.put("/integrations/google-calendar/settings")
+async def google_calendar_settings(
+    payload: dict,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    await _authorize_teacher_calendar(user, request)
+    if set(payload) - {"busyCalendarIds", "destinationCalendarId"}:
+        raise HTTPException(
+            400,
+            detail={
+                "code": "calendar_settings_invalid",
+                "message": "Unsupported calendar settings were supplied.",
+            },
+        )
+    busy_ids = payload.get("busyCalendarIds")
+    destination_id = payload.get("destinationCalendarId")
+    if not isinstance(busy_ids, list) or not all(
+        isinstance(item, str) and 0 < len(item) <= 1024 for item in busy_ids
+    ):
+        raise HTTPException(
+            422,
+            detail={
+                "code": "calendar_selection_invalid",
+                "message": "Calendar selections are invalid.",
+            },
+        )
+    if not isinstance(destination_id, str) or not destination_id:
+        raise HTTPException(
+            422,
+            detail={
+                "code": "calendar_destination_required",
+                "message": "Select a destination calendar.",
+            },
+        )
+    service = await _teacher_calendar_service()
+    try:
+        status = await service.save_settings(
+            user.user_id, busy_ids, destination_id
+        )
+    except GoogleCalendarError as exc:
+        raise _calendar_http_error(exc) from exc
+    await _calendar_audit(
+        "calendar.selection.updated",
+        user.user_id,
+        request,
+        metadata={"busy_calendar_count": len(busy_ids), "destination_selected": True},
+    )
+    return status
+
+
+@api.post("/integrations/google-calendar/sync")
+async def google_calendar_sync(
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    await _authorize_teacher_calendar(user, request)
+    service = await _teacher_calendar_service()
+    try:
+        result = await service.sync_busy(user.user_id)
+    except GoogleCalendarError as exc:
+        await _calendar_audit(
+            "calendar.sync.failed",
+            user.user_id,
+            request,
+            metadata={"error_code": exc.code},
+            result="failed",
+        )
+        raise _calendar_http_error(exc) from exc
+    await _calendar_audit(
+        "calendar.sync.completed",
+        user.user_id,
+        request,
+        metadata={"block_count": result["blockCount"]},
+    )
+    await _record_analytics_event(
+        "calendar_synced",
+        user=user,
+        module="calendar",
+        entity_type="external_calendar_connection",
+        entity_id=user.user_id,
+        metadata={"block_count": result["blockCount"]},
+    )
+    return result
+
+
+@api.delete("/integrations/google-calendar/disconnect")
+async def google_calendar_disconnect(
+    request: Request,
+    confirm: bool = False,
+    user: User = Depends(get_current_user),
+):
+    await _authorize_teacher_calendar(user, request)
+    if not confirm:
+        raise HTTPException(
+            400,
+            detail={
+                "code": "calendar_disconnect_confirmation_required",
+                "message": "Confirm disconnection. Existing Google events will remain unchanged.",
+            },
+        )
+    # A kill switch must not prevent a user from clearing stored credentials.
+    service = await _teacher_calendar_service(require_enabled=False)
+    try:
+        result = await service.disconnect(user.user_id)
+    except GoogleCalendarError as exc:
+        raise _calendar_http_error(exc) from exc
+    await _calendar_audit("calendar.connection.disconnected", user.user_id, request)
+    return {
+        **result,
+        "message": "Google Calendar disconnected. Existing events were not deleted.",
+    }
+
+
+@api.post("/integrations/google-calendar/events/{booking_id}/retry")
+async def google_calendar_retry_event(
+    booking_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    await _authorize_teacher_calendar(user, request)
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+    teacher = await db.teachers.find_one(
+        {"id": booking.get("teacher_id"), "user_id": user.user_id, "active": True},
+        {"_id": 0},
+    )
+    if not teacher:
+        await _calendar_audit(
+            "calendar.access.denied",
+            user.user_id,
+            request,
+            metadata={"resource": "booking_event"},
+            result="denied",
+        )
+        raise HTTPException(
+            403,
+            detail={
+                "code": "calendar_booking_not_assigned",
+                "message": "This class is not assigned to the current teacher.",
+            },
+        )
+    operation = (
+        "cancel"
+        if booking.get("status") in {"cancelled", "canceled"}
+        else "upsert"
+    )
+    result = await _sync_booking_to_teacher_calendar(booking, operation=operation)
+    await _calendar_audit(
+        "calendar.event.manual_retry",
+        user.user_id,
+        request,
+        metadata={
+            "sync_status": result.get("status"),
+            "error_code": result.get("errorCode"),
+        },
+        result="success" if result.get("status") in {"synced", "cancelled"} else "failed",
+    )
+    if result.get("status") not in {"synced", "cancelled"}:
+        raise HTTPException(
+            503,
+            detail={
+                "code": result.get("errorCode") or "calendar_sync_pending",
+                "message": "The class remains booked in MOSAICO; calendar sync is pending.",
+            },
+        )
+    return result
+
+
+def _bounded_calendar_window(time_min: str, time_max: str) -> tuple[datetime, datetime]:
+    start = parse_utc(time_min)
+    end = parse_utc(time_max)
+    if not start or not end or end <= start:
+        raise HTTPException(
+            422,
+            detail={
+                "code": "calendar_window_invalid",
+                "message": "Use valid ISO timestamps with an explicit time zone.",
+            },
+        )
+    if end - start > timedelta(days=90):
+        raise HTTPException(
+            422,
+            detail={
+                "code": "calendar_window_too_large",
+                "message": "Calendar availability is limited to 90 days.",
+            },
+        )
+    return start, end
+
+
+@api.get("/teachers/me/calendar-availability")
+async def teacher_google_calendar_availability(
+    time_min: str,
+    time_max: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    await _authorize_teacher_calendar(user, request)
+    start, end = _bounded_calendar_window(time_min, time_max)
+    service = await _teacher_calendar_service()
+    try:
+        blocks = await service.busy_blocks(
+            user.user_id, start, end, require_fresh=False
+        )
+    except GoogleCalendarError as exc:
+        raise _calendar_http_error(exc) from exc
+    return {
+        "timeMin": start.isoformat(),
+        "timeMax": end.isoformat(),
+        "timezone": "UTC",
+        "blocks": blocks,
+        "privacy": "Only occupied intervals are returned.",
+    }
 
 
 def _deep_merge_settings(base: dict, patch: dict) -> dict:

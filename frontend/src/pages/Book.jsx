@@ -49,6 +49,7 @@ export default function Book() {
   const [chosenProductId, setChosenProductId] = useState(productId || "");
   const [tz, setTz] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   const [loading, setLoading] = useState(false);
+  const product = products.find((item) => item.id === chosenProductId);
 
   // Fetch reference data
   useEffect(() => { api.get("/products").then((r) => setProducts(r.data || [])); }, []);
@@ -59,8 +60,15 @@ export default function Book() {
     });
   }, []);
   useEffect(() => {
-    api.get("/availability").then((r) => setAllSlots(r.data || []));
-  }, []);
+    api.get("/availability", {
+      params: {
+        ...(teacherId ? { teacher_id: teacherId } : {}),
+        duration_min: product?.duration_min || 60,
+      },
+    })
+      .then((r) => setAllSlots(r.data || []))
+      .catch(() => setAllSlots([]));
+  }, [teacherId, product?.duration_min]);
 
   // Reset downstream selections when date changes
   useEffect(() => { setTime(null); }, [date]);
@@ -91,7 +99,6 @@ export default function Book() {
     return set;
   }, [allSlots]);
 
-  const product = products.find((p) => p.id === chosenProductId);
   const selectedTeacher = teachers.find((tt) => tt.id === teacherId);
 
   // Step gating
@@ -120,7 +127,7 @@ export default function Book() {
       });
       window.location.href = r.data.url;
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Payment error");
+      toast.error(e?.appError?.message || "Payment error");
       setLoading(false);
     }
   };

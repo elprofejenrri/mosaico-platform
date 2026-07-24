@@ -57,7 +57,7 @@ def _permission(code: str, description: str = "") -> dict:
         "feature": resource,
         "action": action,
         "risk_level": (
-            "critical" if action in {"delete", "refund", "assign", "manage"}
+            "critical" if action in {"delete", "refund", "assign", "manage", "sync_google"}
             else "high" if action in {"create", "update", "adjust", "confirm", "reject", "export"}
             else "low"
         ),
@@ -70,12 +70,13 @@ def _permission(code: str, description: str = "") -> dict:
 
 
 PERMISSION_CODES = [
-    "dashboard.personal.view", "dashboard.executive.view",
+    "dashboard.personal.view", "dashboard.executive.view", "profiles.view", "profiles.update",
     "users.view", "users.create", "users.update", "users.activate", "users.suspend", "users.assign_role",
     "students.view", "students.view_profile", "students.update_profile", "students.view_progress", "students.assign_teacher",
     "tutors.view", "tutors.create", "tutors.update", "tutors.link_student",
     "teachers.view", "teachers.create", "teachers.update", "teachers.assign_student",
     "schedules.view", "schedules.create", "schedules.update", "schedules.block",
+    "calendar.teacher.sync_google",
     "bookings.view", "bookings.create", "bookings.cancel", "bookings.reschedule",
     "classes.view", "classes.start", "classes.record_attendance", "classes.record_progress",
     "classes.add_observation", "classes.finish",
@@ -98,7 +99,7 @@ def _grants(scope: str, *permissions: str) -> dict[str, str]:
 ROLE_GRANTS: dict[str, dict[str, str]] = {
     "administrador_sitio": {"*": "global", **{code: "global" for code in PERMISSION_CODES}},
     "alumno": {
-        **_grants("self", "dashboard.personal.view", "users.view", "users.update", "students.view",
+        **_grants("self", "dashboard.personal.view", "profiles.view", "profiles.update", "users.view", "users.update", "students.view",
                   "students.view_profile", "students.update_profile", "students.view_progress",
                   "schedules.view", "bookings.view", "bookings.create", "bookings.cancel",
                   "bookings.reschedule", "classes.view", "academic_content.view",
@@ -106,7 +107,7 @@ ROLE_GRANTS: dict[str, dict[str, str]] = {
                   "payments.view", "reports.academic.view"),
     },
     "tutor_padre": {
-        **_grants("self", "dashboard.personal.view", "users.update"),
+        **_grants("self", "dashboard.personal.view", "profiles.view", "profiles.update", "users.update"),
         **_grants("linked", "users.view", "students.view", "students.view_profile",
                   "students.update_profile", "students.view_progress", "teachers.view",
                   "schedules.view", "bookings.view", "bookings.create", "bookings.cancel",
@@ -115,14 +116,16 @@ ROLE_GRANTS: dict[str, dict[str, str]] = {
                   "payments.view", "reports.academic.view"),
     },
     "profesor": {
-        **_grants("self", "dashboard.personal.view", "users.view", "users.update", "teachers.view",
-                  "teachers.update", "schedules.view", "schedules.create", "schedules.update", "schedules.block"),
+        **_grants("self", "dashboard.personal.view", "profiles.view", "profiles.update", "users.view", "users.update", "teachers.view",
+                  "teachers.update", "schedules.view", "schedules.create", "schedules.update",
+                  "schedules.block", "calendar.teacher.sync_google"),
         **_grants("assigned", "students.view", "students.view_profile", "students.view_progress",
                   "bookings.view", "classes.view", "classes.start", "classes.record_attendance",
                   "classes.record_progress", "classes.add_observation", "classes.finish",
                   "academic_content.view", "reports.academic.view"),
     },
     "administrador_escolar": {
+        **_grants("self", "profiles.view", "profiles.update"),
         **_grants("school", "dashboard.personal.view", "dashboard.executive.view", "users.view", "users.create",
                   "users.update", "users.activate", "users.suspend", "students.view", "students.view_profile",
                   "students.update_profile", "students.view_progress", "students.assign_teacher",
@@ -139,6 +142,7 @@ ROLE_GRANTS: dict[str, dict[str, str]] = {
                   "roles.view", "roles.assign", "audit.view"),
     },
     "finanzas": {
+        **_grants("self", "profiles.view", "profiles.update"),
         **_grants("multi_school", "dashboard.personal.view", "dashboard.executive.view", "users.view",
                   "students.view", "students.view_profile", "bookings.view", "classes.view",
                   "credits.view_balance", "credits.view_movements", "credits.add", "credits.remove",

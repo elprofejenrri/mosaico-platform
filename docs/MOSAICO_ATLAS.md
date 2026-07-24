@@ -85,6 +85,13 @@ On backend startup, `_ensure_atlas_rich_content(...)` safely backfills Atlas sec
 - Preserves manually edited sections that no longer match the starter marker.
 - Keeps volume metadata, tags, links, and suggested sections aligned with the Atlas seed.
 
+The current identity/profile architecture belongs to Atlas Volume 7 (User
+Personas), Volume 9 (Technical Architecture), Volume 10 (Security), Volume 20
+(API Documentation), and Volume 21 (Database Bible). Its authoritative
+implementation contract is `docs/PROFILE_MODEL.md`; Atlas editorial content
+should link to that contract rather than restating profile fields or RBAC
+rules.
+
 ## API
 
 - `GET /api/admin/atlas`
@@ -110,6 +117,12 @@ On backend startup, `_ensure_atlas_rich_content(...)` safely backfills Atlas sec
 PDF export is intentionally left as a future backend job because there is no existing connected PDF pipeline for the web app.
 
 ## Next Improvements
+
+Teacher calendar integration decisions are documented in
+`docs/GOOGLE_CALENDAR_INTEGRATION.md`: MOSAICO remains canonical, Calendar OAuth
+is separate from login, event content is not imported, busy data only subtracts
+availability, and MOSAICO events use deterministic identity. Future scheduling
+and external-integration Atlas volumes should reference that contract.
 
 - Rich Markdown editor with side-by-side preview.
 - Version diff and restore UI.

@@ -11,6 +11,29 @@ Keep entries synchronized, newest first, and use only safe descriptions of user-
 
 Run `npm run validate:releases` from `frontend` before completing a production release change.
 
+## Release entry required for every pushed request
+
+Whenever a user request results in a commit that will be pushed to `main` or
+otherwise deployed to production, create a new production release entry before
+the commit and push. This applies to every pushed request, including fixes,
+small UI changes, configuration behavior, documentation features, and
+operational improvements.
+
+The new release must:
+
+1. Use a new unique version greater than the current newest version.
+2. Be added to both `docs/TECHNICAL_WIKI.md` and
+   `frontend/src/data/productionReleases.json`.
+3. Keep both representations identical and newest first.
+4. Describe only safe, observable outcomes without secrets or sensitive
+   implementation details.
+5. Pass `npm run validate:releases` before the commit is created.
+
+Do not push a request's commit without its corresponding production release
+entry. If a commit is intentionally local-only and will not be pushed or
+deployed, a release entry is not required until that commit enters a production
+push.
+
 ## Magic release phrase
 
 When the user says `magic`, execute the safe production release workflow for

@@ -8,6 +8,7 @@ Current production platform tables include:
 
 - Identity and access: `users`, `roles`, `permissions`, `role_permissions`, `user_roles`, `local_auth_sessions`, `login_history`.
 - Education commerce: `products`, `payment_transactions`, `bookings`, `availability`, `teachers`, `teacher_profiles`, `student_profiles`.
+- Teacher calendar integration: `external_calendar_connections`, `external_calendar_selections`, `external_busy_blocks`, `calendar_event_links`, `google_calendar_oauth_states`.
 - Content: `pages`, `blog_posts`, `media_assets`, `files`, `site_settings`.
 - Operations: `audit_events`, `activity_logs`, `analytics_events`, `error_events`.
 
@@ -138,6 +139,26 @@ Student profile data:
 - notes
 - status
 
+### `user_profiles`
+
+Canonical shared profile data, one row per authenticated user:
+
+- first and last name
+- public name and picture
+- native and learning language
+- country, timezone, and phone
+- validated JSON preferences
+
+### `user_role_profiles`
+
+Validated persona extension, unique by `(user_id, role_code)`. `profile_data`
+contains only the allow-listed fields for that persona. `approval_status` is
+authoritative for teachers; approval is never accepted by the self-service
+profile endpoint.
+
+The additive production migration is
+`backend/migrations/003_user_profiles.sql`.
+
 ### `products`
 
 Learning products/classes/packages.
@@ -175,6 +196,22 @@ Class reservations connecting:
 - teacher
 - date/time
 - status
+
+### Google Calendar integration tables
+
+- `external_calendar_connections`: one optional Google connection per user;
+  credentials are encrypted before persistence and excluded from API DTOs.
+- `external_calendar_selections`: free/busy calendars and at most one owned
+  destination calendar per connection.
+- `external_busy_blocks`: normalized UTC intervals with fetch/expiry metadata;
+  no event content.
+- `calendar_event_links`: idempotent MOSAICO class-to-Google-event relation and
+  synchronization state.
+- `google_calendar_oauth_states`: expiring nonce hashes consumed atomically once.
+
+Migration `backend/migrations/004_google_calendar_teacher_integration.sql` is
+additive and performs no account connection, data inference, or historical
+event creation.
 
 ### `payment_transactions`
 
@@ -229,6 +266,7 @@ The database layer encodes and decodes JSONB fields for:
 - `teacher_profiles.specialties`
 - `teacher_profiles.assigned_products`
 - `student_profiles.enrolled_products`
+- `external_calendar_connections.granted_scopes`
 - `pages.content_blocks`
 
 ## Migration Strategy

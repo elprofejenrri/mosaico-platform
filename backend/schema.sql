@@ -120,6 +120,8 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS end_time TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS student_profile_id TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS updated_at TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS school_id TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS starts_at TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS ends_at TEXT;
 
 CREATE TABLE IF NOT EXISTS booking_statuses (
     code        TEXT PRIMARY KEY,
@@ -386,6 +388,129 @@ CREATE TABLE IF NOT EXISTS student_profiles (
     status             TEXT NOT NULL DEFAULT 'activo',
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL
+);
+
+-- Canonical profile layer. Existing student_profiles and teacher_profiles stay
+-- available to legacy administrative workflows while new persona screens use
+-- this shared identity record and one role extension per effective role.
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id                  TEXT PRIMARY KEY,
+    user_id             TEXT NOT NULL UNIQUE,
+    first_name          TEXT NOT NULL DEFAULT '',
+    last_name           TEXT NOT NULL DEFAULT '',
+    public_name         TEXT NOT NULL DEFAULT '',
+    picture             TEXT NOT NULL DEFAULT '',
+    native_language     TEXT NOT NULL DEFAULT '',
+    learning_language   TEXT NOT NULL DEFAULT '',
+    country             TEXT NOT NULL DEFAULT '',
+    timezone            TEXT NOT NULL DEFAULT 'UTC',
+    phone               TEXT NOT NULL DEFAULT '',
+    preferences         JSONB NOT NULL DEFAULT '{}',
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_role_profiles (
+    id                  TEXT PRIMARY KEY,
+    user_id             TEXT NOT NULL,
+    role_code           TEXT NOT NULL,
+    profile_data        JSONB NOT NULL DEFAULT '{}',
+    approval_status     TEXT NOT NULL DEFAULT 'pending',
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    UNIQUE(user_id, role_code)
+);
+
+-- Optional, per-teacher Google Calendar integration. Tokens are encrypted by
+-- the application before they reach PostgreSQL and are never returned by APIs.
+CREATE TABLE IF NOT EXISTS external_calendar_connections (
+    id                          TEXT PRIMARY KEY,
+    user_id                     TEXT NOT NULL,
+    provider                    TEXT NOT NULL DEFAULT 'google',
+    provider_account_id         TEXT NOT NULL,
+    provider_email_masked       TEXT NOT NULL DEFAULT '',
+    status                      TEXT NOT NULL DEFAULT 'connected',
+    granted_scopes              JSONB NOT NULL DEFAULT '[]',
+    access_token_encrypted      TEXT,
+    refresh_token_encrypted     TEXT,
+    token_expires_at            TEXT,
+    connected_at                TEXT NOT NULL,
+    last_successful_sync_at     TEXT,
+    last_sync_attempt_at        TEXT,
+    last_sync_status            TEXT NOT NULL DEFAULT 'pending',
+    last_sync_error_code        TEXT,
+    busy_cache_start_at         TEXT,
+    busy_cache_end_at           TEXT,
+    revoked_at                  TEXT,
+    created_at                  TEXT NOT NULL,
+    updated_at                  TEXT NOT NULL,
+    UNIQUE(user_id, provider),
+    CHECK (provider = 'google'),
+    CHECK (status IN ('connected', 'reconnect_required', 'revoked', 'error')),
+    CHECK (last_sync_status IN ('pending', 'synced', 'retrying', 'failed', 'disconnected', 'conflict', 'cancelled'))
+);
+ALTER TABLE external_calendar_connections
+    ADD COLUMN IF NOT EXISTS busy_cache_start_at TEXT;
+ALTER TABLE external_calendar_connections
+    ADD COLUMN IF NOT EXISTS busy_cache_end_at TEXT;
+
+CREATE TABLE IF NOT EXISTS external_calendar_selections (
+    id              TEXT PRIMARY KEY,
+    connection_id   TEXT NOT NULL,
+    calendar_id     TEXT NOT NULL,
+    display_name    TEXT NOT NULL DEFAULT '',
+    access_role     TEXT NOT NULL,
+    use_for_busy    BOOLEAN NOT NULL DEFAULT FALSE,
+    use_for_events  BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(connection_id, calendar_id),
+    CHECK (access_role IN ('freeBusyReader', 'reader', 'writer', 'owner')),
+    CHECK (use_for_busy OR use_for_events)
+);
+
+CREATE TABLE IF NOT EXISTS external_busy_blocks (
+    id                  TEXT PRIMARY KEY,
+    connection_id       TEXT NOT NULL,
+    teacher_user_id     TEXT NOT NULL,
+    calendar_id         TEXT NOT NULL,
+    starts_at           TEXT NOT NULL,
+    ends_at             TEXT NOT NULL,
+    source              TEXT NOT NULL DEFAULT 'google_freebusy',
+    fetched_at          TEXT NOT NULL,
+    expires_at          TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    UNIQUE(connection_id, calendar_id, starts_at, ends_at),
+    CHECK (source = 'google_freebusy'),
+    CHECK (ends_at > starts_at)
+);
+
+CREATE TABLE IF NOT EXISTS calendar_event_links (
+    id                  TEXT PRIMARY KEY,
+    class_id            TEXT NOT NULL,
+    reservation_id      TEXT,
+    teacher_user_id     TEXT NOT NULL,
+    connection_id       TEXT NOT NULL,
+    calendar_id         TEXT NOT NULL,
+    google_event_id     TEXT NOT NULL,
+    google_event_etag   TEXT NOT NULL DEFAULT '',
+    idempotency_key     TEXT NOT NULL UNIQUE,
+    sync_status         TEXT NOT NULL DEFAULT 'pending',
+    last_synced_at      TEXT,
+    last_error_code     TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    UNIQUE(class_id, teacher_user_id, connection_id),
+    CHECK (sync_status IN ('pending', 'synced', 'retrying', 'failed', 'disconnected', 'conflict', 'cancelled'))
+);
+
+CREATE TABLE IF NOT EXISTS google_calendar_oauth_states (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    nonce_hash  TEXT NOT NULL UNIQUE,
+    expires_at  TEXT NOT NULL,
+    used_at     TEXT,
+    created_at  TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS student_profile_statuses (
@@ -802,6 +927,24 @@ CREATE INDEX IF NOT EXISTS idx_payment_transactions_product ON payment_transacti
 CREATE INDEX IF NOT EXISTS idx_teacher_profiles_user ON teacher_profiles(user_id);
 CREATE INDEX IF NOT EXISTS idx_teacher_profiles_teacher ON teacher_profiles(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_student_profiles_user ON student_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_user ON user_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_role_profiles_user_role ON user_role_profiles(user_id, role_code);
+CREATE INDEX IF NOT EXISTS idx_external_calendar_connections_user
+    ON external_calendar_connections(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_external_calendar_selections_connection
+    ON external_calendar_selections(connection_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_external_calendar_destination
+    ON external_calendar_selections(connection_id) WHERE use_for_events;
+CREATE INDEX IF NOT EXISTS idx_external_busy_blocks_teacher_window
+    ON external_busy_blocks(teacher_user_id, starts_at, ends_at);
+CREATE INDEX IF NOT EXISTS idx_external_busy_blocks_expiry
+    ON external_busy_blocks(expires_at);
+CREATE INDEX IF NOT EXISTS idx_calendar_event_links_class
+    ON calendar_event_links(class_id, teacher_user_id);
+CREATE INDEX IF NOT EXISTS idx_google_calendar_oauth_states_expiry
+    ON google_calendar_oauth_states(expires_at, used_at);
+CREATE INDEX IF NOT EXISTS idx_bookings_teacher_utc_window
+    ON bookings(teacher_id, starts_at, ends_at);
 CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_name);
 CREATE INDEX IF NOT EXISTS idx_role_permissions_permission ON role_permissions(permission);
 CREATE INDEX IF NOT EXISTS idx_user_roles_user ON user_roles(user_id);
@@ -877,6 +1020,33 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_student_profiles_user') THEN
         ALTER TABLE student_profiles ADD CONSTRAINT fk_student_profiles_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_user_profiles_user') THEN
+        ALTER TABLE user_profiles ADD CONSTRAINT fk_user_profiles_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_user_role_profiles_user') THEN
+        ALTER TABLE user_role_profiles ADD CONSTRAINT fk_user_role_profiles_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_external_calendar_connections_user') THEN
+        ALTER TABLE external_calendar_connections ADD CONSTRAINT fk_external_calendar_connections_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_external_calendar_selections_connection') THEN
+        ALTER TABLE external_calendar_selections ADD CONSTRAINT fk_external_calendar_selections_connection FOREIGN KEY (connection_id) REFERENCES external_calendar_connections(id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_external_busy_blocks_connection') THEN
+        ALTER TABLE external_busy_blocks ADD CONSTRAINT fk_external_busy_blocks_connection FOREIGN KEY (connection_id) REFERENCES external_calendar_connections(id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_external_busy_blocks_user') THEN
+        ALTER TABLE external_busy_blocks ADD CONSTRAINT fk_external_busy_blocks_user FOREIGN KEY (teacher_user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_calendar_event_links_connection') THEN
+        ALTER TABLE calendar_event_links ADD CONSTRAINT fk_calendar_event_links_connection FOREIGN KEY (connection_id) REFERENCES external_calendar_connections(id) ON DELETE RESTRICT NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_calendar_event_links_user') THEN
+        ALTER TABLE calendar_event_links ADD CONSTRAINT fk_calendar_event_links_user FOREIGN KEY (teacher_user_id) REFERENCES users(user_id) ON DELETE RESTRICT NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_google_calendar_oauth_states_user') THEN
+        ALTER TABLE google_calendar_oauth_states ADD CONSTRAINT fk_google_calendar_oauth_states_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_student_profiles_status') THEN
         ALTER TABLE student_profiles ADD CONSTRAINT fk_student_profiles_status FOREIGN KEY (status) REFERENCES student_profile_statuses(code) NOT VALID;

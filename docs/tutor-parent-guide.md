@@ -6,6 +6,7 @@ Tutors and parents manage learning for one or more students. They need clear vis
 
 ## Main Routes
 
+- `/profile`: tutor identity, relationship summary, and server-derived linked students.
 - `/tutor`: dashboard.
 - `/tutor/students`: student management.
 - `/tutor/classes`: classes.
@@ -17,6 +18,10 @@ Tutors and parents manage learning for one or more students. They need clear vis
 ## Operating Model
 
 The tutor profile should be linked to child/student profiles through a durable relationship model. Credits can be shared or assigned to students depending on final business rules.
+
+The profile screen now reads active relationships from
+`tutor_student_links`; it does not accept student IDs or relationship scope
+from the browser.
 
 ## Current Limitation
 

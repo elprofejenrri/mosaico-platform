@@ -1,5 +1,17 @@
 [
   {
+    "version": "2026.07.24.1",
+    "title": "Unified profiles and teacher calendar readiness",
+    "summary": "MOSAICO now provides clearer profile management and the protected foundation for optional teacher calendar synchronization.",
+    "items": [
+      "Users can review and maintain shared profile information from a dedicated profile workspace.",
+      "Role-specific profile details and teacher approval status are presented consistently across workspaces.",
+      "The active profile selector remains available as a responsive dropdown.",
+      "Teachers have a privacy-focused calendar connection experience that remains unavailable until the governed integration is enabled.",
+      "Booking safeguards can account for connected teacher availability without exposing personal calendar details."
+    ]
+  },
+  {
     "version": "2026.07.23.3",
     "title": "Technical release access restored",
     "summary": "Technical administrators can now reach the platform wiki and production release history from their workspace.",
