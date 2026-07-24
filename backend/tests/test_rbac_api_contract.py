@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from pathlib import Path
 
@@ -55,6 +56,17 @@ def test_profile_routes_and_storage_tables_are_registered():
 
 def test_role_assignment_supports_school_and_expiry():
     assert {"school_id", "status", "assigned_at", "expires_at"}.issubset(TABLE_COLUMNS["user_roles"])
+
+
+def test_role_assignment_accepts_canonical_and_compatibility_permissions(monkeypatch):
+    async def permission_scopes(_, permission_code):
+        return {
+            "users.roles.assign": {"global"},
+            "roles.assign": {"school"},
+        }[permission_code]
+
+    monkeypatch.setattr(server, "_permission_scopes", permission_scopes)
+    assert asyncio.run(server._role_assignment_scopes(object())) == {"global", "school"}
 
 
 def test_audit_contract_captures_authorization_decision():

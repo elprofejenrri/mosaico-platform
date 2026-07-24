@@ -92,6 +92,13 @@ implementation contract is `docs/PROFILE_MODEL.md`; Atlas editorial content
 should link to that contract rather than restating profile fields or RBAC
 rules.
 
+The shared mobile workspace architecture belongs to Atlas Volume 5 (UX
+Bible), Volume 9 (Technical Architecture), Volume 18 (Engineering Handbook),
+and Volume 19 (Design System). Its authoritative implementation and review
+contract is `docs/MOBILE_UX_AND_NAVIGATION_STANDARD.md`. Atlas content should
+link to that contract rather than defining independent mobile sidebars or
+action models.
+
 ## API
 
 - `GET /api/admin/atlas`

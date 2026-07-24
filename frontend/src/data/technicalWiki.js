@@ -18,6 +18,7 @@ export const technicalWikiSections = [
     summary: "How the frontend, backend, database, auth, storage, and deployment pieces fit together.",
     docs: [
       { id: "architecture", title: "Architecture", path: "docs/ARCHITECTURE.md", status: "Reference", owner: "Engineering" },
+      { id: "mobile-ux-navigation", title: "Mobile UX And Navigation Standard", path: "docs/MOBILE_UX_AND_NAVIGATION_STANDARD.md", status: "Active", owner: "Product + UX + Engineering" },
       { id: "deployment-guide", title: "Deployment Guide", path: "docs/DEPLOYMENT_GUIDE.md", status: "Reference", owner: "Engineering" },
       { id: "operations-runbook", title: "Operations Runbook", path: "docs/OPERATIONS_RUNBOOK.md", status: "Reference", owner: "Operations" },
       { id: "troubleshooting", title: "Troubleshooting", path: "docs/TROUBLESHOOTING.md", status: "Reference", owner: "Support" },

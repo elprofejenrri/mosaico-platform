@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useApp } from "../../context/AppContext";
+import { useMobilePageActions } from "../../context/MobileShellContext";
 import { Button } from "../ui/button";
 import WorkspaceSidePanel from "../WorkspaceSidePanel";
 
@@ -39,6 +41,20 @@ const studentRoles = new Set(["alumno", "student"]);
 const teacherRoles = new Set(["profesor", "teacher"]);
 const tutorRoles = new Set(["tutor_padre", "tutor", "parent"]);
 const financeRoles = new Set(["finanzas", "finance"]);
+const mobileActionCopy = {
+  en: {
+    context: "Access governance",
+    title: "Identity & Access",
+    refresh: "Refresh access data",
+    bulk: "Bulk role action",
+  },
+  es: {
+    context: "Gobierno de acceso",
+    title: "Identidad y acceso",
+    refresh: "Actualizar datos de acceso",
+    bulk: "AcciÃ³n masiva de roles",
+  },
+};
 
 function Panel({ children, className = "" }) {
   return <section className={`rounded-lg border border-[#EFE4D0] bg-white p-5 shadow-sm ${className}`}>{children}</section>;
@@ -101,6 +117,10 @@ function roleListsEqual(left = [], right = []) {
   const a = normalizeRoleList(left);
   const b = normalizeRoleList(right);
   return a.length === b.length && a.every((item, index) => item === b[index]);
+}
+
+function errorMessage(error, fallback) {
+  return error?.appError?.message || error?.response?.data?.message || error?.response?.data?.detail || fallback;
 }
 
 function roleCategory(role) {
@@ -179,6 +199,7 @@ function UserDrawer({
   loginHistory,
   loadingHistory,
   saving,
+  canAssignRoles,
   onClose,
   onSaveRoles,
   onToggleActive,
@@ -260,9 +281,10 @@ function UserDrawer({
                 </div>
                 <div className="flex gap-2">
                   {changed && <Button variant="outline" className="border-[#EFE4D0]" onClick={() => setDraftRoles(userRoleList(user))}>Cancel</Button>}
-                  <Button disabled={saving} onClick={save} className="bg-[#E8704C] text-white hover:bg-[#C95630]">{saving ? "Saving..." : "Save roles"}</Button>
+                  <Button disabled={saving || !changed || !canAssignRoles} onClick={save} className="bg-[#E8704C] text-white hover:bg-[#C95630]">{saving ? "Saving..." : "Save roles"}</Button>
                 </div>
               </div>
+              {!canAssignRoles && <p className="mt-3 rounded-lg bg-[#FBF7EE] p-3 text-sm text-[#5C6680]">Your current access allows you to review these roles, but not change them.</p>}
               <div className="mt-5 grid gap-4">
                 <div className="grid gap-3 md:grid-cols-2">
                   <Field label="Assignment school">
@@ -293,8 +315,9 @@ function UserDrawer({
                           <button
                             type="button"
                             key={role.name}
+                            disabled={!canAssignRoles}
                             onClick={() => toggleRole(role.name)}
-                            className={`rounded-md border p-3 text-left ${selected ? "border-[#2DA89F] bg-[#E0F2F0]" : "border-[#EFE4D0] bg-white"}`}
+                            className={`rounded-md border p-3 text-left disabled:cursor-not-allowed disabled:opacity-70 ${selected ? "border-[#2DA89F] bg-[#E0F2F0]" : "border-[#EFE4D0] bg-white"}`}
                           >
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-semibold text-[#1F3B6E]">{roleLabel(role)}</span>
@@ -436,7 +459,13 @@ function BulkRoleModal({ users, roles, selectedIds, onClose, onApply, saving }) 
 }
 
 export default function AdminRbacWorkspace({ initialTab = "users" }) {
+  const { lang } = useApp();
   const { can, scopes } = usePermissions();
+  const canAssignRoles = can("users.roles.assign") || can("roles.assign");
+  const roleAssignmentScopes = useMemo(() => new Set([
+    ...scopes("users.roles.assign"),
+    ...scopes("roles.assign"),
+  ]), [scopes]);
   const [tab, setTab] = useState(initialTab);
   const [roles, setRoles] = useState([]);
   const [schools, setSchools] = useState([]);
@@ -500,7 +529,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
       setSelectedPermissions(new Set(role?.permissions || []));
       setPermissionScopes(role?.permission_scopes || {});
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Could not load IAM.");
+      toast.error(errorMessage(error, "Could not load IAM."));
     } finally {
       setLoading(false);
     }
@@ -599,7 +628,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
         setSelectedUser(response.data || null);
         await load();
       } catch (error) {
-        toast.error(error.response?.data?.detail || "Could not update user roles.");
+        toast.error(errorMessage(error, "Could not update user roles."));
       } finally {
         setSaving(false);
       }
@@ -628,7 +657,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
         setSelectedUser((current) => current?.user_id === user.user_id ? { ...current, active } : current);
         await load();
       } catch (error) {
-        toast.error(error.response?.data?.detail || "Could not update user.");
+        toast.error(errorMessage(error, "Could not update user."));
       } finally {
         setSaving(false);
       }
@@ -657,7 +686,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
       setSelectedUsers(new Set());
       await load();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Could not complete bulk role action.");
+      toast.error(errorMessage(error, "Could not complete bulk role action."));
     } finally {
       setSaving(false);
     }
@@ -675,7 +704,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
       setNewRole({ name: "", label: "", description: "" });
       await load();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Could not create role.");
+      toast.error(errorMessage(error, "Could not create role."));
     } finally {
       setSaving(false);
     }
@@ -688,7 +717,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
       toast.success("Role duplicated.");
       await load();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Could not duplicate role.");
+      toast.error(errorMessage(error, "Could not duplicate role."));
     } finally {
       setSaving(false);
     }
@@ -714,7 +743,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
         toast.success("Role permissions updated.");
         await load();
       } catch (error) {
-        toast.error(error.response?.data?.detail || "Could not update permissions.");
+        toast.error(errorMessage(error, "Could not update permissions."));
       } finally {
         setSaving(false);
       }
@@ -741,7 +770,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
       toast.success("Role status updated.");
       await load();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Could not update role.");
+      toast.error(errorMessage(error, "Could not update role."));
     } finally {
       setSaving(false);
     }
@@ -760,7 +789,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
           toast.success("Role deleted.");
           await load();
         } catch (error) {
-          toast.error(error.response?.data?.detail || "Could not delete role.");
+          toast.error(errorMessage(error, "Could not delete role."));
         } finally {
           setSaving(false);
         }
@@ -776,6 +805,46 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
       return next;
     });
   };
+  const mobileCopy = mobileActionCopy[lang] || mobileActionCopy.en;
+  const mobilePage = useMemo(() => ({
+    title: mobileCopy.title,
+    context: mobileCopy.context,
+    actions: [
+      {
+        id: "iam-refresh",
+        label: mobileCopy.refresh,
+        icon: RefreshCw,
+        priority: 10,
+        group: "primary",
+        disabled: loading || saving,
+        loading,
+        handler: load,
+      },
+      {
+        id: "iam-bulk-roles",
+        label: mobileCopy.bulk,
+        icon: UserPlus,
+        permission: can("users.roles.assign") ? "users.roles.assign" : "roles.assign",
+        scope: "global",
+        priority: 20,
+        group: "record",
+        visible: canAssignRoles && roleAssignmentScopes.has("global") && selectedUsers.size > 0,
+        disabled: saving,
+        loading: saving,
+        handler: () => setBulkOpen(true),
+      },
+    ],
+  }), [
+    can,
+    canAssignRoles,
+    load,
+    loading,
+    mobileCopy,
+    roleAssignmentScopes,
+    saving,
+    selectedUsers.size,
+  ]);
+  useMobilePageActions(mobilePage);
 
   if (loading) {
     return <Panel><div className="h-40 animate-pulse rounded-lg bg-[#FBF7EE]" /><p className="mt-3 text-sm text-[#5C6680]">Loading Identity & Access Management...</p></Panel>;
@@ -869,7 +938,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
         <Panel className="overflow-hidden">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-[#5C6680]">Showing {pagedUsers.length} of {filteredUsers.length} users. Selected: {selectedUsers.size}</p>
-            {can("roles.assign") && scopes("roles.assign").includes("global") && <Button disabled={!selectedUsers.size} onClick={() => setBulkOpen(true)} className="bg-[#1F3B6E] text-white"><UserPlus size={16} className="mr-2" />Bulk role action</Button>}
+            {canAssignRoles && roleAssignmentScopes.has("global") && <Button disabled={!selectedUsers.size} onClick={() => setBulkOpen(true)} className="bg-[#1F3B6E] text-white"><UserPlus size={16} className="mr-2" />Bulk role action</Button>}
           </div>
           <div className="grid gap-2">
             <div className="hidden rounded-md border-b border-[#EFE4D0] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#5C6680] lg:grid lg:grid-cols-[32px_minmax(220px,1.7fr)_minmax(190px,1.25fr)_96px_minmax(150px,0.9fr)_48px] lg:gap-3">
@@ -1062,7 +1131,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
         </Panel>
       )}
 
-      {selectedUser && <UserDrawer user={selectedUser} roles={roles} rolesByName={rolesByName} permissionsByName={permissionsByName} audit={selectedUserAudit} loginHistory={selectedUserLogins} loadingHistory={loadingHistory} saving={saving} onClose={() => setSelectedUser(null)} onSaveRoles={replaceUserRoles} onToggleActive={toggleActive} onLoadHistory={loadUserHistory} schools={schools} />}
+      {selectedUser && <UserDrawer user={selectedUser} roles={roles} rolesByName={rolesByName} permissionsByName={permissionsByName} audit={selectedUserAudit} loginHistory={selectedUserLogins} loadingHistory={loadingHistory} saving={saving} canAssignRoles={canAssignRoles} onClose={() => setSelectedUser(null)} onSaveRoles={replaceUserRoles} onToggleActive={toggleActive} onLoadHistory={loadUserHistory} schools={schools} />}
       {bulkOpen && <BulkRoleModal users={users} roles={roles} selectedIds={selectedUsers} saving={saving} onClose={() => setBulkOpen(false)} onApply={bulkApply} />}
       {confirm && <ConfirmModal {...confirm} loading={saving} onClose={() => setConfirm(null)} />}
     </div>

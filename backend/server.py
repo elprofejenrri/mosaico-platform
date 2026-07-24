@@ -777,6 +777,14 @@ async def _permission_scopes(user: User, permission_code: str) -> set:
     return set(grants.get("*", [])) | set(grants.get(permission_code, []))
 
 
+async def _role_assignment_scopes(user: User) -> set:
+    """Honor both canonical and compatibility role-assignment permissions."""
+    scopes = set()
+    for permission_code in ("users.roles.assign", "roles.assign"):
+        scopes.update(await _permission_scopes(user, permission_code))
+    return scopes
+
+
 async def _scoped_users(user: User, permission_code: str = "users.view") -> List[dict]:
     """Query users within effective scope; never fetch the global set first."""
     scopes = await _permission_scopes(user, permission_code)
@@ -1322,6 +1330,7 @@ TECHNICAL_DOCS = {
     "super-admin-configuration-center": {"title": "Super Admin Configuration Center", "path": "docs/SUPER_ADMIN_CONFIGURATION_CENTER.md", "section": "architecture"},
     "analytics-observability": {"title": "Analytics and Observability", "path": "docs/ANALYTICS_OBSERVABILITY.md", "section": "architecture"},
     "ux-interaction-standards": {"title": "UX Interaction Standards", "path": "docs/UX_INTERACTION_STANDARDS.md", "section": "architecture"},
+    "mobile-ux-navigation": {"title": "Mobile UX And Navigation Standard", "path": "docs/MOBILE_UX_AND_NAVIGATION_STANDARD.md", "section": "architecture"},
     "mosaico-atlas": {"title": "Mosaico Atlas", "path": "docs/MOSAICO_ATLAS.md", "section": "architecture"},
     "architecture": {"title": "Architecture", "path": "docs/ARCHITECTURE.md", "section": "architecture"},
     "deployment-guide": {"title": "Deployment Guide", "path": "docs/DEPLOYMENT_GUIDE.md", "section": "architecture"},
@@ -3810,7 +3819,7 @@ async def admin_update_user_roles(
             invalid.append(role)
     if invalid:
         raise HTTPException(400, f"invalid roles: {', '.join(invalid)}")
-    actor_scopes = await _permission_scopes(user, "roles.assign")
+    actor_scopes = await _role_assignment_scopes(user)
     if not actor_scopes:
         raise HTTPException(403, "No tienes permisos para realizar esta acción.")
     global_actor = "global" in actor_scopes
@@ -3860,7 +3869,7 @@ async def admin_update_user_roles(
         actor_user_id=user.user_id,
         target_user_id=user_id,
         metadata={"roles": updated["roles"], "primary_role": updated.get("role"), "assignments": assignments},
-        permission_code="roles.assign",
+        permission_code="users.roles.assign",
         request=request,
     )
     await _record_analytics_event("role_assigned", user=user, module="rbac", entity_type="user", entity_id=user_id, metadata={"roles": updated["roles"], "primary_role": updated.get("role")})

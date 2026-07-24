@@ -19,6 +19,7 @@ import Profile from "./pages/Profile";
 import { Toaster } from "sonner";
 import { StickyBookCta } from "./components/StickyBookCta";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { MobileShellProvider } from "./context/MobileShellContext";
 
 function AppRouter() {
   const location = useLocation();
@@ -28,7 +29,7 @@ function AppRouter() {
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
-      <main className="flex-1 pt-16">
+      <main id="app-main-content" className="flex-1 pt-[calc(4rem_+_env(safe-area-inset-top))] lg:pt-16">
         <Routes>
           <Route path="/" element={<PlatformLanding />} />
           <Route path="/student" element={<StudentPortal />} />
@@ -122,8 +123,10 @@ export default function App() {
     <ErrorBoundary>
       <AppProvider>
         <BrowserRouter>
-          <Toaster position="top-center" richColors />
-          <AppRouter />
+          <MobileShellProvider>
+            <Toaster position="top-center" richColors />
+            <AppRouter />
+          </MobileShellProvider>
         </BrowserRouter>
       </AppProvider>
     </ErrorBoundary>

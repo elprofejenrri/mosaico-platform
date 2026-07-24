@@ -47,6 +47,7 @@ import {
   LineChart,
   MessageCircle,
   PlayCircle,
+  RefreshCw,
   Search,
   Send,
   Settings,
@@ -61,9 +62,11 @@ import {
   Users,
   Video,
   WalletCards,
+  X,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
+import { useMobileNavigation, useMobilePageActions } from "../context/MobileShellContext";
 import {
   analytics,
   academicAssessments,
@@ -1017,10 +1020,44 @@ function SidebarNavGroup({ label, items, role, meta, location, expanded, onToggl
   );
 }
 
+function PortalNavigation({
+  expandedGroups,
+  lang,
+  location,
+  meta,
+  navGroups,
+  role,
+  setExpandedGroups,
+}) {
+  return (
+    <>
+      <RoleSwitcher current={role} />
+      <nav className="mt-4 grid gap-3" aria-label={`${meta.label} navigation`}>
+        {navGroups.map(([label, items]) => (
+          <SidebarNavGroup
+            key={`${role}-${label}`}
+            label={label}
+            items={items}
+            role={role}
+            meta={meta}
+            location={location}
+            lang={lang}
+            expanded={expandedGroups[label] !== false}
+            onToggle={() => setExpandedGroups((current) => ({ ...current, [label]: current[label] === false }))}
+          />
+        ))}
+      </nav>
+    </>
+  );
+}
+
 function PlatformShell({ role, module = "dashboard", children }) {
   const location = useLocation();
   const { user, authLoading, lang, settings } = useApp();
-  const meta = { ...roleMeta[role], ...(roleMetaText[lang]?.[role] || roleMetaText.en[role]) };
+  const meta = useMemo(
+    () => ({ ...roleMeta[role], ...(roleMetaText[lang]?.[role] || roleMetaText.en[role]) }),
+    [lang, role],
+  );
   const copy = platformText(lang);
   const navStorageKey = `mosaico_nav_groups_${role}`;
   const [expandedGroups, setExpandedGroups] = useState(() => {
@@ -1052,8 +1089,38 @@ function PlatformShell({ role, module = "dashboard", children }) {
     localStorage.setItem(navStorageKey, JSON.stringify(expandedGroups));
   }, [expandedGroups, navStorageKey]);
 
-  const visibleNavItems = roleNav[role].filter(([slug]) => canAccessNavItem(user, role, slug, settings));
-  const navGroups = groupedNavItems(role, visibleNavItems);
+  const visibleNavItems = useMemo(
+    () => roleNav[role].filter(([slug]) => canAccessNavItem(user, role, slug, settings)),
+    [role, settings, user],
+  );
+  const navGroups = useMemo(() => groupedNavItems(role, visibleNavItems), [role, visibleNavItems]);
+  const activeSlug = module === "dashboard" ? "" : module;
+  const activeNavItem = visibleNavItems.find(([slug]) => slug === activeSlug);
+  const mobileTitle = activeNavItem
+    ? navLabel(lang, role, activeNavItem[0], activeNavItem[1])
+    : meta.title;
+  const mobileNavigationContent = useMemo(() => (
+    <PortalNavigation
+      expandedGroups={expandedGroups}
+      lang={lang}
+      location={location}
+      meta={meta}
+      navGroups={navGroups}
+      role={role}
+      setExpandedGroups={setExpandedGroups}
+    />
+  ), [expandedGroups, lang, location, meta, navGroups, role]);
+  const mobileNavigation = useMemo(() => ({
+    content: mobileNavigationContent,
+    description: meta.label,
+  }), [meta.label, mobileNavigationContent]);
+  const mobilePage = useMemo(() => ({
+    actions: [],
+    context: roleEyebrow(lang, role, meta),
+    title: mobileTitle,
+  }), [lang, meta, mobileTitle, role]);
+  useMobileNavigation(mobileNavigation);
+  useMobilePageActions(mobilePage, -100);
 
   if (!authLoading && !canAccessPortal(user, role)) {
     return (
@@ -1075,24 +1142,17 @@ function PlatformShell({ role, module = "dashboard", children }) {
   return (
     <div className="bg-[#FBF7EE]">
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-6 md:px-6 lg:grid-cols-[260px_1fr] lg:px-8">
-        <aside className="lg:sticky lg:top-20 lg:self-start">
+        <aside className="hidden lg:sticky lg:top-20 lg:block lg:self-start">
           <Card className="p-3 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-2">
-            <RoleSwitcher current={role} />
-            <nav className="mt-4 grid gap-3" aria-label={`${meta.label} navigation`}>
-              {navGroups.map(([label, items]) => (
-                <SidebarNavGroup
-                  key={`${role}-${label}`}
-                  label={label}
-                  items={items}
-                  role={role}
-                  meta={meta}
-                  location={location}
-                  lang={lang}
-                  expanded={expandedGroups[label] !== false}
-                  onToggle={() => setExpandedGroups((current) => ({ ...current, [label]: current[label] === false }))}
-                />
-              ))}
-            </nav>
+            <PortalNavigation
+              expandedGroups={expandedGroups}
+              lang={lang}
+              location={location}
+              meta={meta}
+              navGroups={navGroups}
+              role={role}
+              setExpandedGroups={setExpandedGroups}
+            />
           </Card>
         </aside>
         <section className="min-w-0">
@@ -2618,7 +2678,7 @@ export function SchoolAdminPortal({ module = "dashboard" }) {
 }
 
 export function FinancePortal() {
-  const { user, authLoading } = useApp();
+  const { user, authLoading, lang } = useApp();
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -2637,6 +2697,26 @@ export function FinancePortal() {
   useEffect(() => {
     if (user && canAccessPortal(user, "finance")) load();
   }, [load, user]);
+
+  const financeMobileCopy = lang === "es"
+    ? { title: "Finanzas", context: "Pagos", refresh: "Actualizar pagos" }
+    : { title: "Finance", context: "Payments", refresh: "Refresh payments" };
+  const financeMobilePage = useMemo(() => ({
+    title: financeMobileCopy.title,
+    context: financeMobileCopy.context,
+    actions: [{
+      id: "finance-refresh",
+      label: financeMobileCopy.refresh,
+      icon: RefreshCw,
+      permission: "payments.view",
+      priority: 10,
+      group: "primary",
+      disabled: loading,
+      loading,
+      handler: load,
+    }],
+  }), [financeMobileCopy.context, financeMobileCopy.refresh, financeMobileCopy.title, load, loading]);
+  useMobilePageActions(financeMobilePage);
 
   const updatePayment = async (payment, action) => {
     const reason = window.prompt(`Motivo para ${action} el pago:`);
@@ -3956,15 +4036,15 @@ function SuperAdminConfigurationCenter() {
   };
 
   const hasChanges = useMemo(() => JSON.stringify(draft) !== JSON.stringify(data), [data, draft]);
-  const requestSave = () => setConfirm({
+  const requestSave = useCallback(() => setConfirm({
     title: copy.saveTitle,
     body: copy.saveBody,
     confirmLabel: copy.saveConfirm,
-  });
-  const resetDraft = () => {
+  }), [copy.saveBody, copy.saveConfirm, copy.saveTitle]);
+  const resetDraft = useCallback(() => {
     setDraft(data);
     toast.info(copy.discarded);
-  };
+  }, [copy.discarded, data]);
 
   const persist = async () => {
     const validation = validate();
@@ -3987,6 +4067,39 @@ function SuperAdminConfigurationCenter() {
       setConfirm(null);
     }
   };
+
+  const configurationMobilePage = useMemo(() => ({
+    title: copy.center,
+    context: copy.superAdmin,
+    actions: [
+      {
+        id: "configuration-save",
+        label: saving ? copy.saving : copy.saveChanges,
+        icon: Settings,
+        permission: "settings.platform.edit",
+        minLevel: 5,
+        priority: 10,
+        group: "primary",
+        visible: hasChanges,
+        disabled: !hasChanges || saving,
+        loading: saving,
+        handler: requestSave,
+      },
+      {
+        id: "configuration-reset",
+        label: copy.cancelChanges,
+        icon: X,
+        permission: "settings.platform.edit",
+        minLevel: 5,
+        priority: 20,
+        group: "secondary",
+        visible: hasChanges,
+        disabled: !hasChanges || saving,
+        handler: resetDraft,
+      },
+    ],
+  }), [copy, hasChanges, requestSave, resetDraft, saving]);
+  useMobilePageActions(configurationMobilePage);
 
   if (loading) return <Card><div className="h-40 animate-pulse rounded-lg bg-[#FBF7EE]" /><p className="mt-3 text-sm text-[#5C6680]">{copy.loading}</p></Card>;
   if (error) return <Card><p className="text-sm text-[#B42318]">{error}</p><Button onClick={load} className="mt-4">{copy.retry}</Button></Card>;

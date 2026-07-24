@@ -1,5 +1,17 @@
 [
   {
+    "version": "2026.07.24.2",
+    "title": "Mobile workspaces and reliable role updates",
+    "summary": "MOSAICO now keeps workspaces usable on mobile and tablet while making authorized role updates more reliable.",
+    "items": [
+      "Mobile and tablet users can open role-appropriate navigation without leaving or resetting the current screen.",
+      "Supported workspaces show contextual page actions only when real, available operations exist.",
+      "Navigation and page-action drawers support keyboard dismissal, focus management, safe touch targets, and English or Spanish labels.",
+      "Teacher calendar, profile, finance, configuration, and identity workspaces provide responsive access to their relevant operations.",
+      "Authorized administrators can update user roles consistently while read-only users remain unable to change assignments."
+    ]
+  },
+  {
     "version": "2026.07.24.1",
     "title": "Unified profiles and teacher calendar readiness",
     "summary": "MOSAICO now provides clearer profile management and the protected foundation for optional teacher calendar synchronization.",

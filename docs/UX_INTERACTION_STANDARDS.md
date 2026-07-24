@@ -14,6 +14,17 @@ Every module should identify its primary working surface and keep it visible as 
 
 ## Standard Pattern
 
+On mobile, this standard is implemented as:
+
+```text
+Left navigation drawer -> Persistent center screen -> Right contextual action drawer
+```
+
+Only one drawer opens at a time. The right trigger is absent when no
+authorized production-backed actions exist. The full normative component,
+accessibility, localization, and RBAC rules are in
+`docs/MOBILE_UX_AND_NAVIGATION_STANDARD.md`.
+
 ### 1. Persistent Center
 
 Use the center for the user's main job:
@@ -108,6 +119,9 @@ Move these to action-triggered panels:
 ### 7. Independent Navigation Scroll
 
 Long sidebar navigation must scroll independently from the main workspace. Sticky sidebars should use a viewport-height limit, vertical overflow, and contained overscroll so scrolling over the left menu does not move the right-side content.
+
+Below desktop sidebar width, reuse that same role-specific navigation in the
+shared left drawer. Do not stack the full sidebar above the center workspace.
 
 ### 8. Honest Disabled States
 

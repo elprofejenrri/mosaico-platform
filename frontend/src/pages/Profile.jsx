@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AlertCircle, Building2, Camera, Check, ChevronDown, Clock3,
   FileCheck2, LoaderCircle, LockKeyhole, Pencil, Save, ShieldCheck, UserRound,
@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
+import { useMobileNavigation, useMobilePageActions } from "../context/MobileShellContext";
 
 const tabs = [
   ["general", "General", UserRound],
@@ -21,6 +22,24 @@ const tabs = [
   ["activity", "Activity", Activity],
   ["audit", "Audit", ShieldCheck],
 ];
+const profileTabLabels = {
+  en: {
+    general: "General",
+    information: "Information",
+    preferences: "Preferences",
+    security: "Security",
+    activity: "Activity",
+    audit: "Audit",
+  },
+  es: {
+    general: "General",
+    information: "InformaciÃ³n",
+    preferences: "Preferencias",
+    security: "Seguridad",
+    activity: "Actividad",
+    audit: "AuditorÃ­a",
+  },
+};
 
 const detailFields = {
   alumno: [
@@ -184,7 +203,7 @@ export default function Profile() {
   const [error, setError] = useState("");
   const fileRef = useRef(null);
 
-  const load = async (role = "") => {
+  const load = useCallback(async (role = "") => {
     setLoading(true);
     setError("");
     try {
@@ -197,9 +216,9 @@ export default function Profile() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     const theme = form.common.preferences?.theme || "system";
@@ -233,7 +252,7 @@ export default function Profile() {
     },
   }));
 
-  const save = async () => {
+  const save = useCallback(async () => {
     setSaving(true);
     try {
       const response = await api.patch("/profile", {
@@ -251,7 +270,12 @@ export default function Profile() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [checkAuth, form, lang, selectedRole]);
+
+  const cancelEditing = useCallback(() => {
+    if (profile) setForm({ common: profile.common, details: profile.details });
+    setEditing(false);
+  }, [profile]);
 
   const uploadPhoto = async (file) => {
     if (!file) return;
@@ -270,6 +294,67 @@ export default function Profile() {
       if (fileRef.current) fileRef.current.value = "";
     }
   };
+  const tabLabels = profileTabLabels[lang] || profileTabLabels.en;
+  const mobileNavigationContent = useMemo(() => profile ? (
+    <div className="grid gap-2">
+      {visibleTabs.map(([id, fallbackLabel, Icon]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => setTab(id)}
+          aria-current={tab === id ? "page" : undefined}
+          data-mobile-drawer-close="true"
+          className={`flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-semibold ${
+            tab === id ? "bg-[#FFF0E6] text-[#E8704C]" : "text-[#1F3B6E] hover:bg-[#FFF0E6]"
+          }`}
+        >
+          <Icon size={17} aria-hidden="true" />
+          {tabLabels[id] || fallbackLabel}
+        </button>
+      ))}
+    </div>
+  ) : null, [profile, tab, tabLabels, visibleTabs]);
+  const mobileNavigation = useMemo(() => ({
+    content: mobileNavigationContent,
+    description: text.subtitle,
+  }), [mobileNavigationContent, text.subtitle]);
+  const mobilePage = useMemo(() => ({
+    title: text.title,
+    context: profile?.roleLabel || "",
+    actions: !profile ? [] : editing ? [
+      {
+        id: "profile-save",
+        label: saving ? text.saving : text.save,
+        icon: Save,
+        priority: 10,
+        group: "primary",
+        disabled: saving,
+        loading: saving,
+        handler: save,
+      },
+      {
+        id: "profile-cancel",
+        label: text.cancel,
+        icon: X,
+        priority: 20,
+        group: "secondary",
+        disabled: saving,
+        handler: cancelEditing,
+      },
+    ] : [
+      {
+        id: "profile-edit",
+        label: text.edit,
+        icon: Pencil,
+        priority: 10,
+        group: "primary",
+        visible: profile.canEdit,
+        handler: () => setEditing(true),
+      },
+    ],
+  }), [cancelEditing, editing, profile, save, saving, text]);
+  useMobileNavigation(mobileNavigation);
+  useMobilePageActions(mobilePage);
 
   if (loading) {
     return (
@@ -345,10 +430,7 @@ export default function Profile() {
             <div className="flex gap-2">
               {editing ? (
                 <>
-                  <Button variant="outline" onClick={() => {
-                    setForm({ common: profile.common, details: profile.details });
-                    setEditing(false);
-                  }} disabled={saving}><X className="mr-2" size={16} />{text.cancel}</Button>
+                  <Button variant="outline" onClick={cancelEditing} disabled={saving}><X className="mr-2" size={16} />{text.cancel}</Button>
                   <Button onClick={save} disabled={saving} className="bg-[#E8704C] hover:bg-[#C95630]">
                     {saving ? <LoaderCircle className="mr-2 animate-spin" size={16} /> : <Save className="mr-2" size={16} />}
                     {saving ? text.saving : text.save}
@@ -373,7 +455,7 @@ export default function Profile() {
         </header>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)]">
-          <nav className="h-fit rounded-2xl border border-[#EFE4D0] bg-white p-2 shadow-sm dark:border-slate-700 dark:bg-slate-900" aria-label="Profile sections">
+          <nav className="hidden h-fit rounded-2xl border border-[#EFE4D0] bg-white p-2 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:block" aria-label="Profile sections">
             {visibleTabs.map(([id, label, Icon]) => (
               <button key={id} type="button" onClick={() => setTab(id)} aria-current={tab === id ? "page" : undefined} className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-semibold ${tab === id ? "bg-[#FFF0E6] text-[#E8704C] dark:bg-slate-800" : "hover:bg-[#FBF7EE] dark:hover:bg-slate-800"}`}>
                 <Icon size={17} aria-hidden="true" />{label}

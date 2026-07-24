@@ -25,6 +25,7 @@ import { Button } from "../ui/button";
 import { Progress } from "../ui/progress";
 import WorkspaceSidePanel from "../WorkspaceSidePanel";
 import { useApp } from "../../context/AppContext";
+import { useMobilePageActions } from "../../context/MobileShellContext";
 import {
   blockTeacherTime,
   calendarStatuses,
@@ -965,13 +966,82 @@ export default function TeacherCalendarWorkspace() {
       document.getElementById(`calendar-session-${session.id}`)?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
     }, 50);
   };
+  const mobilePage = useMemo(() => ({
+    title: copy.title,
+    context: copy.teacherWorkspace,
+    actions: [
+      {
+        id: "calendar-open-availability",
+        label: copy.openAvailability,
+        icon: Plus,
+        permission: "calendar.teacher.create",
+        priority: 5,
+        group: "primary",
+        handler: () => setAvailabilityOpen(true),
+      },
+      {
+        id: "calendar-block-time",
+        label: copy.blockTime,
+        icon: Ban,
+        permission: "calendar.teacher.block",
+        priority: 6,
+        group: "primary",
+        handler: () => setBlockOpen(true),
+      },
+      {
+        id: "google-calendar",
+        label: copy.googleCalendar,
+        icon: CalendarDays,
+        permission: "calendar.teacher.sync_google",
+        priority: 10,
+        group: "primary",
+        handler: () => setSidePanel("calendar"),
+      },
+      {
+        id: "calendar-insights",
+        label: copy.schedulingInsights,
+        icon: Sparkles,
+        priority: 30,
+        group: "secondary",
+        handler: () => setSidePanel("insights"),
+      },
+      {
+        id: "calendar-day-view",
+        label: copy.dayTimeline,
+        icon: CalendarDays,
+        priority: 40,
+        group: "view",
+        disabled: view === "day",
+        handler: () => setView("day"),
+      },
+      {
+        id: "calendar-week-view",
+        label: copy.workWeek,
+        icon: CalendarDays,
+        priority: 41,
+        group: "view",
+        disabled: view === "week",
+        handler: () => setView("week"),
+      },
+      {
+        id: "calendar-month-view",
+        label: copy.monthView,
+        icon: CalendarDays,
+        priority: 42,
+        group: "view",
+        disabled: view === "month",
+        handler: () => setView("month"),
+      },
+    ],
+  }), [copy, view]);
+  useMobilePageActions(mobilePage);
 
   if (loading || !insights) {
     return <div className="grid gap-4"><div className="h-32 animate-pulse rounded-lg bg-white" /><div className="h-96 animate-pulse rounded-lg bg-white" /></div>;
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-5 pb-20 md:pb-0">
       <CalendarToolbar view={view} setView={setView} label={label} setLabel={setLabel} openAvailability={() => setAvailabilityOpen(true)} openBlock={() => setBlockOpen(true)} />
       <CalendarActionCenter
         integration={integration}
@@ -988,9 +1058,8 @@ export default function TeacherCalendarWorkspace() {
         <EmptySlotsPanel slots={emptySlots} onInvite={setInviteSlot} />
       </div>
       <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-[#EFE4D0] bg-white p-3 shadow-lg md:hidden">
-        <Button onClick={() => setAvailabilityOpen(true)} className="flex-1 bg-[#E8704C] text-white"><Plus size={16} className="mr-2" />Open</Button>
-        <Button onClick={() => setBlockOpen(true)} variant="outline" className="flex-1"><Ban size={16} className="mr-2" />Block</Button>
-        <Button onClick={() => setView("day")} variant="outline" className="flex-1"><CalendarDays size={16} className="mr-2" />Day</Button>
+        <Button onClick={() => setAvailabilityOpen(true)} className="min-w-0 flex-1 bg-[#E8704C] px-2 text-xs text-white"><Plus size={16} className="mr-1 shrink-0" /><span className="truncate">{copy.openAvailability}</span></Button>
+        <Button onClick={() => setBlockOpen(true)} variant="outline" className="min-w-0 flex-1 px-2 text-xs"><Ban size={16} className="mr-1 shrink-0" /><span className="truncate">{copy.blockTime}</span></Button>
       </div>
       {availabilityOpen && <AvailabilityModal onClose={() => setAvailabilityOpen(false)} onSaved={(slot) => setSessions((items) => [...items, slot])} />}
       {blockOpen && <BlockTimeModal sessions={sessions} onClose={() => setBlockOpen(false)} onSaved={(block) => setSessions((items) => [...items, block])} />}

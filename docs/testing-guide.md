@@ -21,7 +21,22 @@ cd frontend
 npm test -- --watchAll=false --passWithNoTests
 ```
 
-The current frontend suite has no discovered tests. Add tests for navigation, role gating, form validation, and critical flows.
+The frontend suite includes shared mobile shell component and permission
+filtering coverage. Run the focused suite with:
+
+```powershell
+cd frontend
+npm test -- --watchAll=false --runInBand src/components/mobile/MobileWorkspaceHeader.test.jsx
+```
+
+The suite covers drawer rendering/dismissal, one-open behavior, focus
+trap/restoration, Escape/backdrop, active route, unauthorized action removal,
+no-action state, state preservation, route cleanup, ES/EN accessible labels,
+and the header contract at 320, 360, 390, 430, tablet, and desktop widths.
+
+CSS visibility and real-browser layout still require the manual/E2E matrix in
+`docs/MOBILE_UX_AND_NAVIGATION_STANDARD.md`; jsdom does not evaluate Tailwind
+media queries or mobile browser safe areas.
 
 ## Frontend Build
 

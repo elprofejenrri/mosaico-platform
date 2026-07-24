@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Menu, X, Globe, BookOpen, ChevronDown, UserCircle } from "lucide-react";
+import { Globe, BookOpen, ChevronDown, UserCircle } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { Button } from "./ui/button";
 import { MosaicoLogo } from "./MosaicoLogo";
 import { canAccessPortal, isTechnicalUser } from "../lib/access";
+import MobileWorkspaceHeader from "./mobile/MobileWorkspaceHeader";
 
 const navLabels = {
   en: {
@@ -35,7 +36,6 @@ const navLabels = {
 
 export const Navbar = () => {
   const { t, lang, setLang, user, logout } = useApp();
-  const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const loc = useLocation();
   const technicalUser = isTechnicalUser(user);
@@ -56,7 +56,6 @@ export const Navbar = () => {
     <Link
       key={to}
       to={to}
-      onClick={() => setOpen(false)}
       data-testid={testid}
       className={`text-sm tracking-wide transition-colors hover:text-[#E8704C] ${loc.pathname === to ? "text-[#E8704C]" : "text-[#1F3B6E]"}`}
     >
@@ -72,10 +71,7 @@ export const Navbar = () => {
           key={item}
           type="button"
           data-testid={mobile ? `lang-${item}-m` : `lang-${item}`}
-          onClick={() => {
-            setLang(item);
-            if (mobile) setOpen(false);
-          }}
+          onClick={() => setLang(item)}
           className={`rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition-colors ${
             lang === item ? "bg-[#1F3B6E] text-white" : "text-[#5C6680] hover:bg-[#FFF0E6] hover:text-[#1F3B6E]"
           }`}
@@ -98,10 +94,7 @@ export const Navbar = () => {
           value={activeProfile}
           onChange={(event) => {
             const profile = profileOptions.find((item) => item.id === event.target.value);
-            if (profile) {
-              navigate(profile.path);
-              if (mobile) setOpen(false);
-            }
+            if (profile) navigate(profile.path);
           }}
           data-testid={mobile ? "nav-profile-selector-m" : "nav-profile-selector"}
           className={`h-10 w-full appearance-none rounded-md border border-[#EFE4D0] bg-white px-3 pr-9 text-sm font-semibold outline-none transition-colors focus:border-[#1F3B6E] focus:ring-2 focus:ring-[#1F3B6E]/15 ${
@@ -118,20 +111,55 @@ export const Navbar = () => {
     );
   };
 
+  const fallbackTitle = loc.pathname === "/profile"
+    ? labels.profile
+    : loc.pathname === "/login"
+      ? t.nav.signIn
+      : labels.platform;
+
+  const mobileNavigation = (
+    <div className="grid gap-4">
+      {navLink("/", labels.platform, "nav-home-m")}
+      {profileSelector(true)}
+      {languageSwitch(true)}
+      {user ? (
+        <>
+          <Link to="/dashboard" data-mobile-drawer-close="true">{t.nav.dashboard}</Link>
+          <Link to="/profile" className="flex min-h-11 items-center gap-2" data-mobile-drawer-close="true"><UserCircle size={16} />{labels.profile}</Link>
+          {["admin", "administrador_sitio", "administrador_profesor", "editor_cms"].includes(user.role) && <Link to="/admin" data-mobile-drawer-close="true">{t.nav.admin}</Link>}
+          {technicalUser && <Link to="/technical/wiki" className="flex min-h-11 items-center gap-2" data-mobile-drawer-close="true"><BookOpen size={16} />{labels.technicalWiki}</Link>}
+          <Button
+            onClick={async () => { await logout(); navigate("/"); }}
+            variant="outline"
+            data-testid="logout-btn-m"
+            data-mobile-drawer-close="true"
+          >
+            {t.nav.signOut}
+          </Button>
+        </>
+      ) : (
+        <Button onClick={() => navigate("/login")} data-testid="nav-signin-btn-m" data-mobile-drawer-close="true" className="bg-[#E8704C] text-[#FBF7EE] hover:bg-[#C95630]">
+          {t.nav.signIn}
+        </Button>
+      )}
+    </div>
+  );
+
   return (
     <header
       data-testid="navbar"
       className="fixed top-0 left-0 right-0 z-50 border-b border-[#EFE4D0]/60 bg-[#FBF7EE]/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/90"
     >
-      <div className="max-w-7xl mx-auto px-6 lg:px-10 h-16 flex items-center justify-between">
+      <MobileWorkspaceHeader fallbackNavigation={mobileNavigation} fallbackTitle={fallbackTitle} />
+      <div className="mx-auto hidden h-16 max-w-7xl items-center justify-between px-6 lg:flex lg:px-10">
         <MosaicoLogo size="text-2xl" />
 
-        <nav className="hidden md:flex items-center gap-5" aria-label="Primary navigation">
+        <nav className="flex items-center gap-5" aria-label="Primary navigation">
           {navLink("/", labels.platform, "nav-home")}
           {profileSelector()}
         </nav>
 
-        <div className="hidden md:flex items-center gap-3">
+        <div className="flex items-center gap-3">
           {languageSwitch()}
           {user ? (
             <>
@@ -175,38 +203,7 @@ export const Navbar = () => {
           )}
         </div>
 
-        <button
-          onClick={() => setOpen((o) => !o)}
-          data-testid="nav-mobile-toggle"
-          className="md:hidden p-2"
-          aria-label="Menu"
-        >
-          {open ? <X size={20} /> : <Menu size={20} />}
-        </button>
       </div>
-
-      {open && (
-        <div className="md:hidden flex flex-col gap-4 border-t border-[#EFE4D0] bg-[#FBF7EE] px-6 py-6 dark:border-slate-800 dark:bg-slate-950">
-          {navLink("/", labels.platform, "nav-home-m")}
-          {profileSelector(true)}
-          {languageSwitch(true)}
-          {user ? (
-            <>
-              <Link to="/dashboard" onClick={() => setOpen(false)}>{t.nav.dashboard}</Link>
-              <Link to="/profile" onClick={() => setOpen(false)} className="flex items-center gap-2"><UserCircle size={16} />{labels.profile}</Link>
-              {["admin", "administrador_sitio", "administrador_profesor", "editor_cms"].includes(user.role) && <Link to="/admin" onClick={() => setOpen(false)}>{t.nav.admin}</Link>}
-              {technicalUser && <Link to="/technical/wiki" onClick={() => setOpen(false)} className="flex items-center gap-2"><BookOpen size={16} />{labels.technicalWiki}</Link>}
-              <Button onClick={async () => { await logout(); setOpen(false); navigate("/"); }} variant="outline" data-testid="logout-btn-m">
-                {t.nav.signOut}
-              </Button>
-            </>
-          ) : (
-            <Button onClick={() => { setOpen(false); navigate("/login"); }} data-testid="nav-signin-btn-m" className="bg-[#E8704C] text-[#FBF7EE] hover:bg-[#C95630]">
-              {t.nav.signIn}
-            </Button>
-          )}
-        </div>
-      )}
     </header>
   );
 };

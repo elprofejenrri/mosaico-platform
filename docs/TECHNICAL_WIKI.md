@@ -43,6 +43,7 @@ The wiki gives technical operators a navigable, in-product view of the platform 
 - API reference
 - unified profile model
 - environment configuration
+- mobile UX and navigation standard
 
 ## Unified profile architecture
 
@@ -69,6 +70,9 @@ When a feature changes, update at least one of:
 - `docs/ARCHITECTURE.md`
 - `docs/PRODUCT_DOCUMENTATION.md`
 - feature-specific docs
+
+Mobile shell, responsive navigation, and contextual action changes must follow
+`docs/MOBILE_UX_AND_NAVIGATION_STANDARD.md`.
 
 If none of those fit, create a new doc and add it to the technical wiki data source:
 
@@ -110,6 +114,18 @@ and pilot workflow before teachers can connect it.
 Releases are listed in descending order. No reliable tag or formal release
 record existed when this history was introduced, so the first entry records
 only the initial documented baseline delivered by this feature.
+
+<!-- RELEASE: 2026.07.24.2 -->
+### 2026.07.24.2 — Mobile workspaces and reliable role updates
+
+Summary: MOSAICO now keeps workspaces usable on mobile and tablet while making authorized role updates more reliable.
+
+- Mobile and tablet users can open role-appropriate navigation without leaving or resetting the current screen.
+- Supported workspaces show contextual page actions only when real, available operations exist.
+- Navigation and page-action drawers support keyboard dismissal, focus management, safe touch targets, and English or Spanish labels.
+- Teacher calendar, profile, finance, configuration, and identity workspaces provide responsive access to their relevant operations.
+- Authorized administrators can update user roles consistently while read-only users remain unable to change assignments.
+<!-- /RELEASE -->
 
 <!-- RELEASE: 2026.07.24.1 -->
 ### 2026.07.24.1 — Unified profiles and teacher calendar readiness
@@ -198,6 +214,8 @@ When a document is added to the wiki, update both:
 - `frontend/src/data/technicalWiki.js`
 - `frontend/src/lib/access.js`
 - `frontend/src/components/Navbar.jsx`
+- `frontend/src/components/mobile/MobileWorkspaceHeader.jsx`
+- `frontend/src/context/MobileShellContext.jsx`
 - `frontend/src/App.js`
 - `backend/server.py`
 

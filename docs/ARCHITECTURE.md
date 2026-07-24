@@ -74,10 +74,26 @@ Important files:
 | --- | --- |
 | `frontend/src/App.js` | Route definitions |
 | `frontend/src/context/AppContext.jsx` | App state, auth session, language, settings |
+| `frontend/src/context/MobileShellContext.jsx` | Mobile navigation/page-action registration, RBAC filtering, and one-drawer state |
+| `frontend/src/components/mobile/MobileWorkspaceHeader.jsx` | Shared left navigation, persistent title, and contextual action drawers |
 | `frontend/src/lib/api.js` | Axios API client and auth token injection |
 | `frontend/src/lib/supabase.js` | Supabase browser client |
 | `frontend/src/pages/Admin.jsx` | Admin platform UI |
 | `frontend/src/pages/AuthCallback.jsx` | OAuth callback code exchange |
+
+### Responsive application shell
+
+The router is wrapped by `MobileShellProvider`. Below the existing `lg`
+navbar breakpoint, the shared header exposes role-aware navigation from the
+left and registered page operations from the right while leaving the route
+component mounted in the center. `PlatformShell` reuses one `PortalNavigation`
+definition for mobile drawers and the desktop sidebar; it does not duplicate
+route, feature-flag, or permission rules. Radix Dialog-backed `Sheet` panels
+provide focus trap, focus restoration, backdrop dismissal, Escape behavior,
+and background isolation.
+
+See `docs/MOBILE_UX_AND_NAVIGATION_STANDARD.md` for the action contract,
+breakpoint policy, accessibility rules, and implementation guide.
 
 ## Backend
 

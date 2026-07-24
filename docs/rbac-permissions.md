@@ -56,6 +56,12 @@
 
 The main RBAC UI is `/admin/roles-permissions`. It supports role inspection, permission levels, user role assignment, safety prompts, and audit visibility.
 
+Role assignment accepts the canonical `users.roles.assign` permission and the
+compatibility permission `roles.assign`. Their effective scopes are combined,
+so technical administrators retain global assignment access while school
+administrators remain restricted to authorized schools. The role editor is
+read-only when neither permission is available.
+
 ## School Administrative Role
 
 `administrador_escolar` is the non-technical education administrator role. It is meant for school principal workflows and has additive permissions for classes, learning roadmaps, student/teacher coordination, and school reports. It does not receive technical IAM, platform settings, audit, or system-health permissions by default.

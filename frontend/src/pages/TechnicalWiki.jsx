@@ -7,6 +7,7 @@ import { isTechnicalUser } from "../lib/access";
 import { productionReleases } from "../data/productionReleases";
 import { technicalWikiPrinciples, technicalWikiSections } from "../data/technicalWiki";
 import { api } from "../lib/api";
+import { useMobileNavigation, useMobilePageActions } from "../context/MobileShellContext";
 
 const wikiTabs = [
   { id: "overview", label: "Overview" },
@@ -14,6 +15,11 @@ const wikiTabs = [
   { id: "releases", label: "Releases" },
   { id: "documents", label: "Documents" },
 ];
+
+const wikiTabLabels = {
+  en: { overview: "Overview", reader: "Document reader", releases: "Releases", documents: "Documents" },
+  es: { overview: "Resumen", reader: "Lector de documentos", releases: "Versiones", documents: "Documentos" },
+};
 
 const releaseRules = [
   "Update the Markdown and in-app histories in the same change set.",
@@ -127,7 +133,7 @@ function ReleaseHistory() {
 }
 
 export default function TechnicalWiki() {
-  const { user, authLoading } = useApp();
+  const { user, authLoading, lang } = useApp();
   const firstDoc = technicalWikiSections[0].docs[0];
   const [selectedDoc, setSelectedDoc] = useState(firstDoc);
   const [docContent, setDocContent] = useState("");
@@ -136,6 +142,39 @@ export default function TechnicalWiki() {
   const [activeTab, setActiveTab] = useState("overview");
   const tabRefs = useRef([]);
   const allDocs = useMemo(() => technicalWikiSections.flatMap((section) => section.docs), []);
+  const mobileCopy = lang === "es"
+    ? { title: "Wiki técnica", context: "Documentación restringida", navigation: "Secciones de la wiki" }
+    : { title: "Technical Wiki", context: "Restricted documentation", navigation: "Wiki sections" };
+  const mobileTabLabels = wikiTabLabels[lang] || wikiTabLabels.en;
+  const mobileNavigationContent = useMemo(() => (
+    <div className="grid gap-2">
+      {wikiTabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          aria-current={activeTab === tab.id ? "page" : undefined}
+          data-mobile-drawer-close="true"
+          onClick={() => setActiveTab(tab.id)}
+          className={`min-h-11 rounded-md px-3 py-2 text-left text-sm font-semibold ${
+            activeTab === tab.id ? "bg-[#FFF0E6] text-[#E8704C]" : "text-[#1F3B6E] hover:bg-[#FFF0E6]"
+          }`}
+        >
+          {mobileTabLabels[tab.id]}
+        </button>
+      ))}
+    </div>
+  ), [activeTab, mobileTabLabels]);
+  const mobileNavigation = useMemo(() => ({
+    content: mobileNavigationContent,
+    description: mobileCopy.navigation,
+  }), [mobileCopy.navigation, mobileNavigationContent]);
+  const mobilePage = useMemo(() => ({
+    title: mobileCopy.title,
+    context: mobileCopy.context,
+    actions: [],
+  }), [mobileCopy.context, mobileCopy.title]);
+  useMobileNavigation(mobileNavigation);
+  useMobilePageActions(mobilePage);
 
   const loadDoc = async (doc) => {
     setSelectedDoc(doc);
