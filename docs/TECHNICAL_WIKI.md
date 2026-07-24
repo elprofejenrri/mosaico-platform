@@ -122,6 +122,18 @@ Releases are listed in descending order. No reliable tag or formal release
 record existed when this history was introduced, so the first entry records
 only the initial documented baseline delivered by this feature.
 
+<!-- RELEASE: 2026.07.24.5 -->
+### 2026.07.24.5 — Required dates for production releases
+
+Summary: MOSAICO now requires every published production-history entry to include a clear release date.
+
+Release date: 2026-07-24
+
+- Future production releases must record their publication date in a consistent format.
+- Release documentation and in-application history must keep the same date for each version.
+- Release validation remains required before a production change is published.
+<!-- /RELEASE -->
+
 <!-- RELEASE: 2026.07.24.4 -->
 ### 2026.07.24.4 — Safer account setup and accessible navigation
 

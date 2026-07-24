@@ -1,5 +1,16 @@
 [
   {
+    "version": "2026.07.24.5",
+    "releaseDate": "2026-07-24",
+    "title": "Required dates for production releases",
+    "summary": "MOSAICO now requires every published production-history entry to include a clear release date.",
+    "items": [
+      "Future production releases must record their publication date in a consistent format.",
+      "Release documentation and in-application history must keep the same date for each version.",
+      "Release validation remains required before a production change is published."
+    ]
+  },
+  {
     "version": "2026.07.24.4",
     "releaseDate": "2026-07-24",
     "title": "Safer account setup and accessible navigation",

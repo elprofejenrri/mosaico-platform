@@ -22,12 +22,13 @@ operational improvements.
 The new release must:
 
 1. Use a new unique version greater than the current newest version.
-2. Be added to both `docs/TECHNICAL_WIKI.md` and
+2. Include the release date in ISO `YYYY-MM-DD` format.
+3. Be added to both `docs/TECHNICAL_WIKI.md` and
    `frontend/src/data/productionReleases.json`.
-3. Keep both representations identical and newest first.
-4. Describe only safe, observable outcomes without secrets or sensitive
+4. Keep both representations identical and newest first.
+5. Describe only safe, observable outcomes without secrets or sensitive
    implementation details.
-5. Pass `npm run validate:releases` before the commit is created.
+6. Pass `npm run validate:releases` before the commit is created.
 
 Do not push a request's commit without its corresponding production release
 entry. If a commit is intentionally local-only and will not be pushed or
