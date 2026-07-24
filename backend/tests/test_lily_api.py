@@ -11,7 +11,12 @@ STUDENT_TOKEN = os.environ.get("SUPABASE_STUDENT_TEST_TOKEN", "")
 
 @pytest.fixture
 def s():
-    return requests.Session()
+    session = requests.Session()
+    try:
+        session.get(f"{BASE_URL}/api/health", timeout=2)
+    except requests.RequestException:
+        pytest.skip(f"Integration API is not running at {BASE_URL}")
+    return session
 
 
 def H(tok):

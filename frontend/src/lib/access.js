@@ -6,7 +6,10 @@ function effectiveRoles(user) {
 export function isTechnicalUser(user) {
   const roles = effectiveRoles(user);
   const permissions = user?.permissions || {};
-  return roles.has("administrador_sitio") || roles.has("developer") || Number(permissions["*"] || 0) >= 100;
+  return roles.has("administrador_sitio") ||
+    roles.has("developer") ||
+    Number(permissions["technical.wiki.view"] || 0) >= 1 ||
+    Number(permissions["*"] || 0) >= 100;
 }
 
 export function hasPermission(user, permission, minLevel = 1) {
@@ -20,7 +23,7 @@ export function hasAnyRole(user, roleNames = []) {
 }
 
 export function canAccessPortal(user, portal) {
-  if (portal === "student") return true;
+  if (portal === "student") return hasAnyRole(user, ["alumno", "student", "administrador_sitio"]);
   if (portal === "tutor") return hasAnyRole(user, ["tutor_padre", "administrador_sitio", "administrador_profesor", "administrador_escolar", "coordinador"]);
   if (portal === "teacher") return hasAnyRole(user, ["profesor", "administrador_sitio", "administrador_profesor", "administrador_escolar", "coordinador"]) || hasPermission(user, "calendar.teacher.view");
   if (portal === "schoolAdmin") {
@@ -33,6 +36,11 @@ export function canAccessPortal(user, portal) {
       hasPermission(user, "roles.management.view") ||
       hasPermission(user, "settings.platform.view") ||
       hasPermission(user, "audit.logs.view");
+  }
+  if (portal === "finance") {
+    return hasAnyRole(user, ["finanzas", "administrador_sitio"]) ||
+      hasPermission(user, "reports.financial.view") ||
+      hasPermission(user, "payments.view");
   }
   return false;
 }

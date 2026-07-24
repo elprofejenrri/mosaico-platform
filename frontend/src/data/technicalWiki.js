@@ -48,6 +48,7 @@ export const technicalWikiSections = [
 
 export const technicalWikiPrinciples = [
   "Every platform change must update or create documentation.",
+  "Every production release updates the Markdown and in-app histories together.",
   "Production safety comes before validating constraints or deleting historical records.",
   "Privileged platform documentation is visible only to technical roles.",
   "Roadmap phases should ship in small, auditable changes.",

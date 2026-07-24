@@ -65,7 +65,8 @@
   "scripts": {
     "start": "craco start",
     "build": "craco build",
-    "test": "craco test"
+    "test": "craco test",
+    "validate:releases": "node ../scripts/validate-release-history.js"
   },
   "browserslist": {
     "production": [

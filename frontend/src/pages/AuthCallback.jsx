@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
+import { api } from "../lib/api";
 import { supabase } from "../lib/supabase";
 
 export default function AuthCallback() {
@@ -24,10 +26,19 @@ export default function AuthCallback() {
           if (!data.session) throw new Error("Missing auth session");
         }
         await checkAuth();
-        navigate("/admin", { replace: true });
+        const access = await api.get("/auth/me/permissions");
+        const roles = new Set(access.data?.roles || []);
+        const destination = roles.has("administrador_sitio") ? "/admin"
+          : roles.has("finanzas") ? "/finance"
+          : roles.has("administrador_escolar") ? "/school-admin"
+          : roles.has("profesor") ? "/teacher"
+          : roles.has("tutor_padre") ? "/tutor"
+          : "/student";
+        navigate(destination, { replace: true });
       } catch (error) {
         console.error("Auth callback failed", error);
-        navigate("/", { replace: true });
+        toast.error(error?.message || "Google sign-in could not be completed.");
+        navigate("/login", { replace: true });
       }
     })();
   }, [checkAuth, navigate]);

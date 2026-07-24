@@ -137,12 +137,12 @@ Render -> service -> Environment -> Save Changes
 
 Render normally redeploys after saving environment changes.
 
-## Turn The Lights On
+## Magic safe release
 
 When the user says:
 
 ```text
-Turn the lights on
+magic
 ```
 
 Run the safe release checklist:

@@ -3,7 +3,16 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
 const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+const isPlaceholder = (value = "") =>
+  !value ||
+  value.includes("PROJECT_REF") ||
+  value.includes("placeholder") ||
+  value.includes("your-supabase");
+
+export const isSupabaseConfigured =
+  !isPlaceholder(supabaseUrl) && !isPlaceholder(supabaseAnonKey);
+
+if (!isSupabaseConfigured) {
   console.warn("Supabase auth is not configured. Set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY.");
 }
 

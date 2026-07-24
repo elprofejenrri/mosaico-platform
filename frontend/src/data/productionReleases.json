@@ -1,0 +1,25 @@
+[
+  {
+    "version": "2026.07.23.2",
+    "title": "School-aware access and simpler profiles",
+    "summary": "MOSAICO now gives each team member clearer access to the workspaces and information relevant to their responsibilities.",
+    "items": [
+      "The profile menu now combines available workspaces into one responsive dropdown.",
+      "School teams can manage user access for the correct school from the administration workspace.",
+      "Finance users have a dedicated workspace for reviewing payments and recording approved account adjustments.",
+      "Google sign-in now displays a clear message when it cannot start or finish.",
+      "Operational checks detect inconsistent access records before a release."
+    ]
+  },
+  {
+    "version": "2026.07.23.1",
+    "title": "In-app production history",
+    "summary": "Technical users can review a safe, accessible production release history inside MOSAICO.",
+    "items": [
+      "Authorized technical users can review production outcomes without leaving MOSAICO.",
+      "Each release can be expanded with a keyboard or pointer, with the newest release open by default.",
+      "The release view remains readable on narrow screens and keeps long histories independently scrollable.",
+      "A synchronization check detects duplicate, incomplete, out-of-order, or mismatched release records."
+    ]
+  }
+]

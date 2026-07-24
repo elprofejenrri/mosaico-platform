@@ -58,4 +58,12 @@ The main RBAC UI is `/admin/roles-permissions`. It supports role inspection, per
 
 `administrador_escolar` is the non-technical education administrator role. It is meant for school principal workflows and has additive permissions for classes, learning roadmaps, student/teacher coordination, and school reports. It does not receive technical IAM, platform settings, audit, or system-health permissions by default.
 
+## Technical documentation
+
+`technical.wiki.view` is the dedicated permission for the restricted in-application
+technical wiki. Navigation and route rendering require technical access, and the
+backend applies the same rule to the allowlisted document responses. The protected
+`administrador_sitio` role and wildcard technical access continue to satisfy this
+permission.
+
 The portal selector shows one active profile at a time through a dropdown. Users with multiple roles can switch between Client, Tutor, Teacher, School Administrative, and Technical Admin when their effective permissions allow those portals.

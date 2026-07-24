@@ -15,7 +15,7 @@ logger = logging.getLogger("lily.db")
 _pool: Optional[asyncpg.Pool] = None
 
 TABLE_COLUMNS: Dict[str, List[str]] = {
-    "users": ["user_id", "email", "name", "picture", "role", "created_at", "google_id", "password_hash", "auth_provider", "profile_type", "active", "updated_at", "last_login_at"],
+    "users": ["user_id", "email", "name", "picture", "role", "created_at", "google_id", "password_hash", "auth_provider", "profile_type", "active", "status", "active_school_id", "updated_at", "last_login_at"],
     "products": [
         "id", "slug", "name_en", "name_es", "description_en", "description_es",
         "duration_min", "sessions_included", "price_usd", "type", "popular",
@@ -26,7 +26,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         "id", "user_id", "user_email", "user_name", "product_id", "product_name",
         "duration_min", "scheduled_date", "scheduled_time", "timezone", "status",
         "meeting_link", "notes", "payment_session_id", "teacher_id", "teacher_name",
-        "created_at", "end_time", "student_profile_id", "updated_at",
+        "created_at", "end_time", "student_profile_id", "school_id", "updated_at",
     ],
     "blog_posts": [
         "id", "slug", "title_en", "title_es", "excerpt_en", "excerpt_es",
@@ -38,23 +38,28 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
     ],
     "payment_transactions": [
         "session_id", "user_id", "user_email", "product_id", "amount", "currency",
-        "payment_status", "status", "metadata", "booking_created", "created_at",
+        "payment_status", "status", "metadata", "booking_created", "school_id", "original_payment_id", "refunded_at", "created_at", "updated_at",
     ],
     "files": [
         "id", "storage_path", "original_filename", "content_type", "size",
         "uploaded_by", "is_deleted", "created_at",
     ],
-    "roles": ["id", "name", "label", "description", "level", "type", "status", "active", "created_at", "updated_at"],
-    "permissions": ["id", "name", "label", "description", "catalog", "module", "section", "feature", "action", "risk_level", "level", "active", "created_at", "updated_at"],
-    "role_permissions": ["id", "role_name", "permission", "level", "scope", "created_at", "updated_at"],
-    "user_roles": ["id", "user_id", "role_name", "active", "assigned_by", "created_at", "updated_at"],
+    "roles": ["id", "name", "code", "label", "description", "level", "type", "scope_type", "is_system", "is_protected", "status", "active", "created_at", "updated_at"],
+    "permissions": ["id", "name", "code", "label", "description", "catalog", "module", "section", "feature", "action", "risk_level", "is_system", "level", "active", "created_at", "updated_at"],
+    "role_permissions": ["id", "role_name", "permission", "level", "scope", "allowed", "conditions", "created_at", "updated_at"],
+    "user_roles": ["id", "user_id", "role_name", "school_id", "status", "active", "assigned_by", "assigned_at", "expires_at", "created_at", "updated_at"],
+    "schools": ["id", "code", "name", "status", "created_at", "updated_at"],
+    "user_school_memberships": ["id", "user_id", "school_id", "membership_type", "status", "created_at", "updated_at"],
+    "tutor_student_links": ["id", "tutor_user_id", "student_user_id", "school_id", "relationship_type", "status", "authorized_at", "authorized_by", "created_at", "updated_at"],
+    "teacher_student_assignments": ["id", "teacher_user_id", "student_user_id", "school_id", "course_id", "class_id", "status", "starts_at", "ends_at", "created_at", "updated_at"],
+    "credit_movements": ["id", "actor_user_id", "account_user_id", "school_id", "balance_before", "amount", "balance_after", "movement_type", "reason", "transaction_id", "reference_type", "reference_id", "ip_address", "metadata", "created_at"],
     "teacher_profiles": ["id", "user_id", "teacher_id", "specialties", "assigned_products", "created_at", "updated_at"],
     "student_profiles": ["id", "user_id", "phone", "enrolled_products", "notes", "status", "created_at", "updated_at"],
     "pages": ["id", "title", "slug", "language", "status", "meta_title", "meta_description", "content_blocks", "hero_image", "created_by", "updated_by", "published_date", "created_at", "updated_at"],
     "media_assets": ["id", "file_name", "url", "type", "alt_text", "uploaded_by", "created_at", "updated_at"],
     "login_history": ["id", "user_id", "email", "provider", "ip_address", "user_agent", "created_at"],
     "local_auth_sessions": ["id", "user_id", "token_hash", "expires_at", "revoked_at", "created_at", "last_seen_at", "ip_address", "user_agent"],
-    "audit_events": ["id", "actor_user_id", "actor_name", "target_user_id", "event_type", "action", "entity_type", "target_type", "entity_id", "target_id", "before_state", "after_state", "metadata", "ip_address", "user_agent", "risk_level", "created_at"],
+    "audit_events": ["id", "actor_user_id", "actor_name", "actor_role_id", "school_id", "target_user_id", "event_type", "action", "entity_type", "target_type", "entity_id", "target_id", "permission_code", "result", "denial_reason", "before_state", "after_state", "metadata", "ip_address", "user_agent", "request_id", "risk_level", "created_at"],
     "activity_logs": ["id", "actor_user_id", "actor_name", "event_type", "action", "target_type", "target_id", "summary", "metadata", "visibility", "created_at"],
     "analytics_events": ["id", "event_name", "user_id", "role", "session_id", "module", "entity_type", "entity_id", "metadata", "created_at"],
     "error_events": ["id", "request_id", "user_id", "code", "message", "details", "path", "method", "status_code", "ip_address", "user_agent", "created_at"],
@@ -72,6 +77,8 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
 JSONB_COLUMNS = {
     "teachers": {"languages", "specialties", "availability"},
     "payment_transactions": {"metadata"},
+    "role_permissions": {"conditions"},
+    "credit_movements": {"metadata"},
     "teacher_profiles": {"specialties", "assigned_products"},
     "student_profiles": {"enrolled_products"},
     "pages": {"content_blocks"},
@@ -95,8 +102,9 @@ BOOL_COLUMNS = {
     "teachers": {"active"},
     "payment_transactions": {"booking_created"},
     "files": {"is_deleted"},
-    "roles": {"active"},
-    "permissions": {"active"},
+    "roles": {"active", "is_system", "is_protected"},
+    "permissions": {"active", "is_system"},
+    "role_permissions": {"allowed"},
     "user_roles": {"active"},
     "atlas_comments": {"resolved"},
 }
@@ -421,6 +429,11 @@ class Database:
         self.permissions = Collection("permissions", pool)
         self.role_permissions = Collection("role_permissions", pool)
         self.user_roles = Collection("user_roles", pool)
+        self.schools = Collection("schools", pool)
+        self.user_school_memberships = Collection("user_school_memberships", pool)
+        self.tutor_student_links = Collection("tutor_student_links", pool)
+        self.teacher_student_assignments = Collection("teacher_student_assignments", pool)
+        self.credit_movements = Collection("credit_movements", pool)
         self.teacher_profiles = Collection("teacher_profiles", pool)
         self.student_profiles = Collection("student_profiles", pool)
         self.pages = Collection("pages", pool)

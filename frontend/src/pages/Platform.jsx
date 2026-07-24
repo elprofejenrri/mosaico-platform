@@ -158,6 +158,7 @@ const roleNav = {
     ["bookings", "Bookings", CalendarDays],
     ["families", "Families", ShieldCheck],
     ["reports", "Reports", LineChart],
+    ["roles", "User access", ShieldCheck],
   ],
   admin: [
     ["", "Overview", LayoutDashboard],
@@ -197,7 +198,7 @@ const roleNavGroups = {
     ["Start", [""]],
     ["Academic Operations", ["approvals", "classes", "roadmaps", "lessons"]],
     ["Scheduling & Credits", ["bookings", "credits"]],
-    ["People", ["students", "teachers", "families"]],
+    ["People", ["students", "teachers", "families", "roles"]],
     ["Intelligence", ["reports"]],
   ],
   admin: [
@@ -812,6 +813,7 @@ function canAccessNavItem(user, role, slug, settings = {}) {
       bookings: "classes.sessions.view",
       families: "students.profile.view",
       reports: "reports.analytics.view",
+      roles: "roles.view",
     };
     const permission = permissionBySlug[slug];
     return permission ? hasPermission(user, permission, 1) : true;
@@ -2610,7 +2612,87 @@ export function SchoolAdminPortal({ module = "dashboard" }) {
       {module === "bookings" && <AdminBookings />}
       {module === "families" && <AdminFamilies />}
       {module === "reports" && <AdminReports />}
+      {module === "roles" && <AdminRbacWorkspace initialTab="users" />}
     </PlatformShell>
+  );
+}
+
+export function FinancePortal() {
+  const { user, authLoading } = useApp();
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await api.get("/finance/payments");
+      setPayments(response.data || []);
+    } catch (error) {
+      toast.error(error.appError?.message || "No fue posible cargar los pagos.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user && canAccessPortal(user, "finance")) load();
+  }, [load, user]);
+
+  const updatePayment = async (payment, action) => {
+    const reason = window.prompt(`Motivo para ${action} el pago:`);
+    if (!reason) return;
+    const confirm = action !== "refund" || window.confirm("Confirma explícitamente el reembolso. Esta acción afecta fondos reales.");
+    if (!confirm) return;
+    try {
+      await api.patch(`/finance/payments/${payment.session_id}/${action}`, { reason, confirm });
+      toast.success("Operación financiera registrada.");
+      load();
+    } catch (error) {
+      toast.error(error.appError?.message || "La operación fue rechazada.");
+    }
+  };
+
+  if (authLoading) return <div className="mx-auto max-w-7xl px-6 py-20">...</div>;
+  if (!canAccessPortal(user, "finance")) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-20">
+        <Card><h1 className="font-display text-3xl text-[#1F3B6E]">Acceso restringido</h1><p className="mt-3 text-[#5C6680]">Este contenido no está disponible para tu perfil.</p></Card>
+      </div>
+    );
+  }
+
+  const paid = payments.filter((item) => item.payment_status === "paid");
+  const total = paid.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  return (
+    <div className="mx-auto max-w-7xl px-6 py-10">
+      <SectionHeader eyebrow="Finanzas" title="Pagos y movimientos dentro de tu alcance escolar" action={<Button variant="outline" onClick={load}>Actualizar</Button>} />
+      <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <MetricCard label="Pagos visibles" value={payments.length} detail="Limitados por escuela y permisos" icon={CreditCard} />
+        <MetricCard label="Pagos confirmados" value={paid.length} detail="Operaciones dentro del alcance" icon={BadgeCheck} color="#2DA89F" />
+        <MetricCard label="Monto confirmado" value={`$${total.toFixed(2)}`} detail="No incluye escuelas no asignadas" icon={Coins} color="#8B5BB8" />
+      </div>
+      <Card className="mt-5">
+        <SectionHeader eyebrow="Registro financiero" title="Pagos" />
+        {loading ? <p className="mt-5 text-sm text-[#5C6680]">Cargando...</p> : (
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[780px] text-left text-sm">
+              <thead><tr className="text-xs uppercase tracking-[0.14em] text-[#5C6680]"><th className="py-3">Cuenta</th><th>Escuela</th><th>Monto</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody>{payments.map((payment) => (
+                <tr key={payment.session_id} className="border-t border-[#EFE4D0]">
+                  <td className="py-3">{payment.user_email}</td><td>{payment.school_id || "Sin escuela"}</td>
+                  <td>{payment.currency?.toUpperCase()} {Number(payment.amount || 0).toFixed(2)}</td><td>{payment.payment_status}</td>
+                  <td><div className="flex gap-2">
+                    {hasPermission(user, "payments.confirm") && <Button size="sm" variant="outline" onClick={() => updatePayment(payment, "confirm")}>Confirmar</Button>}
+                    {hasPermission(user, "payments.reject") && <Button size="sm" variant="outline" onClick={() => updatePayment(payment, "reject")}>Rechazar</Button>}
+                    {hasPermission(user, "payments.refund") && payment.payment_status === "paid" && <Button size="sm" variant="outline" onClick={() => updatePayment(payment, "refund")}>Reembolsar</Button>}
+                  </div></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 

@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Menu, X, Globe, GraduationCap, ShieldCheck, UserRound, Users, BookOpen, School } from "lucide-react";
+import { Menu, X, Globe, BookOpen, ChevronDown } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { Button } from "./ui/button";
 import { MosaicoLogo } from "./MosaicoLogo";
-import { isTechnicalUser } from "../lib/access";
+import { canAccessPortal, isTechnicalUser } from "../lib/access";
 
 const navLabels = {
   en: {
@@ -16,6 +16,8 @@ const navLabels = {
     schoolAdmin: "School admin",
     wiki: "Wiki",
     technicalWiki: "Technical wiki",
+    finance: "Finance",
+    profile: "Profile",
   },
   es: {
     platform: "Plataforma",
@@ -26,6 +28,8 @@ const navLabels = {
     schoolAdmin: "Admin escolar",
     wiki: "Wiki",
     technicalWiki: "Wiki tecnica",
+    finance: "Finanzas",
+    profile: "Perfil",
   },
 };
 
@@ -36,6 +40,17 @@ export const Navbar = () => {
   const loc = useLocation();
   const technicalUser = isTechnicalUser(user);
   const labels = navLabels[lang] || navLabels.en;
+  const profileOptions = [
+    { id: "student", path: "/student", label: labels.client },
+    { id: "tutor", path: "/tutor", label: labels.tutor },
+    { id: "teacher", path: "/teacher", label: labels.teacher },
+    { id: "schoolAdmin", path: "/school-admin", label: labels.schoolAdmin },
+    { id: "finance", path: "/finance", label: labels.finance },
+    { id: "admin", path: "/admin", label: labels.administrative },
+  ].filter((profile) => user && canAccessPortal(user, profile.id));
+  const activeProfile = profileOptions.find((profile) =>
+    loc.pathname === profile.path || loc.pathname.startsWith(`${profile.path}/`)
+  )?.id || profileOptions[0]?.id || "";
 
   const navLink = (to, label, testid) => (
     <Link
@@ -72,6 +87,37 @@ export const Navbar = () => {
     </div>
   );
 
+  const profileSelector = (mobile = false) => {
+    if (!user || profileOptions.length === 0) return null;
+    const selectId = mobile ? "nav-profile-selector-mobile" : "nav-profile-selector";
+    return (
+      <div className={`relative ${mobile ? "w-full" : "min-w-40"}`}>
+        <label htmlFor={selectId} className="sr-only">{labels.profile}</label>
+        <select
+          id={selectId}
+          value={activeProfile}
+          onChange={(event) => {
+            const profile = profileOptions.find((item) => item.id === event.target.value);
+            if (profile) {
+              navigate(profile.path);
+              if (mobile) setOpen(false);
+            }
+          }}
+          data-testid={mobile ? "nav-profile-selector-m" : "nav-profile-selector"}
+          className={`h-10 w-full appearance-none rounded-md border border-[#EFE4D0] bg-white px-3 pr-9 text-sm font-semibold outline-none transition-colors focus:border-[#1F3B6E] focus:ring-2 focus:ring-[#1F3B6E]/15 ${
+            activeProfile ? "text-[#E8704C]" : "text-[#1F3B6E]"
+          }`}
+          aria-label={labels.profile}
+        >
+          {profileOptions.map((profile) => (
+            <option key={profile.id} value={profile.id}>{profile.label}</option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#5C6680]" size={16} aria-hidden="true" />
+      </div>
+    );
+  };
+
   return (
     <header
       data-testid="navbar"
@@ -80,13 +126,9 @@ export const Navbar = () => {
       <div className="max-w-7xl mx-auto px-6 lg:px-10 h-16 flex items-center justify-between">
         <MosaicoLogo size="text-2xl" />
 
-        <nav className="hidden md:flex items-center gap-8">
+        <nav className="hidden md:flex items-center gap-5" aria-label="Primary navigation">
           {navLink("/", labels.platform, "nav-home")}
-          {navLink("/student", labels.client, "nav-student")}
-          {navLink("/tutor", labels.tutor, "nav-tutor")}
-          {navLink("/teacher", labels.teacher, "nav-teacher")}
-          {navLink("/school-admin", labels.schoolAdmin, "nav-school-admin")}
-          {navLink("/admin", labels.administrative, "nav-admin")}
+          {profileSelector()}
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
@@ -141,11 +183,7 @@ export const Navbar = () => {
       {open && (
         <div className="md:hidden border-t border-[#EFE4D0] bg-[#FBF7EE] px-6 py-6 flex flex-col gap-4">
           {navLink("/", labels.platform, "nav-home-m")}
-          <Link to="/student" onClick={() => setOpen(false)} className="flex items-center gap-2"><UserRound size={16} />{labels.client}</Link>
-          <Link to="/tutor" onClick={() => setOpen(false)} className="flex items-center gap-2"><Users size={16} />{labels.tutor}</Link>
-          <Link to="/teacher" onClick={() => setOpen(false)} className="flex items-center gap-2"><GraduationCap size={16} />{labels.teacher}</Link>
-          <Link to="/school-admin" onClick={() => setOpen(false)} className="flex items-center gap-2"><School size={16} />{labels.schoolAdmin}</Link>
-          <Link to="/admin" onClick={() => setOpen(false)} className="flex items-center gap-2"><ShieldCheck size={16} />{labels.administrative}</Link>
+          {profileSelector(true)}
           {languageSwitch(true)}
           {user ? (
             <>

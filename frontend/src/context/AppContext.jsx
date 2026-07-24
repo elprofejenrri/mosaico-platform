@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { api } from "../lib/api";
 import { translations } from "../lib/i18n";
-import { supabase } from "../lib/supabase";
+import { isSupabaseConfigured, supabase } from "../lib/supabase";
 
 const AppContext = createContext(null);
 
@@ -72,16 +73,23 @@ export const AppProvider = ({ children }) => {
 
   const checkAuth = useCallback(async () => {
     try {
+      const loadCurrentUser = async () => {
+        const r = await api.get("/auth/me");
+        try {
+          const access = await api.get("/auth/me/permissions");
+          setUser({ ...r.data, access: access.data, permissions: access.data.permissions, grants: access.data.grants, schools: access.data.schools });
+        } catch {
+          setUser(r.data);
+        }
+      };
       const devAuth = process.env.REACT_APP_DEV_AUTH === "true";
       if (!devAuth) localStorage.removeItem("mosaico_dev_token");
       if (devAuth && localStorage.getItem("mosaico_dev_token")) {
-        const r = await api.get("/auth/me");
-        setUser(r.data);
+        await loadCurrentUser();
         return;
       }
       if (localStorage.getItem("mosaico_local_token")) {
-        const r = await api.get("/auth/me");
-        setUser(r.data);
+        await loadCurrentUser();
         return;
       }
       const { data } = await supabase.auth.getSession();
@@ -89,8 +97,7 @@ export const AppProvider = ({ children }) => {
         setUser(null);
         return;
       }
-      const r = await api.get("/auth/me");
-      setUser(r.data);
+      await loadCurrentUser();
     } catch {
       localStorage.removeItem("mosaico_local_token");
       localStorage.removeItem("mosaico_local_expires_at");
@@ -153,23 +160,38 @@ export const AppProvider = ({ children }) => {
 
 export const useApp = () => useContext(AppContext);
 
-export const startGoogleAuth = () => {
+export const startGoogleAuth = async () => {
   localStorage.removeItem("mosaico_local_token");
   localStorage.removeItem("mosaico_local_expires_at");
-  const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || "";
-  const devAuth = process.env.REACT_APP_DEV_AUTH === "true" || supabaseUrl.includes("PROJECT_REF");
+  const devAuth = process.env.REACT_APP_DEV_AUTH === "true";
   if (devAuth) {
     localStorage.setItem("mosaico_dev_token", "dev-admin");
     window.location.href = "/admin";
-    return Promise.resolve({ data: null, error: null });
+    return { data: null, error: null };
   }
-  return supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
-      queryParams: {
-        prompt: "select_account",
+
+  if (!isSupabaseConfigured) {
+    const error = new Error("Google sign-in is not configured. Please contact the MOSAICO administrator.");
+    console.error("Google auth configuration error", error);
+    toast.error(error.message);
+    return { data: null, error };
+  }
+
+  try {
+    const result = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        queryParams: {
+          prompt: "select_account",
+        },
       },
-    },
-  });
+    });
+    if (result.error) throw result.error;
+    return result;
+  } catch (error) {
+    console.error("Google auth could not start", error);
+    toast.error(error?.message || "Google sign-in could not start. Please try again.");
+    return { data: null, error };
+  }
 };

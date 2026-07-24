@@ -15,6 +15,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'supabase';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_type TEXT NOT NULL DEFAULT 'client';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS active_school_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TEXT;
 ALTER TABLE users ALTER COLUMN role SET DEFAULT 'alumno';
@@ -117,6 +119,7 @@ CREATE TABLE IF NOT EXISTS bookings (
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS end_time TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS student_profile_id TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS updated_at TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS school_id TEXT;
 
 CREATE TABLE IF NOT EXISTS booking_statuses (
     code        TEXT PRIMARY KEY,
@@ -174,6 +177,10 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     booking_created  BOOLEAN NOT NULL DEFAULT FALSE,
     created_at       TEXT NOT NULL
 );
+ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS school_id TEXT;
+ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS original_payment_id TEXT;
+ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS refunded_at TEXT;
+ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS updated_at TEXT;
 
 CREATE TABLE IF NOT EXISTS payment_statuses (
     code        TEXT PRIMARY KEY,
@@ -183,6 +190,7 @@ CREATE TABLE IF NOT EXISTS payment_statuses (
 INSERT INTO payment_statuses (code, label) VALUES
     ('initiated', 'Initiated'),
     ('paid', 'Paid'),
+    ('refunded', 'Refunded'),
     ('unpaid', 'Unpaid'),
     ('no_payment_required', 'No payment required')
 ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
@@ -195,6 +203,8 @@ CREATE TABLE IF NOT EXISTS checkout_statuses (
 INSERT INTO checkout_statuses (code, label) VALUES
     ('open', 'Open'),
     ('complete', 'Complete'),
+    ('rejected', 'Rejected'),
+    ('refunded', 'Refunded'),
     ('expired', 'Expired')
 ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label;
 
@@ -229,6 +239,10 @@ ALTER TABLE roles ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'system';
 ALTER TABLE roles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
 ALTER TABLE roles ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE roles ADD COLUMN IF NOT EXISTS updated_at TEXT;
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS code TEXT;
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS scope_type TEXT NOT NULL DEFAULT 'self';
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS is_protected BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS permissions (
     id          TEXT PRIMARY KEY,
@@ -252,6 +266,8 @@ ALTER TABLE permissions ADD COLUMN IF NOT EXISTS risk_level TEXT NOT NULL DEFAUL
 ALTER TABLE permissions ADD COLUMN IF NOT EXISTS level INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE permissions ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE permissions ADD COLUMN IF NOT EXISTS updated_at TEXT;
+ALTER TABLE permissions ADD COLUMN IF NOT EXISTS code TEXT;
+ALTER TABLE permissions ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS role_permissions (
     id            TEXT PRIMARY KEY,
@@ -265,6 +281,8 @@ CREATE TABLE IF NOT EXISTS role_permissions (
 ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS level INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'global';
 ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS updated_at TEXT;
+ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS allowed BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS conditions JSONB NOT NULL DEFAULT '{}';
 
 CREATE TABLE IF NOT EXISTS user_roles (
     id          TEXT PRIMARY KEY,
@@ -278,6 +296,76 @@ CREATE TABLE IF NOT EXISTS user_roles (
 ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS assigned_by TEXT;
 ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS updated_at TEXT;
+ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS school_id TEXT;
+ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS assigned_at TEXT;
+ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS expires_at TEXT;
+
+CREATE TABLE IF NOT EXISTS schools (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_school_memberships (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    school_id TEXT NOT NULL,
+    membership_type TEXT NOT NULL DEFAULT 'member',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(user_id, school_id, membership_type)
+);
+
+CREATE TABLE IF NOT EXISTS tutor_student_links (
+    id TEXT PRIMARY KEY,
+    tutor_user_id TEXT NOT NULL,
+    student_user_id TEXT NOT NULL,
+    school_id TEXT NOT NULL,
+    relationship_type TEXT NOT NULL DEFAULT 'guardian',
+    status TEXT NOT NULL DEFAULT 'active',
+    authorized_at TEXT,
+    authorized_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(tutor_user_id, student_user_id, school_id)
+);
+
+CREATE TABLE IF NOT EXISTS teacher_student_assignments (
+    id TEXT PRIMARY KEY,
+    teacher_user_id TEXT NOT NULL,
+    student_user_id TEXT NOT NULL,
+    school_id TEXT NOT NULL,
+    course_id TEXT,
+    class_id TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    starts_at TEXT,
+    ends_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS credit_movements (
+    id TEXT PRIMARY KEY,
+    actor_user_id TEXT NOT NULL,
+    account_user_id TEXT NOT NULL,
+    school_id TEXT NOT NULL,
+    balance_before DOUBLE PRECISION NOT NULL,
+    amount DOUBLE PRECISION NOT NULL,
+    balance_after DOUBLE PRECISION NOT NULL,
+    movement_type TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    transaction_id TEXT NOT NULL UNIQUE,
+    reference_type TEXT,
+    reference_id TEXT,
+    ip_address TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS teacher_profiles (
     id                  TEXT PRIMARY KEY,
@@ -423,6 +511,12 @@ ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS target_id TEXT;
 ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS before_state JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS after_state JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS risk_level TEXT NOT NULL DEFAULT 'low';
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS actor_role_id TEXT;
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS school_id TEXT;
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS permission_code TEXT;
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS result TEXT NOT NULL DEFAULT 'success';
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS denial_reason TEXT;
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS request_id TEXT;
 
 CREATE TABLE IF NOT EXISTS activity_logs (
     id             TEXT PRIMARY KEY,
@@ -619,6 +713,81 @@ CREATE INDEX IF NOT EXISTS idx_atlas_decisions_status ON atlas_decision_logs(sta
 CREATE INDEX IF NOT EXISTS idx_atlas_reviews_volume ON atlas_reviews(volume_id);
 CREATE INDEX IF NOT EXISTS idx_atlas_glossary_term ON atlas_glossary_terms(term);
 CREATE INDEX IF NOT EXISTS idx_atlas_audit_target ON atlas_audit_logs(target_type, target_id);
+
+-- RBAC v2 scope and tenancy indexes. The legacy unique constraint did not
+-- permit the same user to hold one role in more than one school.
+ALTER TABLE user_roles DROP CONSTRAINT IF EXISTS user_roles_user_id_role_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_roles_scope
+    ON user_roles(user_id, role_name, COALESCE(school_id, ''));
+CREATE UNIQUE INDEX IF NOT EXISTS uq_roles_code ON roles(code) WHERE code IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_permissions_code ON permissions(code) WHERE code IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_user_roles_school ON user_roles(school_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_status ON user_roles(status, active);
+CREATE INDEX IF NOT EXISTS idx_memberships_user ON user_school_memberships(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_memberships_school ON user_school_memberships(school_id, status);
+CREATE INDEX IF NOT EXISTS idx_tutor_links_tutor ON tutor_student_links(tutor_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_tutor_links_student ON tutor_student_links(student_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_teacher_assignments_teacher ON teacher_student_assignments(teacher_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_teacher_assignments_student ON teacher_student_assignments(student_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_bookings_school ON bookings(school_id);
+CREATE INDEX IF NOT EXISTS idx_payments_school ON payment_transactions(school_id);
+CREATE INDEX IF NOT EXISTS idx_credit_movements_school ON credit_movements(school_id);
+CREATE INDEX IF NOT EXISTS idx_credit_movements_actor ON credit_movements(actor_user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_permission ON audit_events(permission_code, result);
+CREATE INDEX IF NOT EXISTS idx_audit_school ON audit_events(school_id);
+CREATE INDEX IF NOT EXISTS idx_audit_action_resource ON audit_events(action, entity_type);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_membership_user') THEN
+        ALTER TABLE user_school_memberships ADD CONSTRAINT fk_membership_user
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_membership_school') THEN
+        ALTER TABLE user_school_memberships ADD CONSTRAINT fk_membership_school
+            FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tutor_link_tutor') THEN
+        ALTER TABLE tutor_student_links ADD CONSTRAINT fk_tutor_link_tutor
+            FOREIGN KEY (tutor_user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tutor_link_student') THEN
+        ALTER TABLE tutor_student_links ADD CONSTRAINT fk_tutor_link_student
+            FOREIGN KEY (student_user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_teacher_assignment_teacher') THEN
+        ALTER TABLE teacher_student_assignments ADD CONSTRAINT fk_teacher_assignment_teacher
+            FOREIGN KEY (teacher_user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_teacher_assignment_student') THEN
+        ALTER TABLE teacher_student_assignments ADD CONSTRAINT fk_teacher_assignment_student
+            FOREIGN KEY (student_user_id) REFERENCES users(user_id) ON DELETE CASCADE NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_user_roles_school') THEN
+        ALTER TABLE user_roles ADD CONSTRAINT fk_user_roles_school
+            FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE RESTRICT NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_users_active_school') THEN
+        ALTER TABLE users ADD CONSTRAINT fk_users_active_school
+            FOREIGN KEY (active_school_id) REFERENCES schools(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_bookings_school') THEN
+        ALTER TABLE bookings ADD CONSTRAINT fk_bookings_school
+            FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE RESTRICT NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_payments_school') THEN
+        ALTER TABLE payment_transactions ADD CONSTRAINT fk_payments_school
+            FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE RESTRICT NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_credit_movements_school') THEN
+        ALTER TABLE credit_movements ADD CONSTRAINT fk_credit_movements_school
+            FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE RESTRICT NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_credit_movements_actor') THEN
+        ALTER TABLE credit_movements ADD CONSTRAINT fk_credit_movements_actor
+            FOREIGN KEY (actor_user_id) REFERENCES users(user_id) ON DELETE RESTRICT NOT VALID;
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_auth_provider ON users(auth_provider);
 CREATE INDEX IF NOT EXISTS idx_users_profile_type ON users(profile_type);

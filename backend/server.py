@@ -22,6 +22,13 @@ from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from database import get_database, close_pool, Database
+from rbac_policy import (
+    PERMISSIONS as CANONICAL_PERMISSIONS,
+    ROLE_DEFINITIONS,
+    ROLE_GRANTS,
+    ScopeContext,
+    permission_allows,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -231,6 +238,8 @@ class User(BaseModel):
     auth_provider: str = "supabase"
     profile_type: str = "client"
     active: bool = True
+    status: str = "active"
+    active_school_id: Optional[str] = None
     updated_at: Optional[str] = None
     last_login_at: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -311,6 +320,7 @@ ROLE_ALIASES = {
     "teacher": "profesor",
     "school_admin": "administrador_escolar",
     "school_administrative": "administrador_escolar",
+    "finance": "finanzas",
     "cms": "editor_cms",
 }
 ADMIN_ROLES = {"administrador_sitio", "administrador_profesor"}
@@ -323,6 +333,7 @@ ROLE_LABELS = {
     "editor_cms": "Editor CMS",
     "alumno": "Student",
     "tutor_padre": "Tutor / Parent",
+    "finanzas": "Finance",
     "viewer": "Viewer",
 }
 ROLE_LEVELS = {
@@ -332,11 +343,12 @@ ROLE_LEVELS = {
     "profesor": 30,
     "coordinador": 60,
     "editor_cms": 40,
+    "finanzas": 55,
     "administrador_escolar": 65,
     "administrador_profesor": 70,
     "administrador_sitio": 100,
 }
-SYSTEM_ROLE_NAMES = {"administrador_sitio", "administrador_profesor", "administrador_escolar", "coordinador", "profesor", "alumno", "tutor_padre", "viewer"}
+SYSTEM_ROLE_NAMES = {"administrador_sitio", "administrador_profesor", "administrador_escolar", "coordinador", "profesor", "alumno", "tutor_padre", "finanzas", "viewer"}
 CRITICAL_PERMISSION_ACTIONS = {"delete", "refund", "grant", "modify", "assign", "sync_google"}
 
 
@@ -409,6 +421,7 @@ DOT_PERMISSION_CATALOG = [
     _dot_permission("settings.platform.view", "View platform settings.", 4),
     _dot_permission("settings.platform.edit", "Edit platform settings.", 5),
     _dot_permission("audit.logs.view", "View audit logs.", 5),
+    _dot_permission("technical.wiki.view", "View restricted technical documentation.", 5),
     _dot_permission("settings.view", "View platform configuration.", 4),
     _dot_permission("settings.edit", "Edit platform configuration.", 5),
     _dot_permission("audit.view", "View security audit logs.", 5),
@@ -444,7 +457,7 @@ PERMISSION_CATALOG = [
     {"name": "credits:grant", "label": "Otorgar créditos", "catalog": "learning", "feature": "credits", "action": "grant", "level": 4},
     {"name": "lessons:create", "label": "Crear lecciones", "catalog": "learning", "feature": "lessons", "action": "create", "level": 3},
     {"name": "lessons:approve", "label": "Aprobar lecciones", "catalog": "learning", "feature": "lessons", "action": "approve", "level": 4},
-] + DOT_PERMISSION_CATALOG
+] + DOT_PERMISSION_CATALOG + CANONICAL_PERMISSIONS
 ROLE_PERMISSION_LEVELS: Dict[str, Dict[str, int]] = {
     "administrador_sitio": {"*": 100},
     "administrador_profesor": {
@@ -494,6 +507,17 @@ ROLE_PERMISSION_LEVELS: Dict[str, Dict[str, int]] = {
     "tutor_padre": {"dashboard.general.view": 1, "students.progress.view": 1, "credits.wallet.view": 1, "credits.wallet.purchase": 1, "classes.sessions.view": 1},
     "viewer": {"dashboard.general.view": 1, "reports.analytics.view": 1},
 }
+ROLE_PERMISSIONS = {role: set(perms) for role, perms in ROLE_PERMISSION_LEVELS.items()}
+
+# The canonical policy augments legacy permissions during the compatibility
+# window.  Runtime authorization and the database remain permission-driven.
+for _role_name, _grants in ROLE_GRANTS.items():
+    ROLE_PERMISSION_LEVELS.setdefault(_role_name, {})
+    for _permission_name in _grants:
+        ROLE_PERMISSION_LEVELS[_role_name][_permission_name] = max(
+            ROLE_PERMISSION_LEVELS[_role_name].get(_permission_name, 0),
+            next((int(item.get("level") or 1) for item in CANONICAL_PERMISSIONS if item["name"] == _permission_name), 100 if _permission_name == "*" else 1),
+        )
 ROLE_PERMISSIONS = {role: set(perms) for role, perms in ROLE_PERMISSION_LEVELS.items()}
 
 
@@ -549,9 +573,26 @@ def _public_user(user: User) -> dict:
 
 async def _effective_role_names(user: User) -> List[str]:
     docs = await db.user_roles.find({"user_id": user.user_id}, {"_id": 0}).to_list(100)
-    roles = {_normalize_role(doc.get("role_name")) for doc in docs if doc.get("active", True)}
+    now = datetime.now(timezone.utc)
+    roles = set()
+    for doc in docs:
+        if not doc.get("active", True) or doc.get("status", "active") != "active":
+            continue
+        if doc.get("expires_at"):
+            try:
+                if _parse_iso(doc["expires_at"]) <= now:
+                    continue
+            except (TypeError, ValueError):
+                continue
+        role_name = _normalize_role(doc.get("role_name"))
+        role_doc = await db.roles.find_one({"name": role_name}, {"_id": 0})
+        if role_doc and role_doc.get("active", True) and role_doc.get("status", "active") == "active":
+            roles.add(role_name)
     if not roles:
-        roles = {_normalize_role(user.role)}
+        fallback = _normalize_role(user.role)
+        role_doc = await db.roles.find_one({"name": fallback}, {"_id": 0})
+        if role_doc and role_doc.get("active", True) and role_doc.get("status", "active") == "active":
+            roles = {fallback}
     return sorted(roles, key=lambda role: ROLE_LEVELS.get(role, 0), reverse=True)
 
 
@@ -559,15 +600,137 @@ async def _effective_permission_levels(user: User) -> Dict[str, int]:
     effective: Dict[str, int] = {}
     for role in await _effective_role_names(user):
         fallback = ROLE_PERMISSION_LEVELS.get(role, {})
-        for permission, level in fallback.items():
-            effective[permission] = max(effective.get(permission, 0), int(level))
-        docs = await db.role_permissions.find({"role_name": role}, {"_id": 0}).to_list(200)
+        docs = await db.role_permissions.find({"role_name": role}, {"_id": 0}).to_list(1000)
+        if not docs:
+            for permission, level in fallback.items():
+                effective[permission] = max(effective.get(permission, 0), int(level))
         for doc in docs:
             permission = doc.get("permission")
-            level = int(doc.get("level") or 0)
+            level = int(doc.get("level") or 0) if doc.get("allowed", True) else 0
             if permission and level > 0:
                 effective[permission] = max(effective.get(permission, 0), level)
     return effective
+
+
+async def _effective_permission_grants(user: User) -> Dict[str, List[str]]:
+    """Return effective permission scopes, excluding inactive grants and roles."""
+    grants: Dict[str, set] = {}
+    for role in await _effective_role_names(user):
+        fallback_scopes = ROLE_GRANTS.get(role, {})
+        docs = await db.role_permissions.find({"role_name": role}, {"_id": 0}).to_list(1000)
+        if not docs:
+            for permission, scope in fallback_scopes.items():
+                grants.setdefault(permission, set()).add(scope)
+        for doc in docs:
+            if not doc.get("allowed", True) or int(doc.get("level") or 0) <= 0:
+                continue
+            permission = doc.get("permission")
+            scope = doc.get("scope") or "self"
+            if permission:
+                grants.setdefault(permission, set()).add(scope)
+    return {permission: sorted(scopes) for permission, scopes in grants.items()}
+
+
+async def _authorized_school_ids(user: User) -> List[str]:
+    memberships = await db.user_school_memberships.find(
+        {"user_id": user.user_id, "status": "active"}, {"_id": 0}
+    ).to_list(500)
+    assignments = await db.user_roles.find(
+        {"user_id": user.user_id, "active": True, "status": "active"}, {"_id": 0}
+    ).to_list(500)
+    school_ids = {item.get("school_id") for item in memberships + assignments if item.get("school_id")}
+    if user.active_school_id:
+        school_ids.add(user.active_school_id)
+    return sorted(school_ids)
+
+
+async def can(
+    user: User,
+    permission_code: str,
+    *,
+    resource_owner_id: Optional[str] = None,
+    school_id: Optional[str] = None,
+    linked: bool = False,
+    assigned: bool = False,
+) -> bool:
+    if not user.active or user.status != "active":
+        return False
+    grants = await _effective_permission_grants(user)
+    context = ScopeContext(
+        actor_user_id=user.user_id,
+        resource_owner_id=resource_owner_id,
+        school_id=school_id,
+        authorized_school_ids=frozenset(await _authorized_school_ids(user)),
+        linked=linked,
+        assigned=assigned,
+    )
+    return permission_allows(grants, permission_code, context)
+
+
+async def authorize(
+    user: User,
+    permission_code: str,
+    *,
+    request: Optional[Request] = None,
+    resource_type: str = "resource",
+    resource_id: Optional[str] = None,
+    resource_owner_id: Optional[str] = None,
+    school_id: Optional[str] = None,
+    linked: bool = False,
+    assigned: bool = False,
+) -> None:
+    if await can(
+        user, permission_code, resource_owner_id=resource_owner_id, school_id=school_id,
+        linked=linked, assigned=assigned,
+    ):
+        return
+    await _record_audit_event(
+        "authorization.denied", resource_type, entity_id=resource_id,
+        actor_user_id=user.user_id, permission_code=permission_code, result="denied",
+        denial_reason="scope_or_permission_denied", school_id=school_id, request=request,
+        risk_level=_permission_risk(permission_code),
+    )
+    raise HTTPException(status_code=403, detail="No tienes permisos para realizar esta acción.")
+
+
+async def _permission_scopes(user: User, permission_code: str) -> set:
+    grants = await _effective_permission_grants(user)
+    return set(grants.get("*", [])) | set(grants.get(permission_code, []))
+
+
+async def _scoped_users(user: User, permission_code: str = "users.view") -> List[dict]:
+    """Query users within effective scope; never fetch the global set first."""
+    scopes = await _permission_scopes(user, permission_code)
+    if "global" in scopes:
+        return await db.users.find({}, {"_id": 0}).to_list(1000)
+    rows: Dict[str, dict] = {}
+    if "self" in scopes:
+        own = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
+        if own:
+            rows[own["user_id"]] = own
+    if scopes & {"school", "multi_school"}:
+        for school_id in await _authorized_school_ids(user):
+            for item in await db.users.find({"active_school_id": school_id}, {"_id": 0}).to_list(1000):
+                rows[item["user_id"]] = item
+    if "linked" in scopes:
+        links = await db.tutor_student_links.find(
+            {"tutor_user_id": user.user_id, "status": "active"}, {"_id": 0}
+        ).to_list(1000)
+        for link in links:
+            item = await db.users.find_one({"user_id": link["student_user_id"]}, {"_id": 0})
+            if item:
+                rows[item["user_id"]] = item
+    if "assigned" in scopes:
+        assignments = await db.teacher_student_assignments.find(
+            {"teacher_user_id": user.user_id, "status": "active"}, {"_id": 0}
+        ).to_list(1000)
+        for assignment in assignments:
+            item = await db.users.find_one({"user_id": assignment["student_user_id"]}, {"_id": 0})
+            if item:
+                rows[item["user_id"]] = item
+    if not scopes:
+        raise HTTPException(status_code=403, detail="No tienes permisos para realizar esta acción.")
+    return list(rows.values())
 
 
 async def _has_permission(user: User, permission: str, min_level: int = 1) -> bool:
@@ -629,6 +792,7 @@ async def _active_user_roles(user_id: str) -> List[str]:
 async def _role_payload(role: dict, include_users: bool = False, include_audit: bool = False) -> dict:
     assignments = await db.role_permissions.find({"role_name": role["name"]}, {"_id": 0}).to_list(500)
     permission_levels = {rp["permission"]: int(rp.get("level") or 1) for rp in assignments if int(rp.get("level") or 0) > 0}
+    permission_scopes = {rp["permission"]: rp.get("scope") or "self" for rp in assignments if int(rp.get("level") or 0) > 0 and rp.get("allowed", True)}
     active_assignments = await db.user_roles.find({"role_name": role["name"], "active": True}, {"_id": 0}).to_list(500)
     user_ids = {item["user_id"] for item in active_assignments}
     primary_users = await db.users.find({"role": role["name"]}, {"_id": 0}).to_list(500)
@@ -640,6 +804,7 @@ async def _role_payload(role: dict, include_users: bool = False, include_audit: 
         "active": role.get("active", True),
         "permissions": sorted(permission_levels.keys()),
         "permission_levels": permission_levels,
+        "permission_scopes": permission_scopes,
         "permissionCount": len(permission_levels),
         "userCount": len(user_ids),
     }
@@ -681,12 +846,19 @@ async def _record_audit_event(
     before: Optional[dict] = None,
     after: Optional[dict] = None,
     risk_level: str = "low",
+    actor_role_id: Optional[str] = None,
+    school_id: Optional[str] = None,
+    permission_code: Optional[str] = None,
+    result: str = "success",
+    denial_reason: Optional[str] = None,
     request: Optional[Request] = None,
 ) -> None:
     await db.audit_events.insert_one({
         "id": str(uuid.uuid4()),
         "actor_user_id": actor_user_id,
         "actor_name": actor_name,
+        "actor_role_id": actor_role_id,
+        "school_id": school_id,
         "target_user_id": target_user_id,
         "event_type": event_type,
         "action": event_type,
@@ -694,11 +866,15 @@ async def _record_audit_event(
         "target_type": entity_type,
         "entity_id": entity_id,
         "target_id": entity_id,
+        "permission_code": permission_code,
+        "result": result,
+        "denial_reason": denial_reason,
         "before_state": before or {},
         "after_state": after or {},
         "metadata": metadata or {},
         "ip_address": request.client.host if request and request.client else None,
         "user_agent": request.headers.get("user-agent") if request else None,
+        "request_id": getattr(request.state, "request_id", None) if request else None,
         "risk_level": risk_level,
         "created_at": _now_iso(),
     })
@@ -849,19 +1025,33 @@ async def _get_user_from_local_session(token: str) -> User:
         raise HTTPException(status_code=401, detail="Session expired")
     await db.local_auth_sessions.update_one({"id": session["id"]}, {"$set": {"last_seen_at": _now_iso()}})
     user_doc = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
-    if not user_doc or user_doc.get("active") is False:
+    if not user_doc or user_doc.get("active") is False or user_doc.get("status", "active") != "active":
         raise HTTPException(status_code=403, detail="User is inactive")
     return User(**user_doc)
 
 
-async def _sync_user_role(user_id: str, role: str, assigned_by: Optional[str] = None) -> None:
+async def _sync_user_role(
+    user_id: str,
+    role: str,
+    assigned_by: Optional[str] = None,
+    school_id: Optional[str] = None,
+    expires_at: Optional[str] = None,
+) -> None:
     role = _normalize_role(role)
     now = _now_iso()
-    existing = await db.user_roles.find_one({"user_id": user_id, "role_name": role}, {"_id": 0})
+    query = {"user_id": user_id, "role_name": role, "school_id": school_id}
+    existing = await db.user_roles.find_one(query, {"_id": 0})
+    assignment = {
+        "active": True, "status": "active", "school_id": school_id,
+        "assigned_by": assigned_by, "assigned_at": now, "expires_at": expires_at, "updated_at": now,
+    }
     if existing:
-        await db.user_roles.update_one({"user_id": user_id, "role_name": role}, {"$set": {"active": True, "assigned_by": assigned_by, "updated_at": now}})
+        await db.user_roles.update_one({"id": existing["id"]}, {"$set": assignment})
     else:
-        await db.user_roles.insert_one({"id": str(uuid.uuid4()), "user_id": user_id, "role_name": role, "active": True, "assigned_by": assigned_by, "created_at": now, "updated_at": now})
+        await db.user_roles.insert_one({
+            "id": str(uuid.uuid4()), "user_id": user_id, "role_name": role,
+            **assignment, "created_at": now,
+        })
 
 
 async def _get_or_create_user_from_supabase(payload: dict, request: Optional[Request] = None) -> User:
@@ -905,7 +1095,7 @@ async def _get_or_create_user_from_supabase(payload: dict, request: Optional[Req
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     await _sync_user_role(user_id, user_doc.get("role", role))
     await _record_login(user_id, email, "google", request)
-    if user_doc.get("active") is False:
+    if user_doc.get("active") is False or user_doc.get("status", "active") != "active":
         raise HTTPException(status_code=403, detail="User is inactive")
     return User(**user_doc)
 
@@ -995,6 +1185,13 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+async def require_global_admin(user: User = Depends(get_current_user)) -> User:
+    roles = await _effective_role_names(user)
+    if "administrador_sitio" not in roles or not await _has_permission(user, "*", 100):
+        raise HTTPException(status_code=403, detail="Global administrator access required")
+    return user
+
+
 def require_permission(permission: str, min_level: int = 1):
     async def checker(user: User = Depends(get_current_user)) -> User:
         if not await _has_permission(user, permission, min_level):
@@ -1005,7 +1202,11 @@ def require_permission(permission: str, min_level: int = 1):
 
 async def require_technical(user: User = Depends(get_current_user)) -> User:
     roles = await _effective_role_names(user)
-    if "administrador_sitio" in roles or await _has_permission(user, "*", 100):
+    if (
+        "administrador_sitio" in roles
+        or await _has_permission(user, "technical.wiki.view")
+        or await _has_permission(user, "*", 100)
+    ):
         return user
     raise HTTPException(status_code=403, detail="Technical role required")
 
@@ -1359,12 +1560,19 @@ async def init_storage():
 async def seed_data():
     now = _now_iso()
     for name, label in ROLE_LABELS.items():
+        definition = ROLE_DEFINITIONS.get(name, {})
         role_doc = {
-            "id": name, "name": name, "label": label, "description": label,
+            "id": name, "name": name, "code": definition.get("code", name.upper()),
+            "label": definition.get("name", label), "description": definition.get("description", label),
             "level": ROLE_LEVELS.get(name, 0), "type": "system", "status": "active", "active": True, "updated_at": now,
+            "scope_type": definition.get("scope_type", "global" if name in ADMIN_ROLES else "self"),
+            "is_system": True, "is_protected": bool(definition.get("is_protected", name == "administrador_sitio")),
         }
         if await db.roles.find_one({"name": name}, {"_id": 0}):
-            await db.roles.update_one({"name": name}, {"$set": role_doc})
+            await db.roles.update_one(
+                {"name": name},
+                {"$set": {key: value for key, value in role_doc.items() if key not in {"status", "active"}}},
+            )
         else:
             await db.roles.insert_one({**role_doc, "created_at": now})
     for item in PERMISSION_CATALOG:
@@ -1372,23 +1580,37 @@ async def seed_data():
         doc = {
             **item,
             "id": item["name"],
+            "code": item["name"],
             "description": item.get("description") or item["label"],
             "module": item.get("module") or item.get("catalog") or name_parts[0],
             "section": item.get("section") or item.get("feature") or (name_parts[1] if len(name_parts) > 1 else "general"),
             "risk_level": item.get("risk_level") or _permission_risk(item["name"]),
             "active": True,
+            "is_system": True,
             "updated_at": now,
         }
         if await db.permissions.find_one({"name": item["name"]}, {"_id": 0}):
-            await db.permissions.update_one({"name": item["name"]}, {"$set": doc})
+            await db.permissions.update_one(
+                {"name": item["name"]},
+                {"$set": {key: value for key, value in doc.items() if key != "active"}},
+            )
         else:
             await db.permissions.insert_one({**doc, "created_at": now})
     for role, permissions in ROLE_PERMISSION_LEVELS.items():
         for permission, level in permissions.items():
             existing = await db.role_permissions.find_one({"role_name": role, "permission": permission}, {"_id": 0})
-            doc = {"role_name": role, "permission": permission, "level": level, "scope": "global", "updated_at": now}
+            default_scope = ROLE_GRANTS.get(role, {}).get(
+                permission,
+                "global" if role in ADMIN_ROLES else ROLE_DEFINITIONS.get(role, {}).get("scope_type", "self"),
+            )
+            doc = {
+                "role_name": role, "permission": permission, "level": level,
+                "scope": default_scope, "allowed": True, "conditions": {}, "updated_at": now,
+            }
             if existing:
-                await db.role_permissions.update_one({"role_name": role, "permission": permission}, {"$set": doc})
+                # Persist administrator changes; startup seeding only fills
+                # missing grants and never restores revoked permissions.
+                continue
             else:
                 await db.role_permissions.insert_one({"id": str(uuid.uuid4()), **doc, "created_at": now})
     logger.info("RBAC catalog ready")
@@ -1656,10 +1878,25 @@ async def auth_login(payload: LocalAuthPayload, request: Request):
     email = payload.email.strip().lower()
     user_doc = await db.users.find_one({"email": email}, {"_id": 0})
     if not user_doc or not user_doc.get("password_hash"):
+        await _record_audit_event(
+            "auth.login.failed", "session", result="denied", denial_reason="invalid_credentials",
+            metadata={"email_hash": hashlib.sha256(email.encode()).hexdigest()[:16]}, request=request,
+            risk_level="high",
+        )
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    if user_doc.get("active") is False:
+    if user_doc.get("active") is False or user_doc.get("status", "active") != "active":
+        await _record_audit_event(
+            "auth.login.failed", "session", actor_user_id=user_doc["user_id"],
+            target_user_id=user_doc["user_id"], result="denied", denial_reason="inactive_user",
+            request=request, risk_level="high",
+        )
         raise HTTPException(status_code=403, detail="User is inactive")
     if not _verify_password(payload.password, user_doc["password_hash"]):
+        await _record_audit_event(
+            "auth.login.failed", "session", actor_user_id=user_doc["user_id"],
+            target_user_id=user_doc["user_id"], result="denied", denial_reason="invalid_credentials",
+            request=request, risk_level="high",
+        )
         raise HTTPException(status_code=401, detail="Invalid email or password")
     now = _now_iso()
     await db.users.update_one({"user_id": user_doc["user_id"]}, {"$set": {"last_login_at": now, "updated_at": now}})
@@ -1689,6 +1926,32 @@ async def auth_me(user: User = Depends(get_current_user)):
     doc["roles"] = await _effective_role_names(user)
     doc["permissions"] = await _effective_permission_levels(user)
     return doc
+
+
+@api.get("/auth/me/permissions")
+async def auth_me_permissions(user: User = Depends(get_current_user)):
+    role_names = await _effective_role_names(user)
+    role_assignments = await db.user_roles.find(
+        {"user_id": user.user_id, "active": True, "status": "active"}, {"_id": 0}
+    ).to_list(200)
+    return {
+        "userId": user.user_id,
+        "roles": role_names,
+        "schools": await _authorized_school_ids(user),
+        "permissions": await _effective_permission_levels(user),
+        "grants": await _effective_permission_grants(user),
+        "assignments": [
+            {
+                "role": item.get("role_name"),
+                "schoolId": item.get("school_id"),
+                "status": item.get("status", "active"),
+                "assignedBy": item.get("assigned_by"),
+                "assignedAt": item.get("assigned_at") or item.get("created_at"),
+                "expiresAt": item.get("expires_at"),
+            }
+            for item in role_assignments
+        ],
+    }
 
 @api.post("/auth/logout")
 async def auth_logout(request: Request, authorization: Optional[str] = Header(default=None)):
@@ -1759,6 +2022,10 @@ async def delete_slot(slot_id: str, _: User = Depends(require_permission("bookin
 # ---- Payments
 @api.post("/payments/checkout")
 async def create_checkout(request: Request, payload: dict, user: User = Depends(get_current_user)):
+    await authorize(
+        user, "credits.purchase", request=request, resource_type="credit_purchase",
+        resource_owner_id=user.user_id, school_id=user.active_school_id,
+    )
     product_id = payload.get("product_id")
     origin = payload.get("origin_url")
     date = payload.get("date")
@@ -1822,15 +2089,29 @@ async def create_checkout(request: Request, payload: dict, user: User = Depends(
         "status": "open",
         "metadata": metadata,
         "booking_created": False,
+        "school_id": user.active_school_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     return {"url": session.url, "session_id": session.id}
 
 @api.get("/payments/status/{session_id}")
-async def payment_status(session_id: str, request: Request):
+async def payment_status(
+    session_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
     txn = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
     if not txn:
         raise HTTPException(404, "Transaction not found")
+    linked = bool(await db.tutor_student_links.find_one({
+        "tutor_user_id": user.user_id,
+        "student_user_id": txn.get("user_id"),
+        "status": "active",
+    }, {"_id": 0}))
+    await authorize(
+        user, "payments.view", request=request, resource_type="payment", resource_id=session_id,
+        resource_owner_id=txn.get("user_id"), school_id=txn.get("school_id"), linked=linked,
+    )
 
     stripe_key = await _get_stripe_key()
     if not stripe_key:
@@ -1866,6 +2147,7 @@ async def payment_status(session_id: str, request: Request):
             )
             doc = booking.model_dump()
             doc["created_at"] = doc["created_at"].isoformat()
+            doc["school_id"] = txn.get("school_id")
             await db.bookings.insert_one(doc)
 
             # Google Calendar: create event + send invite email
@@ -1922,6 +2204,179 @@ async def stripe_webhook(request: Request):
         logger.warning(f"webhook err: {e}")
     return {"received": True}
 
+
+@api.get("/finance/payments")
+async def finance_payments(user: User = Depends(get_current_user)):
+    scopes = await _permission_scopes(user, "payments.view")
+    if "global" in scopes:
+        rows = await db.payment_transactions.find({}, {"_id": 0}).to_list(2000)
+    elif scopes & {"school", "multi_school"}:
+        rows = []
+        for school_id in await _authorized_school_ids(user):
+            rows.extend(await db.payment_transactions.find({"school_id": school_id}, {"_id": 0}).to_list(2000))
+    elif "self" in scopes:
+        rows = await db.payment_transactions.find({"user_id": user.user_id}, {"_id": 0}).to_list(500)
+    else:
+        raise HTTPException(403, "No tienes permisos para realizar esta acción.")
+    rows.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+    return rows
+
+
+@api.patch("/finance/payments/{session_id}/{action}")
+async def finance_payment_action(
+    session_id: str,
+    action: str,
+    payload: dict,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    permission = {
+        "confirm": "payments.confirm",
+        "reject": "payments.reject",
+        "refund": "payments.refund",
+    }.get(action)
+    if not permission:
+        raise HTTPException(400, "Unsupported payment action")
+    payment = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not payment:
+        raise HTTPException(404, "Payment not found")
+    await authorize(
+        user, permission, request=request, resource_type="payment", resource_id=session_id,
+        resource_owner_id=payment.get("user_id"), school_id=payment.get("school_id"),
+    )
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
+        raise HTTPException(400, "A reason is required")
+    if action == "refund" and payload.get("confirm") is not True:
+        raise HTTPException(400, "Explicit refund confirmation is required")
+    if payment.get("refunded_at") or payment.get("payment_status") == "refunded":
+        raise HTTPException(409, "Payment has already been refunded")
+    if action == "refund" and payment.get("payment_status") != "paid":
+        raise HTTPException(409, "Only a confirmed payment can be refunded")
+    if action in {"confirm", "reject"} and payment.get("status") not in {"open", "initiated"}:
+        raise HTTPException(409, "Payment state does not allow this action")
+    before = dict(payment)
+    updates = {"updated_at": _now_iso()}
+    if action == "confirm":
+        updates.update({"payment_status": "paid", "status": "complete"})
+    elif action == "reject":
+        updates.update({"payment_status": "unpaid", "status": "rejected"})
+    else:
+        stripe_key = await _get_stripe_key()
+        if not stripe_key:
+            raise HTTPException(500, "Stripe is not configured")
+        stripe.api_key = stripe_key
+        checkout = stripe.checkout.Session.retrieve(session_id)
+        if not getattr(checkout, "payment_intent", None):
+            raise HTTPException(409, "Original Stripe payment is not refundable")
+        stripe.Refund.create(
+            payment_intent=checkout.payment_intent,
+            reason="requested_by_customer",
+            idempotency_key=f"mosaico-refund-{session_id}",
+            metadata={"reason": reason, "actor_user_id": user.user_id},
+        )
+        updates.update({"payment_status": "refunded", "status": "refunded", "refunded_at": _now_iso()})
+    await db.payment_transactions.update_one({"session_id": session_id}, {"$set": updates})
+    after = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    await _record_audit_event(
+        f"payment.{action}", "payment", entity_id=session_id, actor_user_id=user.user_id,
+        school_id=payment.get("school_id"), permission_code=permission, before=before, after=after,
+        metadata={"reason": reason}, request=request, risk_level="critical" if action == "refund" else "high",
+    )
+    return after
+
+
+@api.get("/finance/credits/{account_user_id}/movements")
+async def finance_credit_movements(
+    account_user_id: str,
+    school_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    linked = bool(await db.tutor_student_links.find_one({
+        "tutor_user_id": user.user_id, "student_user_id": account_user_id,
+        "school_id": school_id, "status": "active",
+    }, {"_id": 0}))
+    await authorize(
+        user, "credits.view_movements", request=request, resource_type="credit_account",
+        resource_id=account_user_id, resource_owner_id=account_user_id,
+        school_id=school_id, linked=linked,
+    )
+    rows = await db.credit_movements.find(
+        {"account_user_id": account_user_id, "school_id": school_id}, {"_id": 0}
+    ).to_list(2000)
+    rows.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+    return rows
+
+
+@api.post("/finance/credits/{account_user_id}/movements")
+async def finance_adjust_credits(
+    account_user_id: str,
+    payload: dict,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    school_id = payload.get("schoolId")
+    movement_type = payload.get("type", "adjust")
+    permission = {"add": "credits.add", "remove": "credits.remove", "adjust": "credits.adjust"}.get(movement_type)
+    if not permission:
+        raise HTTPException(400, "Invalid movement type")
+    await authorize(
+        user, permission, request=request, resource_type="credit_account",
+        resource_id=account_user_id, school_id=school_id,
+    )
+    reason = str(payload.get("reason") or "").strip()
+    transaction_id = str(payload.get("transactionId") or "").strip()
+    if not reason or not transaction_id:
+        raise HTTPException(400, "reason and transactionId are required")
+    amount = float(payload.get("amount") or 0)
+    if movement_type == "remove":
+        amount = -abs(amount)
+    if movement_type == "add":
+        amount = abs(amount)
+    movement_id = str(uuid.uuid4())
+    created_at = _now_iso()
+    metadata = payload.get("metadata") or {}
+    async with db._pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext($1))",
+                f"{school_id}:{account_user_id}",
+            )
+            duplicate = await conn.fetchrow(
+                "SELECT * FROM credit_movements WHERE transaction_id = $1",
+                transaction_id,
+            )
+            if duplicate:
+                return dict(duplicate)
+            balance_before = float(await conn.fetchval(
+                "SELECT COALESCE(SUM(amount), 0) FROM credit_movements WHERE account_user_id = $1 AND school_id = $2",
+                account_user_id, school_id,
+            ))
+            balance_after = balance_before + amount
+            if balance_after < 0:
+                raise HTTPException(409, "Insufficient credit balance")
+            row = await conn.fetchrow(
+                """
+                INSERT INTO credit_movements (
+                    id, actor_user_id, account_user_id, school_id, balance_before, amount,
+                    balance_after, movement_type, reason, transaction_id, reference_type,
+                    reference_id, ip_address, metadata, created_at
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15)
+                RETURNING *
+                """,
+                movement_id, user.user_id, account_user_id, school_id, balance_before, amount,
+                balance_after, movement_type, reason, transaction_id, payload.get("referenceType"),
+                payload.get("referenceId"), request.client.host if request.client else None,
+                json.dumps(metadata), created_at,
+            )
+            doc = dict(row)
+    await _record_audit_event(
+        "credits.movement", "credit_account", entity_id=account_user_id, actor_user_id=user.user_id,
+        school_id=school_id, permission_code=permission, after=doc, request=request, risk_level="critical",
+    )
+    return doc
+
 # ---- Bookings
 @api.get("/bookings/me")
 async def my_bookings(user: User = Depends(get_current_user)):
@@ -1930,15 +2385,41 @@ async def my_bookings(user: User = Depends(get_current_user)):
     return docs
 
 @api.get("/admin/bookings")
-async def all_bookings(_: User = Depends(require_permission("bookings:manage"))):
-    docs = await db.bookings.find({}, {"_id": 0}).to_list(500)
+async def all_bookings(user: User = Depends(get_current_user)):
+    scopes = await _permission_scopes(user, "bookings.view")
+    if "global" in scopes:
+        docs = await db.bookings.find({}, {"_id": 0}).to_list(1000)
+    elif scopes & {"school", "multi_school"}:
+        docs = []
+        for school_id in await _authorized_school_ids(user):
+            docs.extend(await db.bookings.find({"school_id": school_id}, {"_id": 0}).to_list(1000))
+    elif "assigned" in scopes:
+        teacher = await db.teachers.find_one({"user_id": user.user_id}, {"_id": 0})
+        docs = await db.bookings.find({"teacher_id": teacher.get("id")}, {"_id": 0}).to_list(1000) if teacher else []
+    else:
+        raise HTTPException(403, "No tienes permisos para realizar esta acción.")
     docs.sort(key=lambda b: (b.get("scheduled_date", ""), b.get("scheduled_time", "")), reverse=True)
     return docs
 
 @api.patch("/admin/bookings/{booking_id}")
-async def update_booking(booking_id: str, payload: dict, _: User = Depends(require_permission("bookings:manage"))):
+async def update_booking(
+    booking_id: str,
+    payload: dict,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
     allowed = {k: v for k, v in payload.items() if k in ("status", "meeting_link", "notes")}
     before = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not before:
+        raise HTTPException(404, "Booking not found")
+    permission = "bookings.cancel" if allowed.get("status") in {"cancelled", "canceled"} else \
+        "bookings.reschedule" if allowed.get("status") == "rescheduled" else "classes.finish"
+    teacher = await db.teachers.find_one({"user_id": user.user_id}, {"_id": 0})
+    await authorize(
+        user, permission, request=request, resource_type="booking", resource_id=booking_id,
+        resource_owner_id=before.get("user_id"), school_id=before.get("school_id"),
+        assigned=bool(teacher and before.get("teacher_id") == teacher.get("id")),
+    )
     await db.bookings.update_one({"id": booking_id}, {"$set": allowed})
     after = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
     if before and allowed.get("status") and allowed.get("status") != before.get("status"):
@@ -1950,13 +2431,19 @@ async def update_booking(booking_id: str, payload: dict, _: User = Depends(requi
             "rescheduled": "class_rescheduled",
         }.get(allowed.get("status"))
         if status_event:
-            await _record_analytics_event(status_event, user=_, module="classes", entity_type="booking", entity_id=booking_id, metadata={"before_status": before.get("status"), "after_status": allowed.get("status")})
-            await _record_activity_log(f"class.{allowed.get('status')}", status_event, "booking", f"Class status changed to {allowed.get('status')}.", actor_user_id=_.user_id, actor_name=_.name, target_id=booking_id, metadata={"before_status": before.get("status"), "after_status": allowed.get("status")}, visibility="admin")
+            await _record_analytics_event(status_event, user=user, module="classes", entity_type="booking", entity_id=booking_id, metadata={"before_status": before.get("status"), "after_status": allowed.get("status")})
+            await _record_activity_log(f"class.{allowed.get('status')}", status_event, "booking", f"Class status changed to {allowed.get('status')}.", actor_user_id=user.user_id, actor_name=user.name, target_id=booking_id, metadata={"before_status": before.get("status"), "after_status": allowed.get("status")}, visibility="admin")
+    await _record_audit_event(
+        "booking.update", "booking", entity_id=booking_id, actor_user_id=user.user_id,
+        school_id=before.get("school_id"), permission_code=permission, before=before, after=after,
+        request=request, risk_level=_permission_risk(permission),
+    )
     return after
 
 @api.get("/admin/students")
-async def all_students(_: User = Depends(require_permission("students:manage"))):
-    docs = await db.users.find({}, {"_id": 0}).to_list(500)
+async def all_students(user: User = Depends(get_current_user)):
+    docs = await _scoped_users(user, "students.view")
+    docs = [item for item in docs if _normalize_role(item.get("role")) == "alumno"]
     for d in docs:
         d["booking_count"] = await db.bookings.count_documents({"user_id": d["user_id"]})
     return docs
@@ -2201,8 +2688,8 @@ async def serve_file(path: str):
 
 # ---- Users management
 @api.get("/admin/users")
-async def admin_list_users(_: User = Depends(require_admin)):
-    docs = await db.users.find({}, {"_id": 0}).to_list(500)
+async def admin_list_users(user: User = Depends(get_current_user)):
+    docs = await _scoped_users(user, "users.view")
     for d in docs:
         d["booking_count"] = await db.bookings.count_documents({"user_id": d["user_id"]})
         d["role"] = _normalize_role(d.get("role"))
@@ -2212,15 +2699,40 @@ async def admin_list_users(_: User = Depends(require_admin)):
 
 
 @api.patch("/admin/users/{user_id}")
-async def admin_update_user(user_id: str, payload: dict, request: Request, current: User = Depends(require_admin)):
+async def admin_update_user(user_id: str, payload: dict, request: Request, current: User = Depends(get_current_user)):
     before = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-    allowed = {k: v for k, v in payload.items() if k in ("name", "role", "picture", "active")}
-    if "role" in allowed:
-        allowed["role"] = _normalize_role(allowed["role"])
-    if "role" in allowed and allowed["role"] not in ROLE_LABELS:
-        raise HTTPException(400, "invalid role")
+    if not before:
+        raise HTTPException(404, "User not found")
+    await authorize(
+        current, "users.update", request=request, resource_type="user", resource_id=user_id,
+        resource_owner_id=user_id, school_id=before.get("active_school_id"),
+    )
+    allowed = {k: v for k, v in payload.items() if k in ("name", "picture", "active", "status")}
+    if not allowed:
+        raise HTTPException(400, "No editable fields supplied")
+    if (allowed.get("active") is False or allowed.get("status") == "suspended") and user_id == current.user_id:
+        raise HTTPException(400, "Cannot suspend your own account")
+    target_roles = await _active_user_roles(user_id)
+    if "administrador_sitio" in target_roles and (allowed.get("active") is False or allowed.get("status") == "suspended"):
+        admin_assignments = await db.user_roles.find(
+            {"role_name": "administrador_sitio", "active": True, "status": "active"}, {"_id": 0}
+        ).to_list(1000)
+        active_admin_ids = {
+            item["user_id"] for item in admin_assignments
+            if (await db.users.find_one({"user_id": item["user_id"], "active": True, "status": "active"}, {"_id": 0}))
+        }
+        if active_admin_ids == {user_id}:
+            raise HTTPException(400, "Cannot suspend the last active global administrator")
     allowed["updated_at"] = _now_iso()
     await db.users.update_one({"user_id": user_id}, {"$set": allowed})
+    if allowed.get("active") is False or allowed.get("status") == "suspended":
+        sessions = await db.local_auth_sessions.find(
+            {"user_id": user_id, "revoked_at": None}, {"_id": 0}
+        ).to_list(1000)
+        for session in sessions:
+            await db.local_auth_sessions.update_one(
+                {"id": session["id"]}, {"$set": {"revoked_at": _now_iso()}}
+            )
     if "role" in allowed:
         await _sync_user_role(user_id, allowed["role"])
     after = await db.users.find_one({"user_id": user_id}, {"_id": 0})
@@ -2239,9 +2751,11 @@ async def admin_update_user(user_id: str, payload: dict, request: Request, curre
 
 
 @api.delete("/admin/users/{user_id}")
-async def admin_delete_user(user_id: str, current: User = Depends(require_admin)):
+async def admin_delete_user(user_id: str, current: User = Depends(require_global_admin)):
     if user_id == current.user_id:
         raise HTTPException(400, "Cannot delete yourself")
+    if "administrador_sitio" in await _active_user_roles(user_id):
+        raise HTTPException(400, "Global administrator accounts must be reassigned before deletion")
     await db.users.delete_one({"user_id": user_id})
     return {"ok": True}
 
@@ -2277,7 +2791,7 @@ async def admin_rbac_catalog(_: User = Depends(require_permission("roles:manage"
 
 
 @api.patch("/admin/roles/{role_name}/permissions")
-async def admin_update_role_permissions(role_name: str, payload: dict, request: Request, user: User = Depends(require_permission("roles:manage"))):
+async def admin_update_role_permissions(role_name: str, payload: dict, request: Request, user: User = Depends(require_global_admin)):
     role_name = _normalize_role(role_name)
     if not await db.roles.find_one({"name": role_name}, {"_id": 0}):
         raise HTTPException(404, "role not found")
@@ -2285,16 +2799,28 @@ async def admin_update_role_permissions(role_name: str, payload: dict, request: 
     if not isinstance(requested, list):
         raise HTTPException(400, "permissions must be a list")
     now = _now_iso()
-    requested_names = set()
+    requested_names = {
+        item.get("permission") if isinstance(item, dict) else str(item)
+        for item in requested
+    }
+    if role_name == "administrador_sitio" and "*" not in requested_names:
+        raise HTTPException(400, "The protected admin role must retain global access")
     for item in requested:
         permission = item.get("permission") if isinstance(item, dict) else str(item)
         level = int(item.get("level", 1)) if isinstance(item, dict) else 1
+        scope = item.get("scope", "global") if isinstance(item, dict) else "global"
+        if scope not in {"self", "linked", "assigned", "school", "multi_school", "global"}:
+            raise HTTPException(400, f"invalid scope: {scope}")
         level = max(1, min(level, 100))
         if not await db.permissions.find_one({"name": permission}, {"_id": 0}):
             raise HTTPException(400, f"invalid permission: {permission}")
-        requested_names.add(permission)
         existing = await db.role_permissions.find_one({"role_name": role_name, "permission": permission}, {"_id": 0})
-        doc = {"role_name": role_name, "permission": permission, "level": level, "scope": "global", "updated_at": now}
+        doc = {
+            "role_name": role_name, "permission": permission, "level": level, "scope": scope,
+            "allowed": bool(item.get("allowed", True)) if isinstance(item, dict) else True,
+            "conditions": item.get("conditions", {}) if isinstance(item, dict) else {},
+            "updated_at": now,
+        }
         if existing:
             await db.role_permissions.update_one({"role_name": role_name, "permission": permission}, {"$set": doc})
         else:
@@ -2319,29 +2845,73 @@ async def admin_update_role_permissions(role_name: str, payload: dict, request: 
 
 
 @api.patch("/admin/users/{user_id}/roles")
-async def admin_update_user_roles(user_id: str, payload: dict, request: Request, user: User = Depends(require_permission("roles:manage"))):
+async def admin_update_user_roles(
+    user_id: str,
+    payload: dict,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
     requested = payload.get("roles", [])
     if not isinstance(requested, list) or not requested:
         raise HTTPException(400, "roles must be a non-empty list")
-    roles = [_normalize_role(role) for role in requested]
+    if user_id == user.user_id:
+        raise HTTPException(400, "Users cannot modify their own role assignments")
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, "User not found")
+    assignments = []
+    for item in requested:
+        role_name = _normalize_role(item.get("role") if isinstance(item, dict) else item)
+        school_id = item.get("schoolId") if isinstance(item, dict) else None
+        expires_at = item.get("expiresAt") if isinstance(item, dict) else None
+        assignments.append({"role": role_name, "school_id": school_id, "expires_at": expires_at})
+    roles = [item["role"] for item in assignments]
     invalid = []
     for role in roles:
         if not await db.roles.find_one({"name": role}, {"_id": 0}):
             invalid.append(role)
     if invalid:
         raise HTTPException(400, f"invalid roles: {', '.join(invalid)}")
+    actor_scopes = await _permission_scopes(user, "roles.assign")
+    if not actor_scopes:
+        raise HTTPException(403, "No tienes permisos para realizar esta acción.")
+    global_actor = "global" in actor_scopes
+    authorized_schools = set(await _authorized_school_ids(user))
+    for assignment in assignments:
+        role_name = assignment["role"]
+        school_id = assignment["school_id"]
+        definition = ROLE_DEFINITIONS.get(role_name, {})
+        if definition.get("scope_type") == "global" and not global_actor:
+            raise HTTPException(403, "Only Admón can assign global roles")
+        if role_name in {"administrador_sitio", "finanzas"} and not global_actor:
+            raise HTTPException(403, "School administrators cannot assign this role")
+        if not global_actor and (not school_id or school_id not in authorized_schools):
+            raise HTTPException(403, "No tienes acceso a esta escuela.")
+        if school_id and not await db.schools.find_one({"id": school_id, "status": "active"}, {"_id": 0}):
+            raise HTTPException(400, "Invalid school assignment")
+    previous_roles = await _active_user_roles(user_id)
+    if "administrador_sitio" in previous_roles and "administrador_sitio" not in roles:
+        active_admins = await db.user_roles.find(
+            {"role_name": "administrador_sitio", "active": True, "status": "active"}, {"_id": 0}
+        ).to_list(1000)
+        if {item["user_id"] for item in active_admins} == {user_id}:
+            raise HTTPException(400, "Cannot remove the last active global administrator")
     now = _now_iso()
     primary_role = sorted(set(roles), key=lambda role: ROLE_LEVELS.get(role, 0), reverse=True)[0]
     await db.users.update_one({"user_id": user_id}, {"$set": {"role": primary_role, "updated_at": now}})
-    for role in set(roles):
-        await _sync_user_role(user_id, role, assigned_by=user.user_id)
+    for assignment in assignments:
+        await _sync_user_role(
+            user_id, assignment["role"], assigned_by=user.user_id,
+            school_id=assignment["school_id"], expires_at=assignment["expires_at"],
+        )
     existing = await db.user_roles.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    requested_keys = {(item["role"], item["school_id"]) for item in assignments}
     for assignment in existing:
         role = _normalize_role(assignment.get("role_name"))
-        if role not in set(roles):
+        if (role, assignment.get("school_id")) not in requested_keys:
             await db.user_roles.update_one(
-                {"user_id": user_id, "role_name": role},
-                {"$set": {"active": False, "updated_at": now}},
+                {"id": assignment["id"]},
+                {"$set": {"active": False, "status": "inactive", "updated_at": now}},
             )
     updated = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     updated["roles"] = await _effective_role_names(User(**updated))
@@ -2351,7 +2921,8 @@ async def admin_update_user_roles(user_id: str, payload: dict, request: Request,
         entity_id=user_id,
         actor_user_id=user.user_id,
         target_user_id=user_id,
-        metadata={"roles": updated["roles"], "primary_role": updated.get("role")},
+        metadata={"roles": updated["roles"], "primary_role": updated.get("role"), "assignments": assignments},
+        permission_code="roles.assign",
         request=request,
     )
     await _record_analytics_event("role_assigned", user=user, module="rbac", entity_type="user", entity_id=user_id, metadata={"roles": updated["roles"], "primary_role": updated.get("role")})
@@ -2359,15 +2930,15 @@ async def admin_update_user_roles(user_id: str, payload: dict, request: Request,
 
 
 @api.get("/admin/rbac/roles")
-async def admin_rbac_roles(_: User = Depends(require_permission("roles.management.view"))):
+async def admin_rbac_roles(_: User = Depends(require_permission("roles.view"))):
     roles = await db.roles.find({}, {"_id": 0}).to_list(200)
     payload = [await _role_payload(role) for role in roles]
     payload.sort(key=lambda item: (item.get("type") != "system", -int(item.get("level") or 0), item.get("label", "")))
     return payload
 
 
-@api.get("/admin/rbac/roles/{role_name}")
-async def admin_rbac_role_detail(role_name: str, _: User = Depends(require_permission("roles.management.view"))):
+@api.get("/admin/rbac/roles/{role_name}/detail")
+async def admin_rbac_role_detail(role_name: str, _: User = Depends(require_permission("roles.view"))):
     role = await db.roles.find_one({"name": _normalize_role(role_name)}, {"_id": 0})
     if not role:
         raise HTTPException(404, "Role not found")
@@ -2375,7 +2946,7 @@ async def admin_rbac_role_detail(role_name: str, _: User = Depends(require_permi
 
 
 @api.post("/admin/rbac/roles")
-async def admin_rbac_create_role(payload: dict, request: Request, user: User = Depends(require_permission("roles.management.create"))):
+async def admin_rbac_create_role(payload: dict, request: Request, user: User = Depends(require_global_admin)):
     name = (payload.get("name") or "").strip().lower().replace(" ", "_")
     if not name or not name.replace("_", "").replace("-", "").isalnum():
         raise HTTPException(400, "Valid role name required")
@@ -2386,10 +2957,14 @@ async def admin_rbac_create_role(payload: dict, request: Request, user: User = D
     doc = {
         "id": name,
         "name": name,
+        "code": (payload.get("code") or name.upper()).strip().upper(),
         "label": payload.get("label") or payload.get("name") or name,
         "description": payload.get("description") or "",
         "level": int(payload.get("level") or 20),
         "type": "custom",
+        "scope_type": payload.get("scope_type") if payload.get("scope_type") in {"self", "linked", "assigned", "school", "multi_school", "global"} else "self",
+        "is_system": False,
+        "is_protected": False,
         "status": "active",
         "active": True,
         "created_at": now,
@@ -2401,7 +2976,7 @@ async def admin_rbac_create_role(payload: dict, request: Request, user: User = D
 
 
 @api.patch("/admin/rbac/roles/{role_name}")
-async def admin_rbac_update_role(role_name: str, payload: dict, request: Request, user: User = Depends(require_permission("roles.management.edit"))):
+async def admin_rbac_update_role(role_name: str, payload: dict, request: Request, user: User = Depends(require_global_admin)):
     role_name = _normalize_role(role_name)
     before = await db.roles.find_one({"name": role_name}, {"_id": 0})
     if not before:
@@ -2421,7 +2996,7 @@ async def admin_rbac_update_role(role_name: str, payload: dict, request: Request
 
 
 @api.post("/admin/rbac/roles/{role_name}/duplicate")
-async def admin_rbac_duplicate_role(role_name: str, payload: dict, request: Request, user: User = Depends(require_permission("roles.management.create"))):
+async def admin_rbac_duplicate_role(role_name: str, payload: dict, request: Request, user: User = Depends(require_global_admin)):
     source_name = _normalize_role(role_name)
     source = await db.roles.find_one({"name": source_name}, {"_id": 0})
     if not source:
@@ -2430,7 +3005,12 @@ async def admin_rbac_duplicate_role(role_name: str, payload: dict, request: Requ
     if await db.roles.find_one({"name": new_name}, {"_id": 0}):
         raise HTTPException(400, "Role already exists")
     now = _now_iso()
-    new_role = {**source, "id": new_name, "name": new_name, "label": payload.get("label") or f"{source.get('label', source_name)} Copy", "type": "custom", "status": "active", "active": True, "created_at": now, "updated_at": now}
+    new_role = {
+        **source, "id": new_name, "name": new_name, "code": new_name.upper(),
+        "label": payload.get("label") or f"{source.get('label', source_name)} Copy",
+        "type": "custom", "is_system": False, "is_protected": False,
+        "status": "active", "active": True, "created_at": now, "updated_at": now,
+    }
     await db.roles.insert_one(new_role)
     assignments = await db.role_permissions.find({"role_name": source_name}, {"_id": 0}).to_list(500)
     for assignment in assignments:
@@ -2441,7 +3021,7 @@ async def admin_rbac_duplicate_role(role_name: str, payload: dict, request: Requ
 
 
 @api.patch("/admin/rbac/roles/{role_name}/status")
-async def admin_rbac_role_status(role_name: str, payload: dict, request: Request, user: User = Depends(require_permission("roles.management.edit"))):
+async def admin_rbac_role_status(role_name: str, payload: dict, request: Request, user: User = Depends(require_global_admin)):
     role_name = _normalize_role(role_name)
     role = await db.roles.find_one({"name": role_name}, {"_id": 0})
     if not role:
@@ -2462,7 +3042,7 @@ async def admin_rbac_role_status(role_name: str, payload: dict, request: Request
 
 
 @api.delete("/admin/rbac/roles/{role_name}")
-async def admin_rbac_delete_role(role_name: str, request: Request, user: User = Depends(require_permission("roles.management.delete"))):
+async def admin_rbac_delete_role(role_name: str, request: Request, user: User = Depends(require_global_admin)):
     role_name = _normalize_role(role_name)
     role = await db.roles.find_one({"name": role_name}, {"_id": 0})
     if not role:
@@ -2484,7 +3064,7 @@ async def admin_rbac_delete_role(role_name: str, request: Request, user: User = 
 
 
 @api.get("/admin/rbac/permissions")
-async def admin_rbac_permissions(_: User = Depends(require_permission("roles.management.view"))):
+async def admin_rbac_permissions(_: User = Depends(require_permission("roles.view"))):
     permissions = await db.permissions.find({"active": True}, {"_id": 0}).to_list(1000)
     permissions.sort(key=lambda item: (item.get("module", ""), item.get("section", ""), item.get("action", "")))
     grouped: Dict[str, Dict[str, List[dict]]] = {}
@@ -2496,7 +3076,7 @@ async def admin_rbac_permissions(_: User = Depends(require_permission("roles.man
 
 
 @api.patch("/admin/rbac/roles/{role_name}/permissions")
-async def admin_rbac_update_role_permissions(role_name: str, payload: dict, request: Request, user: User = Depends(require_permission("roles.permissions.modify"))):
+async def admin_rbac_update_role_permissions(role_name: str, payload: dict, request: Request, user: User = Depends(require_global_admin)):
     role_name = _normalize_role(role_name)
     role = await db.roles.find_one({"name": role_name}, {"_id": 0})
     if not role:
@@ -2514,33 +3094,76 @@ async def admin_rbac_update_role_permissions(role_name: str, payload: dict, requ
 
 
 @api.get("/admin/rbac/users")
-async def admin_rbac_users(_: User = Depends(require_permission("users.profile.view"))):
+async def admin_rbac_users(_: User = Depends(require_permission("users.view"))):
     users = await admin_list_users(_)
     for item in users:
         user_model = User(**item)
         item["effective_permissions"] = await _effective_permission_levels(user_model)
         item["effective_permission_count"] = len(item["effective_permissions"])
+        item["role_assignments"] = await db.user_roles.find(
+            {"user_id": item["user_id"], "active": True, "status": "active"}, {"_id": 0}
+        ).to_list(200)
     return users
 
 
+@api.get("/admin/rbac/schools")
+async def admin_rbac_schools(user: User = Depends(get_current_user)):
+    scopes = await _permission_scopes(user, "users.view")
+    if "global" in scopes:
+        return await db.schools.find({"status": "active"}, {"_id": 0}).to_list(1000)
+    rows = []
+    for school_id in await _authorized_school_ids(user):
+        school = await db.schools.find_one({"id": school_id, "status": "active"}, {"_id": 0})
+        if school:
+            rows.append(school)
+    return rows
+
+
+@api.get("/admin/users/{user_id}/effective-permissions")
+async def admin_user_effective_permissions(
+    user_id: str,
+    _: User = Depends(require_global_admin),
+):
+    doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "User not found")
+    target = User(**doc)
+    assignments = await db.user_roles.find({"user_id": user_id}, {"_id": 0}).to_list(200)
+    grants = await _effective_permission_grants(target)
+    return {
+        "userId": user_id,
+        "roles": await _effective_role_names(target),
+        "schools": await _authorized_school_ids(target),
+        "permissions": await _effective_permission_levels(target),
+        "grants": grants,
+        "denied": [],
+        "origins": [
+            {
+                "role": item.get("role_name"),
+                "schoolId": item.get("school_id"),
+                "status": item.get("status", "active"),
+                "active": item.get("active", True),
+                "expiresAt": item.get("expires_at"),
+            }
+            for item in assignments
+        ],
+        "conflicts": [],
+    }
+
+
 @api.patch("/admin/rbac/users/{user_id}/roles")
-async def admin_rbac_replace_user_roles(user_id: str, payload: dict, request: Request, user: User = Depends(require_permission("users.roles.assign"))):
-    requested = [_normalize_role(role) for role in payload.get("roles", []) if role]
+async def admin_rbac_replace_user_roles(user_id: str, payload: dict, request: Request, user: User = Depends(get_current_user)):
+    requested = [item for item in payload.get("roles", []) if item]
     if not requested:
         raise HTTPException(400, "Every user must have at least one role")
-    if user_id == user.user_id:
-        current_roles = await _active_user_roles(user_id)
-        had_admin = any(role in {"administrador_sitio", "administrador_profesor"} for role in current_roles)
-        keeps_admin = any(role in {"administrador_sitio", "administrador_profesor"} for role in requested)
-        if had_admin and not keeps_admin:
-            raise HTTPException(400, "Cannot remove your own last admin access")
-    if "administrador_sitio" in requested and not payload.get("confirmPrivileged"):
+    names = [_normalize_role(item.get("role") if isinstance(item, dict) else item) for item in requested]
+    if "administrador_sitio" in names and not payload.get("confirmPrivileged"):
         raise HTTPException(400, "Assigning Super Admin requires confirmation")
     return await admin_update_user_roles(user_id, {"roles": requested}, request, user)
 
 
 @api.post("/admin/rbac/users/bulk-roles")
-async def admin_rbac_bulk_roles(payload: dict, request: Request, user: User = Depends(require_permission("users.roles.assign"))):
+async def admin_rbac_bulk_roles(payload: dict, request: Request, user: User = Depends(get_current_user)):
     user_ids = payload.get("userIds", [])
     roles = payload.get("roles", [])
     mode = payload.get("mode", "assign")
@@ -2573,6 +3196,41 @@ async def admin_rbac_audit_logs(_: User = Depends(require_permission("audit.logs
     events = [event for event in events if str(event.get("event_type", "")).startswith(("rbac.", "admin.role", "admin.user.roles"))]
     events.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
     return events[:200]
+
+
+@api.get("/audit")
+async def scoped_audit_logs(user: User = Depends(get_current_user)):
+    scopes = await _permission_scopes(user, "audit.view")
+    if not scopes:
+        raise HTTPException(403, "No tienes permisos para realizar esta acción.")
+    roles = set(await _effective_role_names(user))
+    async with db._pool.acquire() as conn:
+        if "global" in scopes:
+            rows = await conn.fetch("SELECT * FROM audit_events ORDER BY created_at DESC LIMIT 1000")
+        else:
+            school_ids = await _authorized_school_ids(user)
+            if not school_ids:
+                return []
+            if "finanzas" in roles and "administrador_sitio" not in roles:
+                rows = await conn.fetch(
+                    """
+                    SELECT * FROM audit_events
+                    WHERE school_id = ANY($1::text[])
+                      AND (
+                        permission_code LIKE 'payments.%'
+                        OR permission_code LIKE 'credits.%'
+                        OR permission_code LIKE 'reports.financial.%'
+                      )
+                    ORDER BY created_at DESC LIMIT 1000
+                    """,
+                    school_ids,
+                )
+            else:
+                rows = await conn.fetch(
+                    "SELECT * FROM audit_events WHERE school_id = ANY($1::text[]) ORDER BY created_at DESC LIMIT 1000",
+                    school_ids,
+                )
+    return [dict(row) for row in rows]
 
 
 @api.get("/admin/audit-logs")

@@ -22,7 +22,15 @@ export default function Login() {
     localStorage.setItem("mosaico_local_token", data.access_token);
     localStorage.setItem("mosaico_local_expires_at", data.expires_at);
     await checkAuth();
-    navigate("/student", { replace: true });
+    const access = await api.get("/auth/me/permissions");
+    const roles = new Set(access.data?.roles || []);
+    const destination = roles.has("administrador_sitio") ? "/admin"
+      : roles.has("finanzas") ? "/finance"
+      : roles.has("administrador_escolar") ? "/school-admin"
+      : roles.has("profesor") ? "/teacher"
+      : roles.has("tutor_padre") ? "/tutor"
+      : "/student";
+    navigate(destination, { replace: true });
   };
 
   const submit = async (event) => {

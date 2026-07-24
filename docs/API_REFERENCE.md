@@ -221,13 +221,14 @@ Lists platform audit events for a user, newest first.
 
 Lists allowlisted technical documentation available in the in-product technical wiki.
 
-Requires technical access.
+Requires technical access through `technical.wiki.view`, the protected technical
+administrator role, or wildcard platform permission.
 
 ### GET `/technical/docs/{doc_id}`
 
 Returns one allowlisted technical document with Markdown content for in-product rendering.
 
-Requires technical access.
+Requires the same server-side technical access rule as the technical document list.
 
 ## Admin: Teachers
 

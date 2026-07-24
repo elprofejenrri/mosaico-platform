@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { api } from "../../lib/api";
+import { usePermissions } from "../../hooks/usePermissions";
 import { Button } from "../ui/button";
 import WorkspaceSidePanel from "../WorkspaceSidePanel";
 
@@ -37,6 +38,7 @@ const adminRoles = new Set(["administrador_sitio", "administrador_profesor", "co
 const studentRoles = new Set(["alumno", "student"]);
 const teacherRoles = new Set(["profesor", "teacher"]);
 const tutorRoles = new Set(["tutor_padre", "tutor", "parent"]);
+const financeRoles = new Set(["finanzas", "finance"]);
 
 function Panel({ children, className = "" }) {
   return <section className={`rounded-lg border border-[#EFE4D0] bg-white p-5 shadow-sm ${className}`}>{children}</section>;
@@ -105,6 +107,7 @@ function roleCategory(role) {
   const name = role.name || "";
   if (adminRoles.has(name) || (role.level || 0) >= 80) return "Administrative";
   if (teacherRoles.has(name) || name.includes("profesor")) return "Academic";
+  if (financeRoles.has(name)) return "Finance";
   if (tutorRoles.has(name) || name.includes("tutor")) return "Support";
   if (name.includes("viewer") || name.includes("lector") || name.includes("student") || name.includes("alumno")) return "Read-only";
   return role.type === "system" ? "System" : "Custom";
@@ -139,6 +142,7 @@ function userType(user) {
   if ([...roles].some((role) => adminRoles.has(role))) return "Admin";
   if ([...roles].some((role) => teacherRoles.has(role))) return "Teacher";
   if ([...roles].some((role) => tutorRoles.has(role))) return "Tutor / Parent";
+  if ([...roles].some((role) => financeRoles.has(role))) return "Finance";
   if ([...roles].some((role) => studentRoles.has(role))) return "Student";
   return user.profile_type || "Client";
 }
@@ -179,15 +183,20 @@ function UserDrawer({
   onSaveRoles,
   onToggleActive,
   onLoadHistory,
+  schools,
 }) {
   const [tab, setTab] = useState("general");
   const [draftRoles, setDraftRoles] = useState(userRoleList(user));
+  const [schoolId, setSchoolId] = useState(user.role_assignments?.find((item) => item.school_id)?.school_id || schools[0]?.id || "");
+  const [expiresAt, setExpiresAt] = useState("");
 
   useEffect(() => {
     setDraftRoles(userRoleList(user));
+    setSchoolId(user.role_assignments?.find((item) => item.school_id)?.school_id || schools[0]?.id || "");
+    setExpiresAt("");
     setTab("general");
     onLoadHistory(user);
-  }, [user, onLoadHistory]);
+  }, [user, onLoadHistory, schools]);
 
   const changed = !roleListsEqual(draftRoles, userRoleList(user));
   const groupedRoles = roleOptionsByCategory(roles);
@@ -208,7 +217,11 @@ function UserDrawer({
       toast.error("Every user must have at least one role.");
       return;
     }
-    onSaveRoles(user, draftRoles);
+    onSaveRoles(user, draftRoles.map((roleName) => ({
+      role: roleName,
+      schoolId: rolesByName[roleName]?.scope_type === "global" ? null : (schoolId || null),
+      expiresAt: expiresAt || null,
+    })));
   };
 
   return (
@@ -245,14 +258,30 @@ function UserDrawer({
                   <h3 className="font-display text-xl text-[#1F3B6E]">Role Assignment</h3>
                   <p className="mt-1 text-sm text-[#5C6680]">Roles are additive. Critical access requires confirmation on save.</p>
                 </div>
-                {changed && (
-                  <div className="flex gap-2">
-                    <Button variant="outline" className="border-[#EFE4D0]" onClick={() => setDraftRoles(userRoleList(user))}>Cancel</Button>
-                    <Button disabled={saving} onClick={save} className="bg-[#E8704C] text-white hover:bg-[#C95630]">{saving ? "Saving..." : "Save roles"}</Button>
-                  </div>
-                )}
+                <div className="flex gap-2">
+                  {changed && <Button variant="outline" className="border-[#EFE4D0]" onClick={() => setDraftRoles(userRoleList(user))}>Cancel</Button>}
+                  <Button disabled={saving} onClick={save} className="bg-[#E8704C] text-white hover:bg-[#C95630]">{saving ? "Saving..." : "Save roles"}</Button>
+                </div>
               </div>
               <div className="mt-5 grid gap-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Assignment school">
+                    <select value={schoolId} onChange={(event) => setSchoolId(event.target.value)} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3 text-sm">
+                      <option value="">Global / no school</option>
+                      {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Optional expiration">
+                    <input type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3 text-sm" />
+                  </Field>
+                </div>
+                {(user.role_assignments || []).length > 0 && (
+                  <div className="rounded-lg bg-[#FBF7EE] p-4 text-xs text-[#5C6680]">
+                    {(user.role_assignments || []).map((assignment) => (
+                      <p key={assignment.id}>{assignment.role_name} · {assignment.school_id || "global"} · assigned by {assignment.assigned_by || "system"} · {formatDate(assignment.assigned_at || assignment.created_at)}</p>
+                    ))}
+                  </div>
+                )}
                 {Object.entries(groupedRoles).map(([category, items]) => (
                   <div key={category} className="rounded-lg border border-[#EFE4D0] p-4">
                     <h4 className="font-semibold text-[#1F3B6E]">{category}</h4>
@@ -407,13 +436,16 @@ function BulkRoleModal({ users, roles, selectedIds, onClose, onApply, saving }) 
 }
 
 export default function AdminRbacWorkspace({ initialTab = "users" }) {
+  const { can, scopes } = usePermissions();
   const [tab, setTab] = useState(initialTab);
   const [roles, setRoles] = useState([]);
+  const [schools, setSchools] = useState([]);
   const [permissions, setPermissions] = useState([]);
   const [users, setUsers] = useState([]);
   const [audit, setAudit] = useState([]);
   const [selectedRoleName, setSelectedRoleName] = useState("");
   const [selectedPermissions, setSelectedPermissions] = useState(new Set());
+  const [permissionScopes, setPermissionScopes] = useState({});
   const [selectedUsers, setSelectedUsers] = useState(new Set());
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedUserAudit, setSelectedUserAudit] = useState([]);
@@ -449,21 +481,24 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [roleRes, permissionRes, userRes, auditRes] = await Promise.all([
+      const [roleRes, permissionRes, userRes, auditRes, schoolRes] = await Promise.all([
         api.get("/admin/rbac/roles"),
         api.get("/admin/rbac/permissions"),
         api.get("/admin/rbac/users"),
-        api.get("/admin/rbac/audit-logs"),
+        api.get("/audit"),
+        api.get("/admin/rbac/schools"),
       ]);
       const nextRoles = roleRes.data || [];
       setRoles(nextRoles);
       setPermissions(permissionRes.data?.permissions || []);
       setUsers(userRes.data || []);
       setAudit(auditRes.data || []);
+      setSchools(schoolRes.data || []);
       const nextRole = selectedRoleName || nextRoles[0]?.name || "";
       setSelectedRoleName(nextRole);
       const role = nextRoles.find((item) => item.name === nextRole) || nextRoles[0];
       setSelectedPermissions(new Set(role?.permissions || []));
+      setPermissionScopes(role?.permission_scopes || {});
     } catch (error) {
       toast.error(error.response?.data?.detail || "Could not load IAM.");
     } finally {
@@ -477,7 +512,10 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
 
   useEffect(() => {
     const role = roles.find((item) => item.name === selectedRoleName) || roles[0];
-    if (role) setSelectedPermissions(new Set(role.permissions || []));
+    if (role) {
+      setSelectedPermissions(new Set(role.permissions || []));
+      setPermissionScopes(role.permission_scopes || {});
+    }
   }, [selectedRoleName, roles]);
 
   useEffect(() => {
@@ -551,7 +589,8 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
       toast.error("Every user must have at least one role.");
       return;
     }
-    const newAdmin = rolesForUser.includes("administrador_sitio") && !userRoleList(user).includes("administrador_sitio");
+    const requestedRoleNames = rolesForUser.map((item) => typeof item === "string" ? item : item.role);
+    const newAdmin = requestedRoleNames.includes("administrador_sitio") && !userRoleList(user).includes("administrador_sitio");
     const persist = async (confirmPrivileged = false) => {
       setSaving(true);
       try {
@@ -665,7 +704,11 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
       setSaving(true);
       try {
         await api.patch(`/admin/rbac/roles/${selectedRole.name}/permissions`, {
-          permissions: Array.from(selectedPermissions).map((permission) => ({ permission, level: permission === "*" ? 100 : 1 })),
+          permissions: Array.from(selectedPermissions).map((permission) => ({
+            permission,
+            level: permission === "*" ? 100 : 1,
+            scope: permission === "*" ? "global" : (permissionScopes[permission] || selectedRole?.scope_type || "self"),
+          })),
           confirmCritical,
         });
         toast.success("Role permissions updated.");
@@ -826,7 +869,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
         <Panel className="overflow-hidden">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-[#5C6680]">Showing {pagedUsers.length} of {filteredUsers.length} users. Selected: {selectedUsers.size}</p>
-            <Button disabled={!selectedUsers.size} onClick={() => setBulkOpen(true)} className="bg-[#1F3B6E] text-white"><UserPlus size={16} className="mr-2" />Bulk role action</Button>
+            {can("roles.assign") && scopes("roles.assign").includes("global") && <Button disabled={!selectedUsers.size} onClick={() => setBulkOpen(true)} className="bg-[#1F3B6E] text-white"><UserPlus size={16} className="mr-2" />Bulk role action</Button>}
           </div>
           <div className="grid gap-2">
             <div className="hidden rounded-md border-b border-[#EFE4D0] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#5C6680] lg:grid lg:grid-cols-[32px_minmax(220px,1.7fr)_minmax(190px,1.25fr)_96px_minmax(150px,0.9fr)_48px] lg:gap-3">
@@ -903,7 +946,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
               <Field label="Role key"><input value={newRole.name} onChange={(event) => setNewRole({ ...newRole, name: event.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" placeholder="school_operator" /></Field>
               <Field label="Display name"><input value={newRole.label} onChange={(event) => setNewRole({ ...newRole, label: event.target.value })} className="h-10 w-full rounded-md border border-[#EFE4D0] px-3 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" placeholder="School Operator" /></Field>
               <Field label="Description"><textarea value={newRole.description} onChange={(event) => setNewRole({ ...newRole, description: event.target.value })} className="min-h-20 w-full rounded-md border border-[#EFE4D0] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]" /></Field>
-              <Button disabled={saving} onClick={createRole} className="bg-[#E8704C] text-white hover:bg-[#C95630]"><ShieldCheck size={16} className="mr-2" />Create role</Button>
+            {can("roles.create") && <Button disabled={saving} onClick={createRole} className="bg-[#E8704C] text-white hover:bg-[#C95630]"><ShieldCheck size={16} className="mr-2" />Create role</Button>}
             </div>
           </Panel>
           <Panel>
@@ -931,9 +974,9 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
                   </div>
                   <div className="flex flex-wrap justify-end gap-2">
                     <Button onClick={() => { setSelectedRoleName(role.name); setTab("matrix"); }} variant="outline" className="border-[#EFE4D0]"><FileSearch size={15} /></Button>
-                    <Button disabled={saving} onClick={() => duplicateRole(role)} variant="outline" className="border-[#EFE4D0]"><Copy size={15} /></Button>
-                    <Button disabled={saving || role.name === "administrador_sitio"} onClick={() => updateRoleStatus(role)} variant="outline" className="border-[#EFE4D0]">{role.status === "active" ? "Deactivate" : "Activate"}</Button>
-                    <Button disabled={saving || role.type === "system"} onClick={() => deleteRole(role)} variant="outline" className="border-[#EFE4D0] text-[#B42318]"><Trash2 size={15} /></Button>
+                    {can("roles.create") && <Button disabled={saving} onClick={() => duplicateRole(role)} variant="outline" className="border-[#EFE4D0]"><Copy size={15} /></Button>}
+                    {can("roles.update") && <Button disabled={saving || role.name === "administrador_sitio"} onClick={() => updateRoleStatus(role)} variant="outline" className="border-[#EFE4D0]">{role.status === "active" ? "Deactivate" : "Activate"}</Button>}
+                    {can("roles.delete") && <Button disabled={saving || role.type === "system"} onClick={() => deleteRole(role)} variant="outline" className="border-[#EFE4D0] text-[#B42318]"><Trash2 size={15} /></Button>}
                   </div>
                 </div>
               ))}
@@ -947,7 +990,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <Field label="Role"><select value={selectedRoleName} onChange={(event) => setSelectedRoleName(event.target.value)} className="h-10 rounded-md border border-[#EFE4D0] px-3 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]">{roles.map((role) => <option key={role.name} value={role.name}>{roleLabel(role)}</option>)}</select></Field>
             <Field label="Risk filter"><select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} className="h-10 rounded-md border border-[#EFE4D0] px-3 text-sm outline-none focus:ring-2 focus:ring-[#E8704C]"><option value="all">All risk levels</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></Field>
-            <Button disabled={saving} onClick={savePermissions} className="bg-[#E8704C] text-white hover:bg-[#C95630]">Save permissions</Button>
+            {can("permissions.manage") && <Button disabled={saving} onClick={savePermissions} className="bg-[#E8704C] text-white hover:bg-[#C95630]">Save permissions</Button>}
           </div>
           <div className="mt-5 grid gap-4">
             {Object.entries(groupedPermissions).map(([module, sections]) => (
@@ -963,8 +1006,20 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
                       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                         {items.map((permission) => (
                           <label key={permission.name} className={`flex min-h-20 items-start gap-3 rounded-md border p-3 ${permission.risk_level === "critical" ? "border-[#F4B4A6] bg-white" : "border-[#EFE4D0] bg-white"}`}>
-                            <input aria-label={permission.name} type="checkbox" checked={selectedPermissions.has(permission.name)} onChange={() => togglePermission(permission.name)} className="mt-1 h-4 w-4 accent-[#E8704C]" />
+                            <input aria-label={permission.name} type="checkbox" disabled={!can("permissions.manage")} checked={selectedPermissions.has(permission.name)} onChange={() => togglePermission(permission.name)} className="mt-1 h-4 w-4 accent-[#E8704C]" />
                             <span className="min-w-0"><span className="block truncate font-semibold">{permission.name}</span><span className="mt-1 block text-xs text-[#5C6680]">{permission.description}</span><span className="mt-2 inline-flex"><Badge tone={permission.risk_level}>{permission.risk_level}</Badge></span></span>
+                            {selectedPermissions.has(permission.name) && permission.name !== "*" && (
+                              <select
+                                aria-label={`${permission.name} scope`}
+                                disabled={!can("permissions.manage")}
+                                value={permissionScopes[permission.name] || selectedRole?.scope_type || "self"}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) => setPermissionScopes((current) => ({ ...current, [permission.name]: event.target.value }))}
+                                className="ml-auto h-8 rounded border border-[#EFE4D0] px-2 text-xs"
+                              >
+                                {["self", "linked", "assigned", "school", "multi_school", "global"].map((scope) => <option key={scope} value={scope}>{scope}</option>)}
+                              </select>
+                            )}
                           </label>
                         ))}
                       </div>
@@ -1007,7 +1062,7 @@ export default function AdminRbacWorkspace({ initialTab = "users" }) {
         </Panel>
       )}
 
-      {selectedUser && <UserDrawer user={selectedUser} roles={roles} rolesByName={rolesByName} permissionsByName={permissionsByName} audit={selectedUserAudit} loginHistory={selectedUserLogins} loadingHistory={loadingHistory} saving={saving} onClose={() => setSelectedUser(null)} onSaveRoles={replaceUserRoles} onToggleActive={toggleActive} onLoadHistory={loadUserHistory} />}
+      {selectedUser && <UserDrawer user={selectedUser} roles={roles} rolesByName={rolesByName} permissionsByName={permissionsByName} audit={selectedUserAudit} loginHistory={selectedUserLogins} loadingHistory={loadingHistory} saving={saving} onClose={() => setSelectedUser(null)} onSaveRoles={replaceUserRoles} onToggleActive={toggleActive} onLoadHistory={loadUserHistory} schools={schools} />}
       {bulkOpen && <BulkRoleModal users={users} roles={roles} selectedIds={selectedUsers} saving={saving} onClose={() => setBulkOpen(false)} onApply={bulkApply} />}
       {confirm && <ConfirmModal {...confirm} loading={saving} onClose={() => setConfirm(null)} />}
     </div>

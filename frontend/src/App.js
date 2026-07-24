@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider } from "./context/AppContext";
 import { Navbar } from "./components/Navbar";
 import { Footer } from "./components/Footer";
-import { PlatformLanding, StudentPortal, TutorPortal, TeacherPortal, SchoolAdminPortal, AdminPortal } from "./pages/Platform";
+import { PlatformLanding, StudentPortal, TutorPortal, TeacherPortal, SchoolAdminPortal, AdminPortal, FinancePortal } from "./pages/Platform";
 import Pricing from "./pages/Pricing";
 import Faq from "./pages/Faq";
 import Blog from "./pages/Blog";
@@ -69,6 +69,8 @@ function AppRouter() {
           <Route path="/school-admin/bookings" element={<SchoolAdminPortal module="bookings" />} />
           <Route path="/school-admin/families" element={<SchoolAdminPortal module="families" />} />
           <Route path="/school-admin/reports" element={<SchoolAdminPortal module="reports" />} />
+          <Route path="/school-admin/roles" element={<SchoolAdminPortal module="roles" />} />
+          <Route path="/finance" element={<FinancePortal />} />
           <Route path="/admin" element={<AdminPortal />} />
           <Route path="/admin/approvals" element={<AdminPortal module="approvals" />} />
           <Route path="/admin/iam" element={<AdminPortal module="iam" />} />
