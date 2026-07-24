@@ -20,6 +20,12 @@ if (uniqueVersions.size !== versions.length) {
 
 const operationalVersion = /^\d{4}\.\d{2}\.\d{2}\.\d+$/;
 const semanticVersion = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+const isValidIsoDate = (value) => {
+  if (!isoDate.test(value || "")) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+};
 const versionParts = (version) => version.split(/[.-]/).map((part) => /^\d+$/.test(part) ? Number(part) : part);
 const compareVersions = (left, right) => {
   const a = versionParts(left);
@@ -42,6 +48,13 @@ releases.forEach((release, index) => {
   if (!operationalVersion.test(release.version || "") && !semanticVersion.test(release.version || "")) {
     errors.push(`Release ${release.version || index} has an invalid version.`);
   }
+  if (!isValidIsoDate(release.releaseDate)) {
+    errors.push(`Release ${release.version || index} must have a valid ISO release date.`);
+  }
+  if (operationalVersion.test(release.version || "") &&
+      release.version.slice(0, 10).replaceAll(".", "-") !== release.releaseDate) {
+    errors.push(`Release ${release.version} date must match its operational version.`);
+  }
   if (!(release.title || "").trim()) errors.push(`Release ${release.version} has an empty title.`);
   if (!(release.summary || "").trim()) errors.push(`Release ${release.version} has an empty summary.`);
   if (!Array.isArray(release.items) || release.items.length === 0 || release.items.some((item) => !(item || "").trim())) {
@@ -50,9 +63,12 @@ releases.forEach((release, index) => {
   if (index > 0 && compareVersions(releases[index - 1].version, release.version) <= 0) {
     errors.push("Application releases must be in strictly descending version order.");
   }
+  if (index > 0 && releases[index - 1].releaseDate < release.releaseDate) {
+    errors.push("Application release dates must be in descending order.");
+  }
 });
 
-const blockPattern = /<!-- RELEASE: ([^\s]+) -->\s*### ([^\n]+)\n\nSummary: ([^\n]+)\n\n([\s\S]*?)\n<!-- \/RELEASE -->/g;
+const blockPattern = /<!-- RELEASE: ([^\s]+) -->\s*### ([^\n]+)\n\nSummary: ([^\n]+)\n\nRelease date: ([^\n]+)\n\n([\s\S]*?)\n<!-- \/RELEASE -->/g;
 const markdownReleases = [];
 let match;
 while ((match = blockPattern.exec(markdown)) !== null) {
@@ -65,7 +81,8 @@ while ((match = blockPattern.exec(markdown)) !== null) {
     headingVersion,
     title,
     summary: match[3].trim(),
-    items: match[4].split("\n").filter((line) => line.startsWith("- ")).map((line) => line.slice(2).trim()),
+    releaseDate: match[4].trim(),
+    items: match[5].split("\n").filter((line) => line.startsWith("- ")).map((line) => line.slice(2).trim()),
   });
 }
 
@@ -81,6 +98,7 @@ releases.forEach((release, index) => {
   }
   if (documented.title !== release.title) errors.push(`Title mismatch for ${release.version}.`);
   if (documented.summary !== release.summary) errors.push(`Summary mismatch for ${release.version}.`);
+  if (documented.releaseDate !== release.releaseDate) errors.push(`Release date mismatch for ${release.version}.`);
   if (JSON.stringify(documented.items) !== JSON.stringify(release.items)) {
     errors.push(`Outcome mismatch for ${release.version}.`);
   }

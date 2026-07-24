@@ -115,10 +115,24 @@ Releases are listed in descending order. No reliable tag or formal release
 record existed when this history was introduced, so the first entry records
 only the initial documented baseline delivered by this feature.
 
+<!-- RELEASE: 2026.07.24.3 -->
+### 2026.07.24.3 — Localized production release dates
+
+Summary: Production history now shows clear release dates in the active English or Spanish language.
+
+Release date: 2026-07-24
+
+- Each production-history entry shows its release date alongside the version.
+- Release dates follow the active English or Spanish language without shifting across time zones.
+- Release history checks keep documented dates complete, valid, synchronized, and newest first.
+<!-- /RELEASE -->
+
 <!-- RELEASE: 2026.07.24.2 -->
 ### 2026.07.24.2 — Mobile workspaces and reliable role updates
 
 Summary: MOSAICO now keeps workspaces usable on mobile and tablet while making authorized role updates more reliable.
+
+Release date: 2026-07-24
 
 - Mobile and tablet users can open role-appropriate navigation without leaving or resetting the current screen.
 - Supported workspaces show contextual page actions only when real, available operations exist.
@@ -132,6 +146,8 @@ Summary: MOSAICO now keeps workspaces usable on mobile and tablet while making a
 
 Summary: MOSAICO now provides clearer profile management and the protected foundation for optional teacher calendar synchronization.
 
+Release date: 2026-07-24
+
 - Users can review and maintain shared profile information from a dedicated profile workspace.
 - Role-specific profile details and teacher approval status are presented consistently across workspaces.
 - The active profile selector remains available as a responsive dropdown.
@@ -144,6 +160,8 @@ Summary: MOSAICO now provides clearer profile management and the protected found
 
 Summary: Technical administrators can now reach the platform wiki and production release history from their workspace.
 
+Release date: 2026-07-23
+
 - The Wiki option is now visible to authorized technical administrators.
 - Technical administrators can open the Releases tab and review production outcomes.
 <!-- /RELEASE -->
@@ -152,6 +170,8 @@ Summary: Technical administrators can now reach the platform wiki and production
 ### 2026.07.23.2 — School-aware access and simpler profiles
 
 Summary: MOSAICO now gives each team member clearer access to the workspaces and information relevant to their responsibilities.
+
+Release date: 2026-07-23
 
 - The profile menu now combines available workspaces into one responsive dropdown.
 - School teams can manage user access for the correct school from the administration workspace.
@@ -165,6 +185,8 @@ Summary: MOSAICO now gives each team member clearer access to the workspaces and
 
 Summary: Technical users can review a safe, accessible production release history inside MOSAICO.
 
+Release date: 2026-07-23
+
 - Authorized technical users can review production outcomes without leaving MOSAICO.
 - Each release can be expanded with a keyboard or pointer, with the newest release open by default.
 - The release view remains readable on narrow screens and keeps long histories independently scrollable.
@@ -174,7 +196,7 @@ Summary: Technical users can review a safe, accessible production release histor
 ## Release verification checklist
 
 1. Update the Markdown and structured application histories together.
-2. Keep the newest unique version first.
+2. Include an ISO `Release date` and keep the newest unique version first.
 3. Confirm the summary matches the detailed outcomes.
 4. Review visible wording against the release-note safety policy.
 5. Update every focused document affected by the release.

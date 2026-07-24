@@ -1,6 +1,18 @@
 [
   {
+    "version": "2026.07.24.3",
+    "releaseDate": "2026-07-24",
+    "title": "Localized production release dates",
+    "summary": "Production history now shows clear release dates in the active English or Spanish language.",
+    "items": [
+      "Each production-history entry shows its release date alongside the version.",
+      "Release dates follow the active English or Spanish language without shifting across time zones.",
+      "Release history checks keep documented dates complete, valid, synchronized, and newest first."
+    ]
+  },
+  {
     "version": "2026.07.24.2",
+    "releaseDate": "2026-07-24",
     "title": "Mobile workspaces and reliable role updates",
     "summary": "MOSAICO now keeps workspaces usable on mobile and tablet while making authorized role updates more reliable.",
     "items": [
@@ -13,6 +25,7 @@
   },
   {
     "version": "2026.07.24.1",
+    "releaseDate": "2026-07-24",
     "title": "Unified profiles and teacher calendar readiness",
     "summary": "MOSAICO now provides clearer profile management and the protected foundation for optional teacher calendar synchronization.",
     "items": [
@@ -25,6 +38,7 @@
   },
   {
     "version": "2026.07.23.3",
+    "releaseDate": "2026-07-23",
     "title": "Technical release access restored",
     "summary": "Technical administrators can now reach the platform wiki and production release history from their workspace.",
     "items": [
@@ -34,6 +48,7 @@
   },
   {
     "version": "2026.07.23.2",
+    "releaseDate": "2026-07-23",
     "title": "School-aware access and simpler profiles",
     "summary": "MOSAICO now gives each team member clearer access to the workspaces and information relevant to their responsibilities.",
     "items": [
@@ -46,6 +61,7 @@
   },
   {
     "version": "2026.07.23.1",
+    "releaseDate": "2026-07-23",
     "title": "In-app production history",
     "summary": "Technical users can review a safe, accessible production release history inside MOSAICO.",
     "items": [

@@ -8,6 +8,7 @@ import { productionReleases } from "../data/productionReleases";
 import { technicalWikiPrinciples, technicalWikiSections } from "../data/technicalWiki";
 import { api } from "../lib/api";
 import { useMobileNavigation, useMobilePageActions } from "../context/MobileShellContext";
+import { formatReleaseDate } from "../lib/releaseDates";
 
 const wikiTabs = [
   { id: "overview", label: "Overview" },
@@ -79,7 +80,9 @@ function MarkdownViewer({ content }) {
   return <div className="grid gap-2">{blocks}</div>;
 }
 
-function ReleaseHistory() {
+function ReleaseHistory({ lang }) {
+  const releaseDateLabel = lang === "es" ? "Fecha de lanzamiento" : "Release date";
+
   return (
     <section aria-labelledby="production-history-heading" className="rounded-lg border border-[#EFE4D0] bg-white p-4 shadow-sm sm:p-5">
       <div className="flex flex-col gap-3 border-b border-[#EFE4D0] pb-4 sm:flex-row sm:items-end sm:justify-between">
@@ -109,6 +112,12 @@ function ReleaseHistory() {
                 <span className="block break-all text-xs font-semibold uppercase tracking-[0.16em] text-[#E8704C]">
                   Version {release.version}
                 </span>
+                <time
+                  dateTime={release.releaseDate}
+                  className="mt-1 block text-xs font-semibold text-[#5C6680]"
+                >
+                  {releaseDateLabel}: {formatReleaseDate(release.releaseDate, lang)}
+                </time>
                 <span className="mt-1 block break-words text-lg font-semibold text-[#1F3B6E]">{release.title}</span>
                 <span className="mt-2 block break-words text-sm leading-6 text-[#5C6680]">{release.summary}</span>
               </span>
@@ -362,7 +371,7 @@ export default function TechnicalWiki() {
               ))}
             </ul>
           </div>
-          <ReleaseHistory />
+          <ReleaseHistory lang={lang} />
         </section>
 
         <section

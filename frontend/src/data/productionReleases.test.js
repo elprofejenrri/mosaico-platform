@@ -16,12 +16,16 @@ test("production releases are complete, unique, and newest first", () => {
 
   productionReleases.forEach((release, index) => {
     expect(release.version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
+    expect(release.releaseDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(new Date(`${release.releaseDate}T00:00:00.000Z`).toISOString().slice(0, 10)).toBe(release.releaseDate);
+    expect(release.version.slice(0, 10).replaceAll(".", "-")).toBe(release.releaseDate);
     expect(release.title.trim()).not.toBe("");
     expect(release.summary.trim()).not.toBe("");
     expect(release.items.length).toBeGreaterThan(0);
     release.items.forEach((item) => expect(item.trim()).not.toBe(""));
     if (index > 0) {
       expect(compare(productionReleases[index - 1].version, release.version)).toBeGreaterThan(0);
+      expect(productionReleases[index - 1].releaseDate >= release.releaseDate).toBe(true);
     }
   });
 });
