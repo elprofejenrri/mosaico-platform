@@ -1,5 +1,14 @@
 [
   {
+    "version": "2026.07.23.3",
+    "title": "Technical release access restored",
+    "summary": "Technical administrators can now reach the platform wiki and production release history from their workspace.",
+    "items": [
+      "The Wiki option is now visible to authorized technical administrators.",
+      "Technical administrators can open the Releases tab and review production outcomes."
+    ]
+  },
+  {
     "version": "2026.07.23.2",
     "title": "School-aware access and simpler profiles",
     "summary": "MOSAICO now gives each team member clearer access to the workspaces and information relevant to their responsibilities.",

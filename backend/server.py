@@ -472,7 +472,7 @@ ROLE_PERMISSION_LEVELS: Dict[str, Dict[str, int]] = {
         "teachers.profile.view": 4, "credits.wallet.view": 4, "credits.wallet.grant": 4,
         "reports.analytics.view": 4, "reports.analytics.export": 4, "settings.platform.view": 4,
         "settings.view": 4, "logs.activity.view": 4, "logs.view": 4, "audit.logs.view": 5, "audit.view": 5,
-        "atlas.view": 4, "atlas.export": 4,
+        "atlas.view": 4, "atlas.export": 4, "technical.wiki.view": 5,
     },
     "administrador_escolar": {
         "dashboard.general.view": 4, "users.profile.view": 3, "users.profile.edit": 3,

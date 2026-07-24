@@ -7,6 +7,7 @@ export function isTechnicalUser(user) {
   const roles = effectiveRoles(user);
   const permissions = user?.permissions || {};
   return roles.has("administrador_sitio") ||
+    roles.has("administrador_profesor") ||
     roles.has("developer") ||
     Number(permissions["technical.wiki.view"] || 0) >= 1 ||
     Number(permissions["*"] || 0) >= 100;

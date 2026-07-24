@@ -91,6 +91,15 @@ Releases are listed in descending order. No reliable tag or formal release
 record existed when this history was introduced, so the first entry records
 only the initial documented baseline delivered by this feature.
 
+<!-- RELEASE: 2026.07.23.3 -->
+### 2026.07.23.3 — Technical release access restored
+
+Summary: Technical administrators can now reach the platform wiki and production release history from their workspace.
+
+- The Wiki option is now visible to authorized technical administrators.
+- Technical administrators can open the Releases tab and review production outcomes.
+<!-- /RELEASE -->
+
 <!-- RELEASE: 2026.07.23.2 -->
 ### 2026.07.23.2 — School-aware access and simpler profiles
 
